@@ -1,0 +1,100 @@
+# ---------------------------------------------------------------------------
+# آوید — استقرار با Docker Compose (وب + سرویس چت + سرویس مهاجرت)
+#
+#   docker compose up -d --build     اولین بار / بعد از تغییر سورس
+#
+# پورت‌های میزبان فقط روی 127.0.0.1 بسته می‌شوند؛ دامنه از طریق
+# Apache/nginx دایرکت‌ادمین (تنظیم deploy/) به این پورت‌ها پروکسی می‌شود.
+# متغیرهای عمومی (پورت‌ها، رمز مدیر اولیه و…) از فایل .env خوانده می‌شوند.
+# ---------------------------------------------------------------------------
+name: avid
+
+services:
+  # — مهاجرت غیرمخرب + بوت‌استرپ مدیر (یک‌بار در هر up؛ سریع و idempotent)
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: tools
+    restart: "no"
+    environment:
+      DATABASE_URL: file:/app/data/custom.db
+      TZ: ${TZ:-Asia/Tehran}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-}
+      ADMIN_FORCE_RESET: ${ADMIN_FORCE_RESET:-0}
+      BACKUP_DIR: /app/backups
+    volumes:
+      - avid_db:/app/data
+      - avid_backups:/app/backups
+      - avid_uploads:/app/uploads:ro
+    # migrate.ts: نصب تازه (migrate deploy) یا انتقال دیتابیس قبلی
+    # (بکاپ → بررسی تطابق ساختار → ثبت migration اولیه در تاریخچه — بدون
+    # از دست رفتن داده)؛ سپس bootstrap مدیر.
+    command: sh -c "bun scripts/migrate.ts && bun scripts/bootstrap.ts"
+
+  # — اپ Next.js (standalone) — پورت میزبان فقط لوکال
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3900}:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: file:/app/data/custom.db
+      TZ: ${TZ:-Asia/Tehran}
+      # رمز مشترک امضای تیکت‌های عضویت چت (باید با سرویس chat یکی باشد)
+      # — بدون مقدار، compose با پیام خطا متوقف می‌شود (کلید ثابتی وجود ندارد)
+      CHAT_AUTH_SECRET: ${CHAT_AUTH_SECRET:?CHAT_AUTH_SECRET is required — set it in .env (openssl rand -hex 32)}
+      # نمایش کد تایید وقتی پیامک واقعی پیکربندی نشده — فقط محیط توسعه؛
+      # در production این کد هرگز در پاسخ API برگردانده نمی‌شود
+      OTP_DEV_CODE: ${OTP_DEV_CODE:-0}
+    volumes:
+      - avid_db:/app/data
+      - avid_uploads:/app/public/uploads
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "bun", "/app/scripts/healthcheck.ts", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+      # /api/health با خطای دیتابیس 503 برمی‌گرداند → کانتینر «unhealthy»
+
+  # — سرویس رله‌ی چت Socket.IO — پورت میزبان فقط لوکال
+  chat:
+    build:
+      context: ./mini-services/chat-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${CHAT_PORT:-3004}:3004"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: file:/app/data/custom.db
+      TZ: ${TZ:-Asia/Tehran}
+      CHAT_AUTH_SECRET: ${CHAT_AUTH_SECRET:?CHAT_AUTH_SECRET is required — set it in .env (openssl rand -hex 32)}
+    volumes:
+      - avid_db:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "bun", "/app/healthcheck.ts", "http://127.0.0.1:3004/socket.io/?EIO=4&transport=polling"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  # دیتابیس SQLite — فضای دائمی (بکاپ: deploy/backup.sh)
+  avid_db:
+  # فایل‌های آپلودی — فضای دائمی (اولین بار با فایل‌های نمونه پر می‌شود)
+  avid_uploads:
+  # پشتیبان‌ها
+  avid_backups:

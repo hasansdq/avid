@@ -1,0 +1,37 @@
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { requireAdmin, SESSION_COOKIE } from "@/lib/auth";
+import { requestSecure } from "@/lib/http";
+
+/**
+ * POST /api/admin/account/sessions/revoke — ابطال همه‌ی نشست‌های ورود مدیر.
+ *
+ * همه‌ی رکوردهای AdminSession حذف می‌شوند (خروج از همه دستگاه‌ها)؛
+ * کوکی جاری هم پاک می‌شود تا همان لحظه به صفحه‌ی ورود برگردد.
+ */
+export async function POST(req: NextRequest) {
+  const { admin, denial } = await requireAdmin(req);
+  if (denial) return denial;
+
+  try {
+    const revoked = await db.adminSession.deleteMany({
+      where: { adminId: admin.id },
+    });
+
+    const res = NextResponse.json({ ok: true, revoked: revoked.count });
+    res.cookies.set(SESSION_COOKIE, "", {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: requestSecure(req),
+      maxAge: 0,
+      path: "/",
+    });
+    return res;
+  } catch (error) {
+    console.error("revoke sessions error:", error);
+    return NextResponse.json(
+      { error: "خطای داخلی سرور. لطفاً دوباره تلاش کنید." },
+      { status: 500 },
+    );
+  }
+}

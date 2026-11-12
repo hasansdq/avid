@@ -1,0 +1,683 @@
+"use client";
+
+import * as React from "react";
+import Link from "next/link";
+import Image from "next/image";
+import {
+  ArrowRight,
+  CalendarClock,
+  Check,
+  ClipboardCheck,
+  GraduationCap,
+  Hourglass,
+  Inbox,
+  Loader2,
+  LogOut,
+  Phone,
+  RotateCw,
+  ShieldCheck,
+  User,
+  Wallet,
+  X,
+} from "lucide-react";
+import type { SiteSettings } from "@prisma/client";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { cn } from "@/lib/utils";
+import { faDate, faDigits } from "@/lib/fa";
+import {
+  ENROLLMENT_STATUSES,
+  isEnrollmentStatus,
+} from "@/lib/course-theme";
+import type {
+  PanelAttendance,
+  PanelEnrollment,
+  PanelInstallment,
+  PanelMe,
+} from "@/components/panel/types";
+
+/** ظاهر مشترک کارت‌های شیشه‌ای داشبورد — هماهنگ با صفحه‌ی ثبت‌نام */
+const CARD =
+  "rounded-2xl border border-foreground/[0.08] bg-card/85 p-4 shadow-xl shadow-black/[0.04] backdrop-blur-xl sm:p-6 dark:border-white/[0.08] dark:bg-[#08110e]/70 dark:shadow-black/20";
+
+/** مبلغ تومانی با جداکننده‌ی هزارگان فارسی */
+function faAmount(n: number): string {
+  return faDigits(n.toLocaleString("en-US"));
+}
+
+/* ————————————————— نگاشت وضعیت‌ها ————————————————— */
+
+/** وضعیت پرداخت ثبت‌نام (پیش‌ثبت‌نام) */
+const PAYMENT_STATUSES: Record<
+  string,
+  { label: string; badge: string }
+> = {
+  pending: {
+    label: "در انتظار پرداخت",
+    badge:
+      "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-300",
+  },
+  paid: {
+    label: "پرداخت‌شده",
+    badge:
+      "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-300",
+  },
+  failed: {
+    label: "ناموفق",
+    badge:
+      "border-red-500/30 bg-red-500/10 text-red-700 dark:border-red-400/25 dark:bg-red-400/10 dark:text-red-300",
+  },
+};
+
+/** روش پرداخت */
+const PAYMENT_METHODS: Record<string, string> = {
+  cash: "نقدی",
+  installment: "اقساطی",
+};
+
+/** وضعیت قسط */
+const INSTALLMENT_BADGES: Record<string, { label: string; badge: string }> = {
+  paid: {
+    label: "پرداخت‌شده",
+    badge:
+      "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-300",
+  },
+  overdue: {
+    label: "معوق",
+    badge:
+      "border-red-500/30 bg-red-500/10 text-red-700 dark:border-red-400/25 dark:bg-red-400/10 dark:text-red-300",
+  },
+  pending: {
+    label: "در انتظار پرداخت",
+    badge:
+      "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-300",
+  },
+};
+
+/** نشان کوچک با_border ملایم — هم‌سبک نشان‌های دوره‌ها */
+function Chip({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex select-none items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[0.65rem] font-black",
+        className
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+/* ————————————————— داشبورد ————————————————— */
+
+export function PanelDashboard({
+  data,
+  settings,
+  refreshing,
+  onRefresh,
+  onLogout,
+}: {
+  data: PanelMe | null;
+  settings: SiteSettings;
+  refreshing: boolean;
+  onRefresh: () => void | Promise<void>;
+  onLogout: () => void | Promise<void>;
+}) {
+  const [logoFailed, setLogoFailed] = React.useState(false);
+  const [loggingOut, setLoggingOut] = React.useState(false);
+
+  // خروج — دکمه تا پایان عملیات چرخان می‌ماند
+  function handleLogout() {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    void onLogout();
+  }
+
+  /* — اسکلت بارگذاری (ورود موفق؛ داده‌ها هنوز نرسیده‌اند) — */
+  if (!data) return <DashboardSkeleton />;
+
+  const { user, enrollments } = data;
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col gap-4 sm:gap-6",
+        refreshing && "opacity-70 transition-opacity"
+      )}
+    >
+      {/* ————— نوار بالای پنل ————— */}
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          {settings.logoUrl && !logoFailed ? (
+            <Image
+              src={settings.logoUrl}
+              alt={settings.siteName}
+              width={44}
+              height={44}
+              onError={() => setLogoFailed(true)}
+              className="size-11 shrink-0 rounded-2xl border border-foreground/10 bg-background object-cover shadow-lg"
+            />
+          ) : (
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-emerald-600 shadow-lg shadow-teal-500/25">
+              <GraduationCap
+                className="size-6 text-teal-950"
+                strokeWidth={2.2}
+              />
+            </span>
+          )}
+          <div className="min-w-0">
+            <p className="truncate text-base font-black tracking-tight text-foreground sm:text-lg">
+              پنل کاربران {settings.siteName}
+            </p>
+            <p className="truncate text-[0.65rem] font-medium text-muted-foreground">
+              {settings.tagline}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => void onRefresh()}
+            disabled={refreshing}
+            aria-label="به‌روزرسانی اطلاعات پنل"
+            title="به‌روزرسانی"
+            className="size-9 rounded-xl text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground dark:hover:bg-white/[0.06]"
+          >
+            <RotateCw
+              className={cn("size-4", refreshing && "animate-spin")}
+            />
+          </Button>
+          <Button
+            asChild
+            variant="ghost"
+            className="h-9 rounded-xl px-3 text-xs font-bold text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground dark:hover:bg-white/[0.06]"
+          >
+            <Link href="/">
+              <ArrowRight className="size-4" />
+              بازگشت به سایت
+            </Link>
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className="h-9 rounded-xl px-3 text-xs font-bold text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-600 dark:hover:bg-red-400/10 dark:hover:text-red-300"
+          >
+            {loggingOut ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <LogOut className="size-4" />
+            )}
+            خروج
+          </Button>
+        </div>
+      </header>
+
+      {/* ————— کارت پروفایل ————— */}
+      <section className={CARD} aria-label="اطلاعات حساب کاربری">
+        <div className="flex flex-wrap items-center gap-4">
+          <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-emerald-600 shadow-lg shadow-teal-500/25">
+            <User className="size-7 text-teal-950" strokeWidth={2.2} />
+          </span>
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-black text-foreground">
+              {user.firstName} {user.lastName}
+            </h1>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-bold text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <Phone className="size-3.5 shrink-0" />
+                <span dir="ltr" className="tabular-nums">
+                  {faDigits(user.phone)}
+                </span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <CalendarClock className="size-3.5 shrink-0" />
+                عضو از: {faDate(user.createdAt)}
+              </span>
+            </div>
+          </div>
+          <Chip className="ms-auto border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-300">
+            <ShieldCheck className="size-3" />
+            شماره تاییدشده
+          </Chip>
+        </div>
+      </section>
+
+      {/* ————— ثبت‌نام‌های من ————— */}
+      <section aria-label="ثبت‌نام‌های من">
+        <div className="mb-3 flex items-center justify-between gap-2 sm:mb-4">
+          <h2 className="flex items-center gap-2 text-base font-black text-foreground sm:text-lg">
+            <GraduationCap className="size-5 text-teal-600 dark:text-teal-300" />
+            ثبت‌نام‌های من
+          </h2>
+          <span className="select-none rounded-full border border-foreground/10 bg-foreground/[0.04] px-2.5 py-1 text-[0.6rem] font-black text-muted-foreground dark:border-white/10 dark:bg-white/[0.04]">
+            {faDigits(enrollments.length)} ثبت‌نام
+          </span>
+        </div>
+
+        {enrollments.length === 0 ? (
+          <EmptyEnrollments />
+        ) : (
+          <div className="flex flex-col gap-4 sm:gap-6">
+            {enrollments.map((e) => (
+              <EnrollmentCard key={e.id} enrollment={e} />
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+/* ————————————————— حالت خالی ————————————————— */
+
+function EmptyEnrollments() {
+  return (
+    <div
+      className={cn(
+        CARD,
+        "flex flex-col items-center gap-4 px-6 py-12 text-center"
+      )}
+    >
+      <span className="flex size-14 items-center justify-center rounded-2xl bg-foreground/[0.04] dark:bg-white/[0.04]">
+        <Inbox className="size-7 text-muted-foreground" />
+      </span>
+      <div>
+        <p className="text-base font-black text-foreground">
+          هنوز در دوره‌ای ثبت‌نام نکرده‌اید
+        </p>
+        <p className="mt-1.5 text-xs leading-6 text-muted-foreground">
+          از میان دوره‌های فعال، دوره‌ی مورد نظر خود را انتخاب و در چند دقیقه
+          ثبت‌نام کنید.
+        </p>
+      </div>
+      <Button
+        asChild
+        className="h-11 rounded-xl bg-gradient-to-l from-teal-400 to-emerald-500 px-5 text-sm font-black text-teal-950 shadow-lg shadow-teal-500/25 transition-all hover:scale-[1.01]"
+      >
+        <Link href="/register">
+          <GraduationCap className="size-4" />
+          مشاهده‌ی دوره‌ها و ثبت‌نام
+        </Link>
+      </Button>
+    </div>
+  );
+}
+
+/* ————————————————— کارت ثبت‌نام ————————————————— */
+
+/** ردیف فراداده — برچسب کم‌رنگ + مقدار پررنگ */
+function MetaRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-foreground/[0.07] bg-foreground/[0.02] px-3.5 py-2.5 dark:border-white/[0.07] dark:bg-white/[0.02]">
+      <dt className="shrink-0 select-none text-[0.7rem] font-bold text-muted-foreground">
+        {label}
+      </dt>
+      <dd className="min-w-0 text-left text-sm font-bold text-foreground">
+        {children}
+      </dd>
+    </div>
+  );
+}
+
+function EnrollmentCard({ enrollment: e }: { enrollment: PanelEnrollment }) {
+  const status = isEnrollmentStatus(e.status)
+    ? ENROLLMENT_STATUSES[e.status]
+    : null;
+  const payStatus = PAYMENT_STATUSES[e.paymentStatus] ?? null;
+  const showInstallments =
+    e.paymentMethod === "installment" && e.installments.length > 0;
+
+  return (
+    <article className={CARD}>
+      {/* عنوان دوره + وضعیت ثبت‌نام */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-foreground/[0.07] pb-3 dark:border-white/[0.07]">
+        <h3 className="text-base font-black leading-7 text-foreground sm:text-lg">
+          {e.course}
+        </h3>
+        {status ? <Chip className={status.badge}>{status.label}</Chip> : null}
+      </div>
+
+      {/* فراداده */}
+      <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {e.groupTitle ? (
+          <MetaRow label="گروه">{e.groupTitle}</MetaRow>
+        ) : null}
+        {e.paymentMethod ? (
+          <MetaRow label="روش پرداخت">
+            {PAYMENT_METHODS[e.paymentMethod] ?? "—"}
+          </MetaRow>
+        ) : null}
+        {payStatus ? (
+          <MetaRow label="وضعیت پرداخت">
+            <Chip className={payStatus.badge}>{payStatus.label}</Chip>
+          </MetaRow>
+        ) : null}
+        {e.paymentStatus === "paid" && e.paymentRefId ? (
+          <MetaRow label="کد پیگیری">
+            <span dir="ltr" className="tabular-nums">
+              {faDigits(e.paymentRefId)}
+            </span>
+          </MetaRow>
+        ) : null}
+        {e.discountCode ? (
+          <MetaRow label="کد تخفیف">
+            <span className="flex items-center gap-1.5">
+              <span dir="ltr" className="font-black tracking-wide">
+                {e.discountCode}
+              </span>
+              {e.discountAmount ? (
+                <Chip className="border-violet-500/30 bg-violet-500/10 text-violet-700 dark:border-violet-400/25 dark:bg-violet-400/10 dark:text-violet-300">
+                  −{faDigits(e.discountAmount.toLocaleString("en-US"))} تومان
+                </Chip>
+              ) : null}
+            </span>
+          </MetaRow>
+        ) : null}
+        <MetaRow label="تاریخ ثبت‌نام">{faDate(e.createdAt)}</MetaRow>
+      </dl>
+
+      {/* ————— حضور و غیاب ————— */}
+      {e.attendance && e.attendance.sessions.length > 0 ? (
+        <AttendanceBlock attendance={e.attendance} />
+      ) : null}
+
+      {/* ————— اقساط ————— */}
+      {showInstallments ? (
+        <InstallmentsBlock installments={e.installments} />
+      ) : null}
+    </article>
+  );
+}
+
+/* ————————————————— بلوک حضور و غیاب ————————————————— */
+
+/** وضعیت جلسه برای کاربر: حاضر / غایب / در انتظار ثبت */
+const ATTENDANCE_STATES: Record<
+  "present" | "absent" | "pending",
+  { label: string; chip: string }
+> = {
+  present: {
+    label: "حاضر",
+    chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-300",
+  },
+  absent: {
+    label: "غایب",
+    chip: "border-red-500/30 bg-red-500/10 text-red-700 dark:border-red-400/25 dark:bg-red-400/10 dark:text-red-300",
+  },
+  pending: {
+    label: "در انتظار",
+    chip: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-300",
+  },
+};
+
+function AttendanceBlock({ attendance }: { attendance: PanelAttendance }) {
+  const recorded = attendance.sessions.filter((s) => s.present !== null);
+  const presentCount = recorded.filter((s) => s.present === true).length;
+  const absentCount = recorded.length - presentCount;
+  const pendingCount = attendance.sessions.length - recorded.length;
+  const pct =
+    recorded.length > 0
+      ? Math.round((presentCount / recorded.length) * 100)
+      : 0;
+
+  return (
+    <div className="mt-4 rounded-2xl border border-teal-500/25 bg-teal-500/[0.04] p-4 dark:border-teal-400/20 dark:bg-teal-400/[0.04]">
+      {/* سربرگ + خلاصه‌ی تعداد */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="flex items-center gap-2 text-sm font-black text-foreground">
+          <ClipboardCheck className="size-4 text-teal-600 dark:text-teal-300" />
+          حضور و غیاب
+        </h4>
+        <p className="select-none text-[0.7rem] font-bold text-muted-foreground">
+          {faDigits(presentCount)} حاضر · {faDigits(absentCount)} غایب
+          {pendingCount > 0 ? ` · ${faDigits(pendingCount)} در انتظار` : ""}
+        </p>
+      </div>
+
+      {/* درصد حضور از جلسات ثبت‌شده */}
+      <Progress
+        value={pct}
+        className="mt-3 h-1.5 bg-foreground/10 dark:bg-white/10"
+        aria-label={`درصد حضور از ${faDigits(recorded.length)} جلسه‌ی ثبت‌شده: ${faDigits(pct)} درصد`}
+      />
+      <p className="mt-1.5 select-none text-[0.65rem] font-semibold leading-5 text-muted-foreground">
+        {recorded.length > 0
+          ? `درصد حضور: ${faDigits(pct)}٪ از ${faDigits(recorded.length)} جلسه‌ی ثبت‌شده`
+          : "هنوز حضور و غیابی ثبت نشده است"}
+        {" · "}جلسات دوره: {faDigits(attendance.courseSessions)}
+      </p>
+
+      {/* ردیف جلسات — تاریخ و وضعیت هر جلسه */}
+      <ul className="mt-3 max-h-72 space-y-2 overflow-y-auto pe-1">
+        {attendance.sessions.map((s) => {
+          const state: "present" | "absent" | "pending" =
+            s.present === null ? "pending" : s.present ? "present" : "absent";
+          const meta = ATTENDANCE_STATES[state];
+
+          return (
+            <li
+              key={s.index}
+              className="rounded-xl border border-foreground/[0.07] bg-foreground/[0.02] px-3.5 py-3 dark:border-white/[0.07] dark:bg-white/[0.02]"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <span className="text-sm font-black text-foreground">
+                    جلسه {faDigits(s.index)}
+                  </span>
+                  <span className="select-none text-[0.65rem] font-semibold text-muted-foreground">
+                    {s.heldAt ? faDate(s.heldAt) : "بدون تاریخ"}
+                  </span>
+                  {s.active ? (
+                    <Chip className="border-teal-500/30 bg-teal-500/10 text-teal-700 dark:border-teal-400/25 dark:bg-teal-400/10 dark:text-teal-300">
+                      در حال برگزاری
+                    </Chip>
+                  ) : null}
+                </div>
+                <Chip className={meta.chip}>
+                  {state === "present" ? (
+                    <Check className="size-3" strokeWidth={3} />
+                  ) : state === "absent" ? (
+                    <X className="size-3" strokeWidth={3} />
+                  ) : (
+                    <Hourglass className="size-3" />
+                  )}
+                  {meta.label}
+                </Chip>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/* ————————————————— بلوک اقساط ————————————————— */
+
+function InstallmentsBlock({
+  installments,
+}: {
+  installments: PanelInstallment[];
+}) {
+  const now = Date.now();
+  const count = installments.length;
+  const paidItems = installments.filter((i) => i.status === "paid");
+  const paidCount = paidItems.length;
+  const totalAmount = installments.reduce((s, i) => s + i.amount, 0);
+  const paidAmount = paidItems.reduce((s, i) => s + i.amount, 0);
+  const remainingAmount = Math.max(0, totalAmount - paidAmount);
+  const pct =
+    totalAmount > 0 ? Math.round((paidAmount / totalAmount) * 100) : 0;
+
+  return (
+    <div className="mt-4 rounded-2xl border border-teal-500/25 bg-teal-500/[0.04] p-4 dark:border-teal-400/20 dark:bg-teal-400/[0.04]">
+      {/* سربرگ + خلاصه‌ی پیشرفت */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="flex items-center gap-2 text-sm font-black text-foreground">
+          <Wallet className="size-4 text-teal-600 dark:text-teal-300" />
+          اقساط
+        </h4>
+        <p className="select-none text-[0.7rem] font-bold text-muted-foreground">
+          {faDigits(paidCount)} از {faDigits(count)} قسط پرداخت شده
+        </p>
+      </div>
+
+      <Progress
+        value={pct}
+        className="mt-3 h-1.5 bg-foreground/10 dark:bg-white/10"
+        aria-label={`پیشرفت پرداخت اقساط: ${faDigits(pct)} درصد`}
+      />
+
+      {/* ردیف اقساط */}
+      <ul className="mt-3 space-y-2">
+        {installments.map((i) => {
+          // معوق = وضعیت معوق صریح، یا در انتظارِ سررسیدگذشته
+          const isOverdue =
+            i.status === "overdue" ||
+            (i.status === "pending" &&
+              new Date(i.dueDate).getTime() < now);
+          const badge = isOverdue
+            ? INSTALLMENT_BADGES.overdue
+            : INSTALLMENT_BADGES[i.status];
+
+          return (
+            <li
+              key={i.id}
+              className="rounded-xl border border-foreground/[0.07] bg-foreground/[0.02] px-3.5 py-3 dark:border-white/[0.07] dark:bg-white/[0.02]"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <span className="text-sm font-black text-foreground">
+                    قسط {faDigits(i.index)}
+                  </span>
+                  <span className="text-sm font-bold tabular-nums text-foreground/90">
+                    {faAmount(i.amount)} تومان
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <span className="select-none text-[0.65rem] font-semibold text-muted-foreground">
+                    سررسید: {faDate(i.dueDate)}
+                  </span>
+                  {badge ? (
+                    <Chip className={badge.badge}>
+                      {i.status === "paid" ? (
+                        <Check className="size-3" strokeWidth={3} />
+                      ) : null}
+                      {badge.label}
+                    </Chip>
+                  ) : null}
+                </div>
+              </div>
+
+              {i.status === "paid" && i.paidAt ? (
+                <p className="mt-1.5 text-[0.65rem] font-semibold text-emerald-600/80 dark:text-emerald-300/80">
+                  پرداخت‌شده در تاریخ {faDate(i.paidAt)}
+                </p>
+              ) : null}
+              {i.note ? (
+                <p className="mt-1.5 text-[0.65rem] leading-5 text-muted-foreground">
+                  {i.note}
+                </p>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+
+      {/* جمع‌بندی */}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 border-t border-foreground/[0.07] pt-3 text-[0.7rem] font-bold dark:border-white/[0.07]">
+        <p className="select-none text-muted-foreground">
+          مجموع:{" "}
+          <span className="tabular-nums text-foreground">
+            {faAmount(totalAmount)} تومان
+          </span>
+        </p>
+        <p className="select-none text-muted-foreground">
+          پرداخت‌شده:{" "}
+          <span className="tabular-nums text-emerald-600 dark:text-emerald-300">
+            {faAmount(paidAmount)} تومان
+          </span>
+        </p>
+        <p className="select-none text-muted-foreground">
+          مانده:{" "}
+          <span className="tabular-nums text-amber-600 dark:text-amber-300">
+            {faAmount(remainingAmount)} تومان
+          </span>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ————————————————— اسکلت بارگذاری ————————————————— */
+
+function DashboardSkeleton() {
+  return (
+    <div className="flex flex-col gap-4 sm:gap-6" aria-hidden="true">
+      {/* نوار بالا */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="size-11 animate-pulse rounded-2xl bg-foreground/10 dark:bg-white/10" />
+          <div className="space-y-2">
+            <div className="h-4 w-36 animate-pulse rounded bg-foreground/10 dark:bg-white/10" />
+            <div className="h-2.5 w-24 animate-pulse rounded bg-foreground/10 dark:bg-white/10" />
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="size-9 animate-pulse rounded-xl bg-foreground/10 dark:bg-white/10" />
+          <div className="h-9 w-28 animate-pulse rounded-xl bg-foreground/10 dark:bg-white/10" />
+          <div className="h-9 w-20 animate-pulse rounded-xl bg-foreground/10 dark:bg-white/10" />
+        </div>
+      </div>
+
+      {/* پروفایل */}
+      <div className={cn(CARD, "flex animate-pulse items-center gap-4")}>
+        <div className="size-14 shrink-0 rounded-2xl bg-foreground/10 dark:bg-white/10" />
+        <div className="space-y-2.5">
+          <div className="h-4 w-40 animate-pulse rounded bg-foreground/10 dark:bg-white/10" />
+          <div className="h-3 w-56 animate-pulse rounded bg-foreground/10 dark:bg-white/10" />
+        </div>
+      </div>
+
+      {/* سربرگ بخش */}
+      <div className="flex items-center justify-between">
+        <div className="h-5 w-36 animate-pulse rounded bg-foreground/10 dark:bg-white/10" />
+        <div className="h-6 w-16 animate-pulse rounded-full bg-foreground/10 dark:bg-white/10" />
+      </div>
+
+      {/* کارت‌های ثبت‌نام */}
+      {[0, 1].map((k) => (
+        <div key={k} className={cn(CARD, "animate-pulse space-y-3")}>
+          <div className="flex items-center justify-between">
+            <div className="h-5 w-48 animate-pulse rounded bg-foreground/10 dark:bg-white/10" />
+            <div className="h-6 w-24 animate-pulse rounded-full bg-foreground/10 dark:bg-white/10" />
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="h-11 animate-pulse rounded-xl bg-foreground/[0.07] dark:bg-white/[0.07]" />
+            <div className="h-11 animate-pulse rounded-xl bg-foreground/[0.07] dark:bg-white/[0.07]" />
+            <div className="h-11 animate-pulse rounded-xl bg-foreground/[0.07] dark:bg-white/[0.07]" />
+            <div className="h-11 animate-pulse rounded-xl bg-foreground/[0.07] dark:bg-white/[0.07]" />
+          </div>
+          <div className="h-28 animate-pulse rounded-2xl bg-foreground/[0.07] dark:bg-white/[0.07]" />
+        </div>
+      ))}
+    </div>
+  );
+}

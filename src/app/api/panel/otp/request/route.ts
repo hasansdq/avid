@@ -1,0 +1,92 @@
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { findActiveOtp, issueOtp, OTP_RESEND_MS } from "@/lib/user-auth";
+import { sendOtpSms } from "@/lib/sms";
+
+/**
+ * POST /api/panel/otp/request — درخواست کد ورود به پنل کاربر.
+ *
+ * body: { phone }
+ *
+ * برخلاف ثبت‌نام، حساب باید از قبل وجود داشته باشد؛ کاربران مسدود
+ * نمی‌توانند کد دریافت کنند. در حالت نمایشی (سرویس پیامکی متصل نیست)
+ * کد در پاسخ برگردانده می‌شود: { demo: true, devCode }.
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json().catch(() => null);
+    const phone =
+      typeof body?.phone === "string" ? body.phone.replace(/[\s-]/g, "") : "";
+
+    if (!/^09\d{9}$/.test(phone)) {
+      return NextResponse.json(
+        { error: "شماره موبایل معتبر نیست (مثال: 09123456789)." },
+        { status: 400 }
+      );
+    }
+
+    // — حساب باید از قبل (از طریق فرم ثبت‌نام دوره) وجود داشته باشد —
+    const user = await db.user.findUnique({ where: { phone } });
+    if (!user) {
+      return NextResponse.json(
+        {
+          error:
+            "حسابی با این شماره یافت نشد. ابتدا از طریق فرم ثبت‌نام دوره، حساب بسازید.",
+        },
+        { status: 404 }
+      );
+    }
+    if (user.status === "blocked") {
+      return NextResponse.json(
+        {
+          error:
+            "حساب شما توسط مدیر مسدود شده است. برای پیگیری با پشتیبانی تماس بگیرید.",
+        },
+        { status: 403 }
+      );
+    }
+
+    // — محدودیت ارسال مجدد (مشابه مسیر ثبت‌نام) —
+    const active = await findActiveOtp(phone);
+    if (active && Date.now() - active.createdAt.getTime() < OTP_RESEND_MS) {
+      const waitSec = Math.ceil(
+        (OTP_RESEND_MS - (Date.now() - active.createdAt.getTime())) / 1000
+      );
+      return NextResponse.json(
+        {
+          error: `کد تایید قبلی برای این شماره ارسال شده است؛ حدود ${waitSec} ثانیه دیگر دوباره درخواست دهید.`,
+        },
+        { status: 429 }
+      );
+    }
+
+    const { code } = await issueOtp(phone);
+    const sms = await sendOtpSms(phone, code);
+
+    if (!sms.delivered) {
+      // حالت نمایشی (فقط محیط توسعه): بدون سرویس پیامکی واقعی، کد برای
+      // تست در پاسخ برگردانده می‌شود. در production این مقدار هرگز
+      // برگردانده نمی‌شود (حتی با OTP_DEV_CODE=1).
+      const devCodeVisible =
+        process.env.NODE_ENV !== "production" &&
+        process.env.OTP_DEV_CODE !== "0";
+      if (devCodeVisible) {
+        return NextResponse.json({
+          ok: true,
+          demo: true,
+          devCode: code,
+          expiresInSec: 300,
+        });
+      }
+      return NextResponse.json({ ok: true, demo: true, expiresInSec: 300 });
+    }
+
+    return NextResponse.json({ ok: true, demo: false, expiresInSec: 300 });
+  } catch (error) {
+    console.error("panel otp request error:", error);
+    return NextResponse.json(
+      { error: "خطا در ارسال کد تایید. لطفاً دوباره تلاش کنید." },
+      { status: 500 }
+    );
+  }
+}

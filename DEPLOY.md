@@ -1,0 +1,245 @@
+# راهنمای کوتاه استقرار «آوید» روی VPS با Docker و DirectAdmin
+
+این راهنما فایل‌های آماده‌ی همین ریپو (Dockerfile، compose.yaml، deploy/) را
+به‌کار می‌گیرد. ظاهر و امکانات سایت با نسخه‌ی توسعه یکسان است؛ فقط پیکربندی
+استقرار اضافه شده است.
+
+---
+
+## ۰) معماری
+
+```
+مرورگر ──HTTPS──▶ Apache (DirectAdmin، دامنه + گواهی TLS)
+                    │
+                    ├─ /socket.io/  ──▶ 127.0.0.1:3004  (کانتینر chat — Socket.IO)
+                    └─ / (بقیه)     ──▶ 127.0.0.1:3900  (کانتینر web — Next.js standalone)
+
+والی‌های دائمی:
+  avid_db       ← SQLite (فایل custom.db)
+  avid_uploads  ← فایل‌های آپلودی (public/uploads) — بازسازی کانتینر تأثیری ندارد
+  avid_backups  ← پشتیبان‌ها
+```
+
+- سرویس `migrate` (یک‌بار در هر up): **نصب تازه** یا **انتقال دیتابیس
+  نسخه‌ی قبلی** — بدون حذف داده (جزئیات در بخش ۲-ب). هیچ
+  `db push --accept-data-loss`ای در جریان نیست.
+- هر دو سرویس healthcheck دارند (`/api/health` و handshake چت). healthcheck
+  وب با **خطای دیتابیس ۵۰۳** برمی‌گرداند → کانتینر `unhealthy` می‌شود.
+- پورت‌های میزبان فقط روی **127.0.0.1** بسته شده‌اند — دسترسی از بیرون فقط
+  از طریق پروکسی آپاچی دامنه ممکن است.
+- `CHAT_AUTH_SECRET` **الزامی** است — بدون آن compose با پیام خطا متوقف
+  می‌شود (کلید ثابتی در کد وجود ندارد).
+
+---
+
+## ۱) پیش‌نیازها روی VPS
+
+- DirectAdmin با دسترسی Admin (برای Custom HTTPD Configurations)
+- Docker + پلاگین Compose:
+  ```bash
+  curl -fsSL https://get.docker.com | sh
+  docker compose version   # باید v2 باشد
+  ```
+- فایل ZIP سورس (از لینک «دانلود پروژه» در پنل مدیریت، یا `public/Download/`)
+
+---
+
+## ۲) استقرار
+
+> **همه‌ی دستورها را از داخل پوشه‌ی استخراج‌شده‌ی `avid/` اجرا کنید** تا
+> فایل‌های نقطه‌دار (`.env.example`، `.dockerignore` و…) سر جای خود باشند
+> (کپی با glob مانند `avid/*` فایل‌های نقطه‌دار را جا می‌گذارد).
+
+```bash
+mkdir -p /home/<user>/avid-app && cd /home/<user>/avid-app
+unzip /path/to/avid-latest.zip        # محتوا در پوشه‌ی avid/ باز می‌شود
+cd avid                                # از همین‌جا ادامه دهید
+
+cp .env.example .env
+# مقادیر مهم: ADMIN_INITIAL_PASSWORD (قوی) و CHAT_AUTH_SECRET (الزامی):
+#   openssl rand -hex 32
+nano .env
+
+docker compose config --quiet && echo OK   # اعتبارسنجی compose + .env
+docker compose up -d --build
+```
+
+- اولین اجرا: سرویس `migrate` دیتابیس را می‌سازد و مدیر را با
+  `ADMIN_USERNAME`/`ADMIN_INITIAL_PASSWORD` ایجاد می‌کند (اگر رمز خالی باشد،
+  رمز تصادفی در خروجی `docker compose logs migrate` چاپ می‌شود — ذخیره‌اش کنید).
+- بدون داده‌ی دمو؟ دیتابیس خالی اما سالم بالا می‌آید. برای داده‌ی نمونه:
+  `docker compose run --rm migrate bun prisma/seed.ts`
+  (seed هیچ رمز ثابتی ندارد؛ مدیر از bootstrap/`.env` می‌آید.)
+- سلامت: `docker compose ps` → هر دو سرویس باید `healthy` شوند.
+
+### ۲-ب) به‌روزرسانی از نسخه‌ی قبلی (حفظ کامل داده‌ها)
+
+سرویس `migrate` (`scripts/migrate.ts`) وضعیت دیتابیس را تشخیص می‌دهد:
+
+| وضعیت دیتابیس | رفتار |
+|---|---|
+| نصب تازه (جدولی نیست) | `prisma migrate deploy` — ساخت کامل + تاریخچه |
+| تاریخچه‌ی Prisma دارد | `prisma migrate deploy` — فقط مهاجرت‌های معلق |
+| نسخه‌ی قبلی (بدون `_prisma_migrations` — ساخته‌شده با db push) | ۱) **بکاپ** (VACUUM INTO، بدون توقف) ۲) بررسی **تطابق ساختار** با schema ۳) اعمال دستورهای **غیرمخرب** اختلاف (جدول/ستون تازه) ۴) **ثبت migration اولیه در تاریخچه‌ی Prisma** ۵) تایید **حفظ داده** (مقایسه‌ی شمارش سطرها) |
+
+اگر اختلاف ساختاری «مخرب» باشد (حذف جدول/ستون/تغییر نام)، مهاجرت **بدون
+هیچ تغییری** متوقف می‌شود و مسیر بکاپ اعلام می‌گردد (`docker compose logs
+migrate`). اگر در میانه‌ی کار خطایی رخ دهد، دیتابیس از بکاپِ همان لحظه
+بازگردانده می‌شود. برای انتقال دیتابیس نسخه‌ی قبلی:
+
+```bash
+cd avid
+docker compose build migrate          # ایمیج ابزارها (یک‌بار)
+
+# — ۱) بکاپ سازگار با WAL از دیتابیس قبلی (با ابزار sqlite3) —
+sqlite3 /مسیر/نسخه-قبلی/db/custom.db ".backup './old-custom.db'"
+
+# — ۲) جای‌گذاری فایل با دسترسی صحیح در والی (مسیر /app/data/custom.db) —
+#      سرویس migrate با کاربر bun (uid 1000) اجرا می‌شود؛ خودِ او کپی را
+#      انجام می‌دهد تا فایل با مالکیت bun و مجوز ۶۴۴ در والی بنشیند.
+mkdir -p .db-transfer
+cp ./old-custom.db .db-transfer/custom.db
+docker compose run --rm --volume "$(pwd)/.db-transfer:/transfer:ro" migrate \
+  sh -c 'test ! -e /app/data/custom.db && cp /transfer/custom.db /app/data/custom.db && chmod 644 /app/data/custom.db && ls -l /app/data/custom.db'
+# این کپی فقط برای ولوم مقصد خالی است.
+# خروجی ls باید: -rw-r--r-- ... bun bun ... /app/data/custom.db
+
+# — ۳) مهاجرت غیرمخرب (نخستین گامِ خودش: بکاپ VACUUM INTO) + bootstrap مدیر —
+docker compose run --rm migrate
+
+# — ۴) بالا آوردن سرویس‌ها —
+docker compose up -d --build
+rm -rf .db-transfer ./old-custom.db
+```
+
+> ⚠ **چرا این مسیر؟** کپی مستقیم با `docker cp` یا
+> `docker run --rm -v avid_avid_db:/data alpine cp …` فایل را با مالکیت
+> **root** می‌نویسد؛ اپ با کاربر `bun` اجرا می‌شود و SQLite قابل نوشتن
+> نخواهد بود («attempt to write a readonly database»). اگر قبلاً چنین
+> کپی‌ای انجام شده، یک‌بار این را اجرا کنید و دوباره از گام ۲ ادامه دهید:
+> ```bash
+> docker run --rm -v avid_avid_db:/data alpine \
+>   sh -c 'chown 1000:1000 /data /data/custom.db && chmod 755 /data && chmod 644 /data/custom.db'
+> ```
+
+---
+
+## ۳) تنظیم آپاچی در DirectAdmin
+
+در نصب تازه، اطلاعات تماس را در بخش تنظیمات پنل مدیر وارد کنید.
+
+اگر از نصب قبلی استفاده می‌کنید، `WEB_PORT=3900` را در `.env`
+موجود وارد کنید و مقصد پراکسی وب دامنه را هم روی `127.0.0.1:3900` بگذارید.
+
+1. **فعال‌سازی ماژول‌ها** (CustomBuild):
+   ```bash
+   cd /usr/local/directadmin/custombuild
+   ./build set apache_modules "mod_proxy mod_proxy_http mod_proxy_wstunnel mod_rewrite mod_headers"
+   ./build rewrite_confs
+   ```
+
+2. **تنظیم VirtualHost دامنه** — Admin Level → **Custom HTTPD
+   Configurations** → دامنه را انتخاب کنید → محتوای
+   `deploy/apache/vhost-include.conf` را در بخش VirtualHost وارد کنید
+   (تنظیمات `/socket.io/` با WebSocket و polling + پروکسی `/` به ۳۹۰۰).
+
+3. **گواهی TLS**: از DirectAdmin گواهی رایگان Let's Encrypt برای دامنه بگیرید
+   و ریدایرکت HTTP→HTTPS را فعال کنید (کوکی‌های ورود با پروکسی HTTPS خودکار
+   `Secure` می‌شوند).
+
+> اگر دایرکت‌ادمین در حالت **nginx_apache** است (nginx جلو)، به‌جای مرحله‌ی ۲
+> snippet `deploy/nginx/vhost-proxy.conf` را در `server{}` دامنه قرار دهید.
+
+---
+
+## ۴) تنظیمات بعد از اولین ورود
+
+به `/superadmin` وارد شوید و:
+
+1. **رمز مدیر را عوض کنید** — ماژول «حساب و امنیت» → تغییر رمز عبور (همه‌ی
+   نشست‌های قبلی باطل می‌شوند) و در صورت نیاز «خروج از همه دستگاه‌ها».
+2. **پنل پیامکی** (ملی‌پیامک) را پیکربندی کنید — تا وقتی پیکربندی نشده،
+   کد تایید **در production هرگز در پاسخ API برگردانده نمی‌شود**؛ یعنی
+   ورود/ثبت‌نام پیامکی پس از پیکربندی واقعی پنل امکان‌پذیر است.
+3. **درگاه پرداخت** (زرین‌پال/پی‌پینگ) و کدهای تخفیف را تنظیم کنید.
+   پی‌پینگ از API نسخه ۳ استفاده می‌کند. برای پرداخت‌های معلقِ نسخه ۲،
+   پس از تعیین تکلیف تراکنش در پنل پی‌پینگ، پرداخت جدید ایجاد کنید.
+   حالت «آزمایشی» فقط از پنل مدیریت (سمت سرور) فعال می‌شود؛ پارامتر
+   `gateway=test` در URL به‌تنهایی هیچ پرداختی را موفق ثبت نمی‌کند و تراکنش
+   واقعی فقط پس از تأییدِ درگاه ثبت می‌شود.
+4. یک ویدئو با «لینک مستقیم mp4» بسازید و پخش را تست کنید.
+
+---
+
+## ۵) عملیات روتین
+
+| کار | دستور (از داخل `avid/`) |
+|---|---|
+| بکاپ آنلاین (DB + uploads) | `bash deploy/backup.sh` |
+| به‌روزرسانی غیرمخرب | `bash deploy/update.sh` (بکاپ → build → migrate → up) |
+| بازیابی دیتابیس | `bash deploy/restore.sh avid-YYYYMMDD-HHMMSS.db` |
+| لاگ‌ها | `docker compose logs -f web` / `logs -f chat` / `logs migrate` |
+| ورود به کانتینر | `docker compose exec web sh` |
+
+**بکاپ خودکار روزانه (۳ بامداد به وقت سرور):**
+```bash
+crontab -e
+0 3 * * * cd /home/<user>/avid-app/avid && bash deploy/backup.sh >> /var/log/avid-backup.log 2>&1
+```
+
+---
+
+## ۶) چک‌لیست تست روی VPS (نیازمند محیط واقعی)
+
+موارد زیر در محیط توسعه/بیلد production شبیه‌سازی و پاس شده‌اند (گزارش کامل:
+`TEST-RESULTS.md`)، اما حتماً روی VPS هم یک‌بار تست کنید:
+
+- [ ] **Docker Compose**: `docker compose config --quiet` بدون خطا (در همین
+      ریپو با Compose v2.39 اعتبارسنجی شده)؛ `docker compose up -d --build`
+      → هر دو سرویس `healthy` (بیلد ایمیج نیازمند داکرِ واقعی است — روی
+      این ماشین در دسترس نبود). healthcheck وب با خطای دیتابیس
+      ۵۰۳/unhealthy می‌شود — عمداً؛ برای تست: مسیر `DATABASE_URL` را
+      موقتاً غلط کنید.
+- [ ] **HTTPS کامل**: ورود مدیر/کاربر، ثبت‌نام، آپلود و نمایش فایل — روی
+      دامنه با گواهی معتبر (پروکسی آپاچی + هدرهای X-Forwarded).
+- [ ] **WebSocket چت پشت آپاچی**: پنل مدیریت → گفتگو با خودتان در یک مرورگر
+      دیگر — پیام‌ها و «در حال تایپ…» باید لحظه‌ای رد و بدل شوند (F12 →
+      Network → `socket.io/?EIO=4…transport=websocket` با کد 101).
+- [ ] **پیامک واقعی**: پیکربندی ملی‌پیامک → ثبت‌نام با کد پیامکی واقعی و
+      ورود پنل کاربر (کد تایید در پاسخ API نمایش داده نمی‌شود).
+- [ ] **درگاه واقعی**: پرداخت کوچک با زرین‌پال (یا پی‌پینگ) و برگشت به
+      `/register?payment=success` + ثبت شدن در پنل. همچنین: در حالت درگاه
+      واقعی، باز کردن دستی
+      `/api/payment/callback?gateway=test&ref=x&enrollmentId=y` باید به
+      «پرداخت ناموفق» ختم شود (پارامتر URL پرداخت را تأیید نمی‌کند).
+      برای پی‌پینگ، برگشتنِ دستی کال‌بک بدون `clientrefid` (شناسه‌ی سفارش)
+      هم باید «پرداخت ناموفق» بدهد و کال‌بکِ تکراریِ همان refid نباید
+      ثبتِ دوباره‌ای انجام دهد.
+- [ ] **انتقال دیتابیس قبلی**: دستورهای بخش ۲-ب (جای‌گذاری با مالکیت bun
+      در `/app/data/custom.db` → `docker compose run --rm migrate`) → داده‌ها
+      (دانشجوها/ثبت‌نام‌ها) باید سر جای خود باشند + `docker compose logs
+      migrate` مسیر بکاپِ پیش از انتقال را نشان دهد.
+- [ ] **بازسازی کانتینر و ماندگاری**: یک تصویر/ویدئو آپلود کنید →
+      `docker compose up -d --build` (بازسازی) → فایل باید همچنان از همان
+      URL نمایش داده شود (والی `avid_uploads`؛ سرو فایل در production
+      از route استریم `/uploads/…` انجام می‌شود — در بیلد standalone
+      محلی تست شده، روی VPS با پروکسی HTTPS تایید نهایی شود).
+- [ ] **دسترسی پورت‌ها**: `ss -tlnp | grep -E '3900|3004'` — فقط روی
+      127.0.0.1 باید گوش بدهند (نه 0.0.0.0).
+- [ ] **بکاپ/بازیابی**: یک‌بار `deploy/backup.sh` و بازیابی روی دیتابیس آزمایشی.
+- [ ] **آپلود ویدئو** بزرگ (تا ۲۵۶MB) — `LimitRequestBody`/`client_max_body_size`
+      در تنظیمات پروکسی لحاظ شده است.
+
+---
+
+## ۷) رفع اشکال سریع
+
+| نشانه | بررسی |
+|---|---|
+| سایت 502 | `docker compose ps` — سرویس web بالاست؟ `docker compose logs web` |
+| web «unhealthy» | `curl 127.0.0.1:3900/api/health` → فیلد `db`؛ خطای دیتابیس؟ والی `avid_db` و لاگ `migrate` |
+| compose درباره CHAT_AUTH_SECRET خطا می‌دهد | `.env` کنار compose.yaml → مقدار `openssl rand -hex 32` |
+| چت وصل نمی‌شود | تنظیم `/socket.io/` در VirtualHost + ماژول `mod_proxy_wstunnel` |
+| خطای مهاجرت | `docker compose logs migrate` — قبل از آن `deploy/backup.sh` (خودِ migrate هم بکاپ می‌گیرد) |
+| رمز مدیر فراموش شده | در `.env`: `ADMIN_FORCE_RESET=1` + `ADMIN_INITIAL_PASSWORD=…` → `docker compose run --rm migrate` → مقدار را 0 برگردانید |
+| آپلود ناموفق | سطح دسترسی والی avid_uploads: `docker compose exec web ls -la public/uploads` |

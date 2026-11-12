@@ -1,0 +1,31 @@
+# چیزهایی که به ایمیج/بیلد راه نمی‌دهیم —
+# امنیت: .env واقعی و دیتابیس محلی هرگز وارد کانتینر/بیلد نمی‌شوند.
+node_modules
+.next
+.next-prod
+.git
+.zip-stage
+.env
+.env.*
+!.env.example
+db
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+dev.log
+server.log
+download
+public/Download
+screenshots
+skills
+examples
+agent-ctx
+.zscripts
+tests
+Caddyfile
+mini-services/**/node_modules
+mini-services/chat-service/*.db
+.DS_Store
+
+.db-transfer

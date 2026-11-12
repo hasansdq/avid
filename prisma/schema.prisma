@@ -1,0 +1,455 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// هویت و تنظیمات کلی سایت (رکورد یگانه با id = "main")
+model SiteSettings {
+  id                    String   @id @default("main")
+  siteName              String   @default("آوید")
+  tagline               String   @default("آکادمی مهارت‌های آینده")
+  slogan                String   @default("یادگیری هر مهارتی، سرمایه‌ی شما در آینده است")
+  heroDescription       String   @default("در آکادمی آوید، از هوش مصنوعی تا برنامه‌نویسی کودکان، با پروژه‌های واقعی و پشتیبانی متخصص‌ها مهارت بسازید و آینده شغلی خود را تضمین کنید.")
+  logoUrl               String   @default("/images/logo.png")
+  studentsCount         Int      @default(270)
+  completedCoursesCount Int      @default(13)
+  rating                Float    @default(4.9)
+  contactPhone          String   @default("")
+  contactEmail          String   @default("")
+  address               String   @default("")
+  supportHours          String   @default("شنبه تا جمعه، ۹ صبح تا ۱۸")
+  instagramUrl          String   @default("")
+  telegramUrl           String   @default("")
+  youtubeUrl            String   @default("")
+  linkedinUrl           String   @default("")
+  footerDescription     String   @default("یادگیری هر مهارتی، سرمایه‌ی شما در آینده است. ما با دوره‌های پروژه‌محور و مربیان متخصص، همراه شما در این مسیر هستیم.")
+  // — فونت‌های قابل انتخاب از ماژول «فونت‌ها» (کلیدهای رجیستری src/lib/fonts.ts) —
+  sloganFont            String   @default("vazirmatn") // فونت اسلوگان اصلی صفحه‌ی خانه
+  headerFont            String   @default("vazirmatn") // فونت هدر (نوار بالا)
+  footerFont            String   @default("vazirmatn") // فونت فوتر (پاورقی)
+  updatedAt             DateTime @updatedAt
+}
+
+// دوره‌های آموزشی (آنلاین و حضوری)
+model Course {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  category    String   @default("عمومی")
+  type        String   @default("online") // online | inperson
+  level       String   @default("مقدماتی") // مقدماتی | متوسط | پیشرفته
+  hours       Int      @default(0)
+  sessions    Int      @default(0)
+  instructor  String   @default("")
+  price       Int      @default(0) // تومان؛ صفر یعنی رایگان
+  cashTuition        Int      @default(10000000) // شهریه نقدی این دوره (تومان)
+  installmentTuition Int      @default(12000000) // مبلغ کل اقساطی این دوره (تومان)؛ صفر = بدون گزینه اقساطی
+  capacity    Int      @default(0) // ظرفیت دوره (نفر)؛ صفر = بدون محدودیت — آنلاین معمولاً ۲۰؛ حضوری = مجموع ظرفیت گروه‌ها
+  schedule    String   @default("") // زمان‌بندی (مخصوص دوره‌های حضوری)
+  students    Int      @default(0)
+  icon        String   @default("Sparkles") // نام آیکون از رجیستری
+  imageUrl    String   @default("") // تصویر شاخص/بندانگشتی دوره (آپلود یا آدرس)؛ خالی = نمایش آیکون
+  theme       String   @default("teal") // کلید تم از رجیستری
+  tag         String? // برچسب ویژه مثل «پرمخاطب»
+  sortOrder   Int      @default(0)
+  published   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // گروه‌های زمان‌بندی دوره‌های حضوری — هر گروه زمان‌بندی و ظرفیت جداگانه دارد
+  groups      CourseGroup[]
+
+  // — قالب اقساط دوره — تعداد و تاریخ سررسید هر قسط (اختیاری؛
+  // خالی = تعداد از تنظیمات سراسری و سررسید ۳۰ روزه خودکار)
+  installmentTemplate CourseInstallment[]
+
+  // جلسات حضور و غیاب دوره — یک ردیف برای هر جلسه‌ی فعال‌شده/برگزارشده
+  attendanceSessions AttendanceSession[]
+}
+
+// گروه‌های زمان‌بندی دوره‌های حضوری —
+// هر گروه (مثلاً دوشنبه/چهارشنبه یا یکشنبه/سه‌شنبه) ظرفیت جداگانه‌ای دارد
+model CourseGroup {
+  id         String   @id @default(cuid())
+  course     Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId   String
+  title      String // مثلاً «گروه ۱»
+  schedule   String   @default("") // مثلاً «دوشنبه و چهارشنبه، ۱۶ تا ۱۸»
+  capacity   Int      @default(10) // ظرفیت جداگانه‌ی گروه (نفر)؛ صفر = بدون محدودیت
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  enrollments Enrollment[]
+
+  @@index([courseId])
+}
+
+// قالب اقساط دوره — تعداد و تاریخ سررسید هر قسط که مدیر در فرم دوره تعریف می‌کند
+// (پیش‌فرض ۳ قسط؛ برای هر دوره قابل تغییر). هنگام ثبت‌نام اقساطی، طرح واقعی
+// کاربر از همین قالب ساخته می‌شود: تعداد = تعداد ردیف‌ها و سررسیدها = همین تاریخ‌ها.
+model CourseInstallment {
+  id        String   @id @default(cuid())
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId  String
+  index     Int // شماره‌ی قسط (۱ تا N)
+  dueDate   DateTime // تاریخ سررسید این قسط
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([courseId])
+}
+
+// ویدئوهای آموزشی
+model Video {
+  id          String   @id @default(cuid())
+  title       String
+  description String   @default("")
+  url         String   @default("") // لینک پخش: یوتیوب/آپارات/وی‌میو، لینک مستقیم فایل (https) یا مسیر فایل آپلودشده (/uploads/videos/...)؛ خالی یعنی قفل برای اعضا
+  thumbnail   String   @default("")
+  duration    String   @default("") // متن آزاد مثل «۱۸:۴۲»
+  views       Int      @default(0)
+  level       String   @default("مقدماتی")
+  sortOrder   Int      @default(0)
+  published   Boolean  @default(true)
+
+  // — لیست پخش (اختیاری) —
+  playlist    Playlist? @relation(fields: [playlistId], references: [id], onDelete: SetNull)
+  playlistId  String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([playlistId])
+}
+
+// لیست‌های پخش ویدئو — شبیه لیست پخش یوتیوب
+model Playlist {
+  id          String   @id @default(cuid())
+  title       String
+  description String   @default("")
+  thumbnail   String   @default("") // تصویر کاور لیست پخش (آپلود یا آدرس)
+  sortOrder   Int      @default(0)
+  published   Boolean  @default(true)
+  // مخاطب نمایش لیست پخش: guest = فقط مهمان‌ها، user = فقط کاربران لاگین‌کرده، both = هر دو
+  visibility  String   @default("both") // guest | user | both
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  videos      Video[]
+}
+
+// فونت‌های نصب‌شده سایت — ۵ فونت پیش‌فرض + فونت‌های آپلودی مدیر
+// cssText قواعد کامل @font-face است (با مسیرهای /fonts/... برای پیش‌فرض‌ها
+// و /uploads/fonts/... برای فایل‌های آپلودی)؛ family مقدار font-family برای استایل درون‌خطی است.
+model InstalledFont {
+  id        String   @id @default(cuid())
+  key       String   @unique // کلید یکتا برای ارجاع در SiteSettings (sloganFont و…)
+  label     String // نام نمایشی فارسی
+  family    String // مقدار font-family بدون fallback
+  cssText   String   @default("") // قواعد @font-face؛ خالی برای وزیرمتن (next/font محلی)
+  builtin   Boolean  @default(false) // فونت‌های پیش‌فرض غیرقابل حذف‌اند
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// لینک‌ها و دکمه‌های هدر و فوتر — قابل مدیریت از پنل مدیر
+// section: header | footer · kind: internal | external
+model NavLink {
+  id        String   @id @default(cuid())
+  section   String   @default("header") // هدر یا فوتر
+  label     String
+  url       String   @default("") // مقصد: مسیر/لنگر داخلی (مثل #courses یا /register) یا آدرس خارجی کامل
+  kind      String   @default("internal") // internal | external
+  target    String   @default("same") // same | blank — باز شدن در تب جدید
+  isButton  Boolean  @default(false) // نمایش به‌شکل دکمه برجسته (فقط هدر)
+  sortOrder Int      @default(0)
+  published Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([section])
+}
+
+// نظرات کاربران
+model Testimonial {
+  id        String   @id @default(cuid())
+  name      String
+  role      String   @default("")
+  course    String   @default("")
+  text      String
+  rating    Int      @default(5) // ۱ تا ۵
+  theme     String   @default("teal") // کلید تم آواتار از رجیستری
+  sortOrder Int      @default(0)
+  published Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ثبت‌نام‌های دوره‌ها (پیش‌ثبت‌نام)
+model Enrollment {
+  id             String    @id @default(cuid())
+  name           String
+  firstName      String    @default("") // نام کاربر (از مرحله‌ی ثبت‌نام/حساب)
+  lastName       String    @default("") // نام خانوادگی کاربر
+  phone          String
+  course         String
+  message        String? // (کاربرد قدیمی — از فرم سایت حذف شده)
+  status         String    @default("new") // new | contacted | enrolled | archived
+
+  // — گروه انتخابی (برای دوره‌های حضوری دارای گروه) —
+  group          CourseGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  groupId        String?
+  groupTitle     String? // تصویر لحظه‌ای نام گروه
+
+  // — پیوند به حساب کاربری تاییدشده —
+  user           User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId         String?
+
+  // — کد تخفیف اعمال‌شده (در صورت استفاده) —
+  discountCode   String? // متن کد تخفیف ثبت‌شده در فرم
+  discountAmount Int? // مبلغ تخفیف اعمال‌شده (تومان)
+
+  // — اطلاعات پرداخت پیش‌ثبت‌نام —
+  paymentMethod  String? // cash | installment
+  paymentAmount  Int? // مبلغ قابل پرداخت (تومان)
+  paymentStatus  String    @default("pending") // pending | paid | failed
+  paymentGateway String? // zarinpal | payping | test
+  paymentRefId   String? // کد پیگیری درگاه (authority / refId)
+  paymentAttemptCode String? // کد درخواست ثبت‌شده پیش از رفتن به درگاه
+  paymentCardPan String? // شماره کارت ماسک‌شده
+  paidAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  // — اقساط (برای ثبت‌نام‌های پرداخت اقساطی) —
+  installments   Installment[]
+
+  // — حضور و غیاب این ثبت‌نام در جلسات دوره —
+  attendanceRecords AttendanceRecord[]
+}
+
+// جلسه‌ی حضور و غیاب یک دوره — با فعال‌سازی چک‌باکس سر ستون ساخته می‌شود؛
+// «فعال» یعنی حضور و غیاب آن جلسه در جریان است (همه حاضر ثبت می‌شوند).
+// heldAt تاریخ فعال‌سازی/برگزاری جلسه است که در انتهای ستون نشان داده می‌شود.
+model AttendanceSession {
+  id        String    @id @default(cuid())
+  course    Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId  String
+  index     Int // شماره‌ی جلسه (۱ تا N)
+  active    Boolean   @default(false)
+  heldAt    DateTime? // تاریخ فعال‌سازی جلسه — تاریخ انتهای ستون
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  records   AttendanceRecord[]
+
+  @@unique([courseId, index])
+  @@index([courseId])
+}
+
+// حضور و غیاب هر ثبت‌نام در یک جلسه — true = حاضر، false = غایب
+model AttendanceRecord {
+  id            String            @id @default(cuid())
+  session       AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId     String
+  enrollment    Enrollment        @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  enrollmentId  String
+  present       Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@unique([sessionId, enrollmentId])
+  @@index([enrollmentId])
+}
+
+// کاربران سایت — ثبت‌نام/ورود با تایید پیامکی شماره موبایل (مرحله‌ی اول فرم)
+model User {
+  id         String       @id @default(cuid())
+  firstName  String
+  lastName   String
+  phone      String       @unique
+  status     String       @default("active") // active | blocked — کاربر مسدود نمی‌تواند وارد پنل شود
+  note       String? // یادداشت مدیر درباره‌ی این کاربر
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  sessions   UserSession[]
+  enrollments Enrollment[]
+}
+
+// نشست ورود کاربران سایت
+model UserSession {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+// اقساط پرداخت — برای ثبت‌نام‌هایی که روش پرداخت اقساطی را انتخاب کرده‌اند
+// طرح اقساط هنگام ثبت‌نام اقساطی ساخته می‌شود و در پنل مدیر و پنل کاربر نمایش داده می‌شود
+model Installment {
+  id           String     @id @default(cuid())
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  enrollmentId String
+  index        Int // شماره‌ی قسط (۱ تا N)
+  amount       Int // مبلغ این قسط (تومان)
+  dueDate      DateTime // سررسید پرداخت
+  status       String     @default("pending") // pending | paid | overdue
+  paidAt       DateTime?
+  note         String? // یادداشت مدیر (مثلاً شماره پیگیری واریز)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([enrollmentId])
+  @@index([status, dueDate])
+}
+
+// تنظیمات پنل پیامکی — ملی پیامک (رکورد یگانه با id = "main")
+// دو روش اتصال: وب‌سرویس REST (rest.payamak-panel.com) با نام کاربری/رمز یا API Key،
+// و کنسول ملی پیامک (console.melipayamak.com) با API Key کنسول
+model SmsSettings {
+  id            String   @id @default("main")
+  provider      String   @default("none") // none | rest | console
+  // — وب‌سرویس REST —
+  username      String   @default("") // نام کاربری پنل ملی پیامک
+  password      String   @default("") // رمز عبور پنل (یا خالی در صورت استفاده از API Key)
+  apiKey        String   @default("") // کلید API وب‌سرویس (هدر X-API-KEY) — اختیاری به‌جای رمز
+  // — کنسول ملی پیامک —
+  consoleApiKey String   @default("") // کلید API کنسول (وب‌سرویس‌ها ← API Key)
+  // — مشترک —
+  fromNumber    String   @default("") // شماره‌ی خط فرستنده (مثل 500040...)
+  otpBodyId     String   @default("") // شناسه‌ی پترن OTP برای ارسال خدماتی (اختیاری؛ خالی = ارسال ساده)
+  signature     String   @default("") // امضای انتهای همه‌ی پیامک‌ها (اختیاری)
+  updatedAt     DateTime @updatedAt
+}
+
+// گزارش ارسال پیامک‌ها — هر ارسال (دستی/OTP/تستی/سیستمی) ثبت می‌شود
+model SmsLog {
+  id        String   @id @default(cuid())
+  phone     String
+  text      String
+  kind      String   @default("manual") // manual | otp | test | system
+  provider  String   @default("none") // none | rest | console
+  status    String   @default("pending") // sent | failed | pending
+  recId     String   @default("") // شناسه‌ی رسالت ملی پیامک (Value)
+  response  String   @default("") // پاسخ خام سرویس (کوتاه‌شده برای عیب‌یابی)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([phone])
+}
+
+// کدهای یک‌بارمصرف پیامکی (تایید شماره موبایل)
+model OtpCode {
+  id         String    @id @default(cuid())
+  phone      String
+  codeHash   String // کد ۶ رقمی هش‌شده
+  attempts   Int       @default(0) // حداکثر ۵ تلاش برای هر کد
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([phone, createdAt])
+}
+
+// کدهای تخفیف پیش‌ثبت‌نام — قابل تعریف برای پرداخت نقدی/اقساطی (یا هر دو)
+// valueType: percent (درصد ۱ تا ۱۰۰) یا amount (مبلغ ثابت تومان)
+// paymentType: cash | installment | both
+model DiscountCode {
+  id          String    @id @default(cuid())
+  code        String    @unique // کد یکتا (به‌صورت حروف بزرگ ذخیره می‌شود)
+  paymentType String    @default("both") // cash | installment | both
+  valueType   String    @default("percent") // percent | amount
+  value       Int       @default(0) // درصد یا مبلغ تخفیف (تومان)
+  maxUses     Int       @default(0) // حداکثر استفاده (۰ = نامحدود)
+  usedCount   Int       @default(0) // تعداد استفاده تا کنون
+  expiresAt   DateTime? // تاریخ انقضا (null = بی‌نهایت)
+  active      Boolean   @default(true)
+  note        String? // توضیح داخلی مدیر
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([active])
+}
+
+// تنظیمات درگاه پرداخت (رکورد یگانه با id = "main")
+// توجه: شهریه نقدی/اقساطی هر دوره در همان رکورد Course تعریف می‌شود.
+model PaymentSettings {
+  id                 String   @id @default("main")
+  gateway            String   @default("none") // none | zarinpal | payping | test
+  zarinpalMerchantId String   @default("") // شناسه پذیرنده زرین‌پال
+  paypingApiKey      String   @default("") // توکن API پی‌پینگ
+  installmentCount   Int      @default(3) // تعداد اقساط پیش‌فرض (وقتی دوره قالب اختصاصی ندارد)
+  updatedAt          DateTime @updatedAt
+}
+
+// مدیران پنل
+model AdminUser {
+  id           String         @id @default(cuid())
+  username     String         @unique
+  passwordHash String
+  createdAt    DateTime       @default(now())
+  sessions     AdminSession[]
+}
+
+// نشست‌های ورود مدیر
+model AdminSession {
+  id        String     @id @default(cuid())
+  token     String     @unique
+  admin     AdminUser  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  adminId   String
+  expiresAt DateTime
+  createdAt DateTime   @default(now())
+}
+
+// تنظیمات چت‌بات پشتیبانی سایت (رکورد یگانه با id = "main")
+model ChatSettings {
+  id             String   @id @default("main")
+  botName        String   @default("پشتیبان آوید")
+  botTitle       String   @default("پشتیبانی آکادمی آوید")
+  botAvatar      String   @default("/images/chat/bot-avatar.png")
+  welcomeMessage String   @default("سلام 👋 به آکادمی آوید خوش آمدید!\nمن پشتیبان آنلاین آوید هستم. اگر درباره‌ی دوره‌ها، ثبت‌نام یا پرداخت سوالی دارید همین‌جا بنویسید؛ پیام شما مستقیماً به تیم پشتیبانی می‌رسد و سریع پاسخ می‌گیرد.")
+  autoOpen       Boolean  @default(true) // نمایش خودکار حباب خوش‌آمدگویی هنگام ورود کاربر به سایت (هر IP یک بار در شبانه‌روز)
+  isActive       Boolean  @default(true) // فعال/غیرفعال بودن چت برای بازدیدکنندگان
+  updatedAt      DateTime @updatedAt
+}
+
+// نمایش حباب پیام خوش‌آمدگویی چت —
+// برای هر IP حداکثر یک بار در هر شبانه‌روز (مرز روز به وقت تهران) در کل سایت
+model ChatWelcomeLog {
+  ip      String   @id
+  shownAt DateTime @default(now())
+}
+
+// گفتگوی هر بازدیدکننده سایت با پشتیبانی (با توکن کوکی مرورگر شناسایی می‌شود)
+model ChatConversation {
+  id                 String        @id @default(cuid())
+  visitorToken       String        @unique
+  displayName        String        @default("") // نام نمایشی بازدیدکننده (اختیاری)
+  lastMessageAt      DateTime      @default(now())
+  lastMessagePreview String        @default("") // ۱۲۰ کاراکتر آخر پیام برای لیست مدیر
+  unreadForAdmin     Int           @default(0)
+  unreadForVisitor   Int           @default(0)
+  createdAt          DateTime      @default(now())
+  messages           ChatMessage[]
+}
+
+// پیام‌های گفتگو (بازدیدکننده / مدیر / ربات)
+model ChatMessage {
+  id             String           @id @default(cuid())
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId String
+  sender         String // visitor | admin | bot
+  senderName     String           @default("")
+  content        String
+  createdAt      DateTime         @default(now())
+
+  @@index([conversationId, createdAt])
+}
