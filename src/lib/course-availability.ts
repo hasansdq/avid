@@ -16,7 +16,7 @@ import {
  *
  * ظرفیت صفر یعنی بدون محدودیت (برای دوره‌های قدیمی/بدون ظرفیت).
  *
- * دوره‌های حضوریِ دارای گروه: ظرفیت واقعی در سطح گروه اعمال می‌شود؛
+ * دوره‌های حضوری/ترکیبیِ دارای گروه: ظرفیت واقعی در سطح گروه اعمال می‌شود؛
  * «ظرفیت دوره» = مجموع ظرفیت گروه‌ها و «تکمیل» یعنی پر بودن همه‌ی گروه‌ها.
  */
 
@@ -121,8 +121,8 @@ export async function getPublicAvailability(): Promise<AvailabilityMap> {
 
   const map: AvailabilityMap = {};
   for (const c of courses) {
-    // — دوره‌ی حضوریِ دارای گروه: ظرفیت در سطح گروه اعمال می‌شود —
-    if (c.type === "inperson" && c.groups.length > 0) {
+    // — دوره‌ی گروه‌دار (حضوری/ترکیبی): ظرفیت در سطح گروه اعمال می‌شود —
+    if (c.type !== "online" && c.groups.length > 0) {
       const groups = c.groups.map((g) =>
         computeGroupAvailability(g, groupCounts.get(g.id) ?? 0)
       );
@@ -133,7 +133,7 @@ export async function getPublicAvailability(): Promise<AvailabilityMap> {
       continue;
     }
 
-    // — بقیه‌ی دوره‌ها (آنلاین یا حضوری بدون گروه) —
+    // — بقیه‌ی دوره‌ها (آنلاین یا حضوری/ترکیبی بدون گروه) —
     map[c.title] = computeAvailability(c.capacity, counts.get(c.title) ?? 0);
   }
   return map;

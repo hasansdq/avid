@@ -3,6 +3,12 @@
  * (تاریخ‌ها به‌صورت رشته‌ی ISO از JSON می‌آیند)
  */
 
+import type {
+  QuestionAnswer,
+  QuestionOptions,
+  QuestionType,
+} from "@/lib/exam";
+
 export type PanelInstallmentStatus = "pending" | "paid" | "overdue";
 export type PanelPaymentMethod = "cash" | "installment";
 export type PanelPaymentStatus = "pending" | "paid" | "failed";
@@ -59,6 +65,8 @@ export interface PanelEnrollment {
   discountCode: string | null;
   /** مبلغ تخفیف (تومان) */
   discountAmount: number | null;
+  /** معدل کارآموز در این دوره (۰ تا ۲۰) — null یعنی هنوز ثبت نشده */
+  grade: number | null;
   createdAt: string;
   installments: PanelInstallment[];
   /** حضور و غیاب جلسات دوره — null یعنی دوره‌ی متناظر یافت نشد */
@@ -71,6 +79,8 @@ export interface PanelUser {
   firstName: string;
   lastName: string;
   phone: string;
+  /** کد ملی (اختیاری) — برای استعلام گواهی‌نامه‌ها */
+  nationalId: string | null;
   createdAt: string;
 }
 
@@ -78,4 +88,101 @@ export interface PanelUser {
 export interface PanelMe {
   user: PanelUser;
   enrollments: PanelEnrollment[];
+}
+
+/* ————————————————— آزمون‌ها (پنل کاربر) ————————————————— */
+
+/* ————————————————— گواهینامه‌ها (پنل کاربر) ————————————————— */
+
+/** گواهینامه‌ی صادرشده — GET /api/panel/certificates → certificates[] */
+export interface PanelCertificate {
+  id: string;
+  /** کد رهگیری/اعتبارسنجی روی برگه */
+  code: string;
+  /** عنوان دوره (تصویر لحظه‌ای) */
+  courseTitle: string;
+  /** معدل ثبت‌شده هنگام صدور (۰ تا ۲۰) */
+  grade: number | null;
+  /** توضیح/عنوان اختیاری روی گواهینامه */
+  note: string;
+  /** فایل آپلودشده‌ی گواهینامه (PDF یا تصویر) — خالی یعنی بدون فایل */
+  fileUrl: string;
+  issuedAt: string;
+}
+
+/** آزمون قابل مشاهده برای کاربر — GET /api/panel/exams → exams[] */
+export interface PanelExam {
+  id: string;
+  title: string;
+  description: string;
+  accessType: ExamAccess;
+  durationMinutes: number;
+  courseTitle: string | null;
+  questionCount: number;
+  myAttempts: PanelExamAttempt[];
+}
+
+/** نوع دسترسی آزمون از دید کاربر */
+export type ExamAccess = "course" | "open" | "password";
+
+/** سابقه‌ی شرکت کاربر در یک آزمون */
+export interface PanelExamAttempt {
+  id: string;
+  score: number | null;
+  autoScore: number;
+  totalPoints: number;
+  hasEssay: boolean;
+  finishedAt: string;
+}
+
+/** پاسخ POST /api/panel/exams/[id]/start — سوالات بدون پاسخ صحیح */
+export interface PanelExamStart {
+  attemptId: string;
+  startedAt: string;
+  exam: {
+    id: string;
+    title: string;
+    description: string;
+    durationMinutes: number;
+    courseTitle: string | null;
+  };
+  questions: PanelQuestionView[];
+}
+
+/** سوال آماده‌ی نمایش (بدون پاسخ صحیح) */
+export interface PanelQuestionView {
+  id: string;
+  type: QuestionType;
+  text: string;
+  image: string;
+  video: string;
+  points: number;
+  order: number;
+  options: QuestionOptions;
+}
+
+/** سوال برگه‌ی مرور پس از ثبت پاسخ‌ها */
+export interface PanelReviewQuestion {
+  id: string;
+  type: QuestionType;
+  text: string;
+  image: string;
+  video: string;
+  points: number;
+  options: QuestionOptions;
+  userAnswer: unknown;
+  correct: boolean | null;
+  earned: number;
+  correctAnswer: QuestionAnswer;
+}
+
+/** پاسخ POST /api/panel/exams/[id]/submit — نمره + برگه‌ی مرور */
+export interface PanelExamResult {
+  score: number | null;
+  autoScore: number;
+  autoMax: number;
+  totalPoints: number;
+  hasEssay: boolean;
+  finishedAt: string;
+  review: PanelReviewQuestion[];
 }

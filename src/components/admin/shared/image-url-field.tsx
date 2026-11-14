@@ -15,6 +15,8 @@ import { Label } from "@/components/ui/label";
  *    برگشتی در همان فیلد قرار می‌گیرد (برای مدیر).
  *  • آدرس: مسیر داخلی (مثل /images/logo.png) یا آدرس کامل خارجی.
  * اگر تصویر در دسترس نباشد کاشی جایگزین نمایش داده می‌شود.
+ * بخش استفاده‌کننده (prop «section») به API آپلود ارسال می‌شود تا در
+ * «گالری» ثبت شود هر فایل در کدام بخش سایت بارگذاری شده است.
  *
  * خطای بارگذاری به‌صورت «آدرس خراب» نگه داشته می‌شود تا با تغییر
  * آدرس، پیش‌نمایش خودکار دوباره تلاش کند (بدون نیاز به افکت ریست).
@@ -30,6 +32,7 @@ export function ImageUrlField({
   hint,
   previewClassName = "h-24 w-24",
   previewAlt = "پیش‌نمایش تصویر",
+  section = "other",
 }: {
   id: string;
   label: string;
@@ -39,6 +42,8 @@ export function ImageUrlField({
   /** اندازه‌ی کانتینر پیش‌نمایش (مثلاً h-24 w-24 یا h-[90px] w-40) */
   previewClassName?: string;
   previewAlt?: string;
+  /** بخش سایت برای ثبت در گالری (courses، videos، exams، settings، chat…) */
+  section?: string;
 }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -58,6 +63,7 @@ export function ImageUrlField({
     try {
       const body = new FormData();
       body.append("file", file);
+      body.append("section", section);
       const res = await fetch("/api/admin/upload", { method: "POST", body });
       const data = (await res.json().catch(() => null)) as {
         url?: string;

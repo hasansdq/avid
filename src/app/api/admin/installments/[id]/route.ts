@@ -77,8 +77,8 @@ export async function PUT(req: NextRequest, { params }: Params) {
       if (status === "paid" && !("paidAt" in body)) {
         // پرداخت‌شده بدون تاریخ → همین حالا
         data.paidAt = new Date();
-      } else if (status === "pending") {
-        // بازگشت به پرداخت‌نشده → تاریخ پرداخت پاک می‌شود
+      } else if (status !== "paid" && !("paidAt" in body)) {
+        // هر وضعیت غیرِ پرداخت‌شده (در انتظار یا معوق) → تاریخ پرداخت پاک می‌شود
         data.paidAt = null;
       }
     }

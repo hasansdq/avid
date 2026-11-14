@@ -141,7 +141,7 @@ export async function GET(
 
   if (range) {
     const stream = Readable.toWeb(
-      createReadStream(/* turbopackIgnore: true */ file.abs, { start: range.start, end: range.end })
+      createReadStream(file.abs, { start: range.start, end: range.end })
     ) as unknown as ReadableStream<Uint8Array>;
     return new NextResponse(stream, {
       status: 206,
@@ -154,7 +154,7 @@ export async function GET(
   }
 
   const stream = Readable.toWeb(
-    createReadStream(/* turbopackIgnore: true */ file.abs)
+    createReadStream(file.abs)
   ) as unknown as ReadableStream<Uint8Array>;
   return new NextResponse(stream, {
     status: 200,

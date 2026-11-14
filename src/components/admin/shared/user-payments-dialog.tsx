@@ -8,12 +8,9 @@ import {
   CheckCircle2,
   ClipboardList,
   CreditCard,
-  Hourglass,
-  Loader2,
   Receipt,
   TicketPercent,
   Wallet,
-  XCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +26,10 @@ import { cn } from "@/lib/utils";
 import { apiFetch, toastApiError } from "@/components/admin/api";
 import { EmptyState } from "@/components/admin/shared/empty-state";
 import { MarkPaidButton } from "@/components/admin/shared/mark-paid-button";
+import {
+  PaymentEditButton,
+  PaymentStatusSelect,
+} from "@/components/admin/shared/payment-controls";
 import { tileGradient } from "@/components/admin/shared/styles";
 import type {
   EnrollmentWithInstallments,
@@ -42,25 +43,6 @@ interface UserDetailResponse {
   user: User;
   enrollments: EnrollmentWithInstallments[];
 }
-
-/* — نشان وضعیت پرداخت ثبت‌نام — */
-const PAYMENT_STATUS: Record<string, { label: string; badge: string }> = {
-  paid: {
-    label: "پرداخت‌شده",
-    badge:
-      "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-300",
-  },
-  pending: {
-    label: "در انتظار",
-    badge:
-      "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-300",
-  },
-  failed: {
-    label: "ناموفق",
-    badge:
-      "border-red-500/30 bg-red-500/10 text-red-700 dark:border-red-400/25 dark:bg-red-400/10 dark:text-red-300",
-  },
-};
 
 const METHOD_LABELS: Record<string, string> = {
   cash: "نقدی",
@@ -240,7 +222,7 @@ export function UserPaymentsDialog({
           </DialogTitle>
           <DialogDescription className="leading-6">
             {user
-              ? `وضعیت پرداخت‌ها و لیست اقساط «${displayName(user)}» — با دکمه‌ی «ثبت پرداخت» هر قسط را دستی تسویه کنید؛ برای ویرایش مبلغ و سررسید از «مدیریت اقساط» استفاده کنید.`
+              ? `وضعیت پرداخت‌ها و لیست اقساط «${displayName(user)}» — وضعیت پرداخت را به هر حالت دیگری تبدیل کنید؛ برای پرداخت‌های نقدی مبلغ و وضعیت را با «ویرایش پرداخت» دستی اصلاح کنید؛ برای ویرایش مبلغ و سررسید اقساط از «مدیریت اقساط» استفاده کنید.`
               : "وضعیت پرداخت‌ها و اقساط کاربر"}
           </DialogDescription>
         </DialogHeader>
@@ -298,10 +280,6 @@ export function UserPaymentsDialog({
 
               <div className="space-y-3">
                 {detail.enrollments.map((e) => {
-                  const payMeta =
-                    e.paymentStatus in PAYMENT_STATUS
-                      ? PAYMENT_STATUS[e.paymentStatus]
-                      : null;
                   return (
                     <article
                       key={e.id}
@@ -312,22 +290,12 @@ export function UserPaymentsDialog({
                         <p className="min-w-0 truncate text-sm font-black text-foreground">
                           {e.course}
                         </p>
-                        {payMeta && e.paymentAmount ? (
-                          <span
-                            className={cn(
-                              "inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[0.65rem] font-bold",
-                              payMeta.badge
-                            )}
-                          >
-                            {e.paymentStatus === "paid" ? (
-                              <CheckCircle2 className="size-3" />
-                            ) : e.paymentStatus === "failed" ? (
-                              <XCircle className="size-3" />
-                            ) : (
-                              <Hourglass className="size-3" />
-                            )}
-                            {payMeta.label}
-                          </span>
+                        {e.paymentAmount ? (
+                          <PaymentStatusSelect
+                            enrollmentId={e.id}
+                            value={e.paymentStatus}
+                            onChanged={() => handleInstallmentChanged()}
+                          />
                         ) : (
                           <span className="text-xs text-muted-foreground">
                             بدون پرداخت
@@ -367,6 +335,12 @@ export function UserPaymentsDialog({
                           <CalendarDays className="size-3.5 text-teal-600/70 dark:text-teal-300/70" />
                           {faDate(e.createdAt)}
                         </span>
+                        {/* — ویرایش دستی وضعیت/مبلغ پرداخت (مخصوص پرداخت‌های نقدی) — */}
+                        <PaymentEditButton
+                          enrollment={e}
+                          compact
+                          onChanged={handleInstallmentChanged}
+                        />
                       </div>
 
                       {e.paidAt ? (

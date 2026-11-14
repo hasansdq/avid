@@ -2,6 +2,10 @@ import { createHash, randomBytes, randomInt } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import type { User } from "@prisma/client";
+import {
+  isValidNationalId,
+  normalizeNationalId,
+} from "@/lib/national-id";
 
 /**
  * حساب کاربری و تایید پیامکی کاربران سایت (مرحله‌ی اول فرم پیش‌ثبت‌نام)
@@ -49,6 +53,17 @@ export async function findActiveOtp(phone: string) {
   return otp;
 }
 
+/**
+ * حذف کدهای فعال صادرشده برای یک شماره — بعد از «شکست ارسال پیامک»
+ * صدا زده می‌شود تا کاربر بدون انتظار برای قفل ۶۰ ثانیه‌ای ارسال مجدد،
+ * بلافاصله بتواند دوباره کد بخواهد (کد هرگز به دست او نرسیده است).
+ */
+export async function deleteActiveOtp(phone: string) {
+  await db.otpCode
+    .deleteMany({ where: { phone, consumedAt: null } })
+    .catch(() => {});
+}
+
 /** صادرکردن کد جدید برای شماره — نتیجه شامل کد متن‌آشکار فقط برای ارسال است */
 export async function issueOtp(phone: string): Promise<{
   code: string;
@@ -79,7 +94,7 @@ export async function issueOtp(phone: string): Promise<{
 export async function verifyOtp(
   phone: string,
   code: string,
-  names: { firstName: string; lastName: string }
+  names: { firstName: string; lastName: string; nationalId?: string | null }
 ): Promise<
   | { ok: true; user: SessionUser }
   | { ok: false; error: string; status: number }
@@ -112,6 +127,29 @@ export async function verifyOtp(
     };
   }
 
+  // کد ملی (اختیاری) — پیش از مصرف کد اعتبارسنجی می‌شود تا در صورت خطا،
+  // کاربر بدون درخواست کد جدید بتواند مقدار را اصلاح کند
+  let nationalId: string | null | undefined;
+  if (typeof names.nationalId === "string" && names.nationalId.trim() !== "") {
+    const clean = normalizeNationalId(names.nationalId);
+    if (!isValidNationalId(clean)) {
+      return {
+        ok: false,
+        status: 400,
+        error: "کد ملی ۱۰ رقمی معتبر وارد کنید یا این فیلد را خالی بگذارید.",
+      };
+    }
+    const owner = await db.user.findUnique({ where: { nationalId: clean } });
+    if (owner && owner.phone !== phone) {
+      return {
+        ok: false,
+        status: 409,
+        error: "این کد ملی به حساب کاربری دیگری تعلق دارد.",
+      };
+    }
+    nationalId = clean;
+  }
+
   // کد درست — مصرف و حساب کاربری ایجاد/به‌روزرسانی می‌شود
   await db.otpCode.update({
     where: { id: otp.id },
@@ -122,11 +160,13 @@ export async function verifyOtp(
   const lastName = names.lastName.trim();
   const user = await db.user.upsert({
     where: { phone },
-    create: { phone, firstName, lastName },
+    create: { phone, firstName, lastName, ...(nationalId ? { nationalId } : {}) },
     // نام جدید فقط وقتی جایگزین می‌شود که ارسال شده باشد
     update: {
       firstName: firstName || undefined,
       lastName: lastName || undefined,
+      // کد ملی فقط وقتی تغییر می‌کند که مقدار غیرخالی ارسال شده باشد
+      ...(nationalId !== undefined ? { nationalId } : {}),
     },
   });
 

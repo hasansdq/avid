@@ -22,7 +22,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -46,6 +45,12 @@ import { ImageUrlField, OptionalImage } from "@/components/admin/shared/image-ur
 import { JalaliDateField } from "@/components/admin/shared/jalali-date-field";
 import { ModuleHeader } from "@/components/admin/shared/module-header";
 import { PublishSwitch } from "@/components/admin/shared/publish-switch";
+import { PublishStatusSelect } from "@/components/admin/shared/publish-status-select";
+import {
+  SortableCard,
+  SortableRows,
+  SortableTableRow,
+} from "@/components/admin/shared/sortable-rows";
 import { btnGradient } from "@/components/admin/shared/styles";
 import { TableSkeleton } from "@/components/admin/shared/table-skeleton";
 import type {
@@ -83,7 +88,6 @@ interface CourseForm {
   instructor: string;
   hours: string;
   sessions: string;
-  students: string;
   price: string;
   cashTuition: string;
   installmentTuition: string;
@@ -96,7 +100,7 @@ interface CourseForm {
   theme: string;
   tag: string;
   published: boolean;
-  /** گروه‌های زمان‌بندی — فقط برای دوره‌های حضوری */
+  /** گروه‌های زمان‌بندی — برای دوره‌های حضوری و ترکیبی (حضوری و آنلاین) */
   groups: GroupDraft[];
   /** تاریخ سررسید هر قسط (YYYY-MM-DD) — فقط وقتی شهریه‌ی اقساطی مثبت است */
   installments: string[];
@@ -129,7 +133,7 @@ const COURSE_COLUMNS: ColumnDef[] = [
   { key: "sessions", label: "جلسات", defaultVisible: false },
   { key: "capacity", label: "ظرفیت", defaultVisible: false },
   { key: "sortOrder", label: "ترتیب", defaultVisible: true },
-  { key: "published", label: "فعال / غیرفعال", defaultVisible: true },
+  { key: "published", label: "وضعیت", defaultVisible: true },
 ];
 
 const COLS_STORAGE_KEY = "avid_admin_course_cols";
@@ -151,6 +155,7 @@ const faAmount = (n: number) => faDigits(n.toLocaleString("en-US"));
 const DEFAULT_CAPACITY: Record<CourseType, string> = {
   inperson: "10",
   online: "20",
+  hybrid: "20",
 };
 
 /** عنوان گروه بعدی بر اساس شمارش موجود */
@@ -207,7 +212,7 @@ function installmentShares(
   );
 }
 
-/** ماژول دوره‌ها — مدیریت دوره‌های آنلاین و حضوری */
+/** ماژول دوره‌ها — مدیریت دوره‌های آنلاین، حضوری و ترکیبی */
 export function CoursesModule() {
   const [courses, setCourses] = useState<CourseWithUsage[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -297,7 +302,6 @@ export function CoursesModule() {
       instructor: "",
       hours: "0",
       sessions: "0",
-      students: "0",
       price: "0",
       cashTuition: "10000000",
       installmentTuition: "12000000",
@@ -328,7 +332,6 @@ export function CoursesModule() {
       instructor: course.instructor,
       hours: String(course.hours),
       sessions: String(course.sessions),
-      students: String(course.students),
       price: String(course.price),
       cashTuition: String(course.cashTuition),
       installmentTuition: String(course.installmentTuition),
@@ -459,15 +462,16 @@ export function CoursesModule() {
   /**
    * تغییر نوع دوره در حالت «ایجاد» — اگر ظرفیت هنوز دست‌کاری نشده باشد
    * (۰ یا یکی از پیش‌فرض‌ها)، به پیش‌فرض نوع جدید می‌رود: حضوری ۱۰ / آنلاین ۲۰.
-   * برای حضوری، اگر گروهی تعریف نشده یک گروه پیش‌فرض ساخته می‌شود.
+   * برای حضوری و ترکیبی، اگر گروهی تعریف نشده یک گروه پیش‌فرض ساخته می‌شود.
    */
   function changeType(nextType: CourseType) {
     if (!form) return;
+    // آنلاین گروه ندارد؛ حضوری و ترکیبی گروه‌دار می‌شوند (گروه پیش‌فرض در نبود گروه)
     const nextGroups =
-      nextType === "inperson" && form.groups.length === 0
-        ? [{ title: faGroupTitle(1), schedule: "", capacity: DEFAULT_CAPACITY.inperson }]
-        : nextType === "online"
-          ? []
+      nextType === "online"
+        ? []
+        : form.groups.length === 0
+          ? [{ title: faGroupTitle(1), schedule: "", capacity: DEFAULT_CAPACITY.inperson }]
           : form.groups;
     setForm({
       ...form,
@@ -521,6 +525,32 @@ export function CoursesModule() {
     }
   }
 
+  /* ————— جابه‌جایی با کشیدن و رها کردن ————— */
+
+  // فقط وقتی هیچ فیلتر/جستجویی فعال نیست، ترتیب قابل تغییر است
+  const canReorder = typeFilter === "all" && search.trim() === "";
+
+  /** ذخیره‌ی ترتیب جدید دوره‌ها — به‌روی کور محلی، در خطا بازگشت */
+  async function handleReorder(orderedIds: string[]): Promise<void> {
+    const prev = courses;
+    if (!prev) return;
+    const byId = new Map(prev.map((c) => [c.id, c]));
+    const next = orderedIds
+      .map((id) => byId.get(id))
+      .filter((c): c is CourseWithUsage => c !== undefined);
+    setCourses(next);
+    try {
+      await apiFetch("/api/admin/courses/reorder", {
+        method: "POST",
+        body: JSON.stringify({ ids: orderedIds }),
+      });
+      toast.success("ترتیب دوره‌ها ذخیره شد.");
+    } catch (error) {
+      toastApiError(error);
+      setCourses(prev);
+    }
+  }
+
   async function handleSave() {
     if (!form || saving) return;
     const title = form.title.trim();
@@ -554,12 +584,13 @@ export function CoursesModule() {
     const numbers = {
       hours: toInt(form.hours),
       sessions: toInt(form.sessions),
-      students: toInt(form.students),
+      // «کارآموزان» از فرم حذف شده — عدد نمایشی فعلی حفظ می‌شود (ایجاد = ۰)
+      students: editing ? editing.students : 0,
       price: toInt(form.price),
       cashTuition: toInt(form.cashTuition),
       installmentTuition: toInt(form.installmentTuition),
       capacity:
-        form.type === "inperson" && groups.length > 0
+        form.type !== "online" && groups.length > 0
           ? groups.reduce((sum, g) => sum + g.capacity, 0)
           : toInt(form.capacity),
       sortOrder: toInt(form.sortOrder),
@@ -652,7 +683,7 @@ export function CoursesModule() {
     <div className="space-y-6">
       <ModuleHeader
         title="دوره‌ها"
-        description="مدیریت دوره‌های آنلاین و حضوری آکادمی — ایجاد، ویرایش، انتشار و حذف."
+        description="مدیریت دوره‌های آنلاین، حضوری و ترکیبی آکادمی — ایجاد، ویرایش، انتشار و حذف."
       >
         <Button
           onClick={openCreate}
@@ -676,6 +707,7 @@ export function CoursesModule() {
             <SelectItem value="all">همه دوره‌ها</SelectItem>
             <SelectItem value="online">آنلاین</SelectItem>
             <SelectItem value="inperson">حضوری</SelectItem>
+            <SelectItem value="hybrid">حضوری و آنلاین</SelectItem>
           </SelectContent>
         </Select>
         <div className="relative flex-1">
@@ -753,11 +785,21 @@ export function CoursesModule() {
       ) : (
         <>
           {/* — جدول دسکتاپ — */}
+          <SortableRows
+            ids={filtered.map((c) => c.id)}
+            onReorder={(ids) => void handleReorder(ids)}
+            disabled={!canReorder}
+          >
           <div className="glass hidden overflow-hidden rounded-2xl md:block">
             <div className="max-h-[70vh] overflow-y-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
+                    {canReorder ? (
+                      <TableHead className="w-10">
+                        <span className="sr-only">تغییر ترتیب</span>
+                      </TableHead>
+                    ) : null}
                     <TableHead>دوره</TableHead>
                     {visibleCols.type ? <TableHead>نوع</TableHead> : null}
                     {visibleCols.level ? <TableHead>سطح</TableHead> : null}
@@ -765,7 +807,7 @@ export function CoursesModule() {
                     {visibleCols.sessions ? <TableHead>جلسات</TableHead> : null}
                     {visibleCols.capacity ? <TableHead>ظرفیت</TableHead> : null}
                     {visibleCols.sortOrder ? <TableHead>ترتیب</TableHead> : null}
-                    {visibleCols.published ? <TableHead>فعال / غیرفعال</TableHead> : null}
+                    {visibleCols.published ? <TableHead>وضعیت</TableHead> : null}
                     <TableHead className="text-left">عملیات</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -777,7 +819,7 @@ export function CoursesModule() {
                     const theme = getCourseTheme(course.theme);
                     const Icon = getCourseIcon(course.icon);
                     return (
-                      <TableRow key={course.id}>
+                      <SortableTableRow key={course.id} id={course.id} enabled={canReorder}>
                         <TableCell className="max-w-56 p-1">
                           {/* عنوان دوره — کلیک: صفحه‌ی حضور و غیاب */}
                           <button
@@ -889,7 +931,7 @@ export function CoursesModule() {
                         ) : null}
                         {visibleCols.capacity ? (
                           <TableCell>
-                            {(course.type === "inperson" &&
+                            {(course.type !== "online" &&
                               (course.groups?.length ?? 0) > 0) ||
                             course.capacity > 0 ? (
                               <div className="flex items-center gap-1.5">
@@ -992,16 +1034,22 @@ export function CoursesModule() {
                             </ConfirmDelete>
                           </div>
                         </TableCell>
-                      </TableRow>
+                      </SortableTableRow>
                     );
                   })}
                 </TableBody>
               </Table>
             </div>
           </div>
+          </SortableRows>
 
           {/* — کارت‌های موبایل (قابل ویرایش و حذف) — */}
-          <div className="space-y-3 md:hidden">
+          <SortableRows
+            ids={filtered.map((c) => c.id)}
+            onReorder={(ids) => void handleReorder(ids)}
+            disabled={!canReorder}
+          >
+            <ul className="space-y-3 md:hidden">
             {filtered.map((course) => {
               const type =
                 COURSE_TYPES[isCourseType(course.type) ? course.type : "online"];
@@ -1016,7 +1064,12 @@ export function CoursesModule() {
                 </span>
               );
               return (
-                <article key={course.id} className="glass rounded-2xl p-4">
+                <SortableCard
+                  key={course.id}
+                  id={course.id}
+                  enabled={canReorder}
+                  className="glass rounded-2xl p-4"
+                >
                   <div className="flex items-start gap-3">
                     {course.imageUrl?.trim() ? (
                       <OptionalImage
@@ -1095,7 +1148,7 @@ export function CoursesModule() {
                           </span>
                         ) : null}
                         {visibleCols.capacity ? (
-                          (course.type === "inperson" &&
+                          (course.type !== "online" &&
                             (course.groups?.length ?? 0) > 0) ||
                           course.capacity > 0 ? (
                             <span
@@ -1174,10 +1227,11 @@ export function CoursesModule() {
                       </Button>
                     </ConfirmDelete>
                   </div>
-                </article>
+                </SortableCard>
               );
             })}
-          </div>
+            </ul>
+          </SortableRows>
         </>
       )}
 
@@ -1224,6 +1278,7 @@ export function CoursesModule() {
                   label="تصویر دوره (اختیاری)"
                   value={form.imageUrl}
                   onChange={(v) => set("imageUrl", v)}
+                  section="courses"
                   hint="در کارت دوره (سایت و پنل) به‌جای آیکون نمایش داده می‌شود — می‌توانید مستقیم از سیستم بارگذاری کنید یا آدرس تصویر را وارد کنید."
                   previewClassName="h-[90px] w-40"
                   previewAlt="پیش‌نمایش تصویر دوره"
@@ -1248,6 +1303,7 @@ export function CoursesModule() {
                   <SelectContent>
                     <SelectItem value="online">آنلاین</SelectItem>
                     <SelectItem value="inperson">حضوری</SelectItem>
+                    <SelectItem value="hybrid">حضوری و آنلاین</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>
@@ -1277,13 +1333,15 @@ export function CoursesModule() {
                 />
               </Field>
 
-              {form.type === "inperson" ? (
+              {form.type !== "online" ? (
                 <div className="space-y-3 rounded-xl border border-violet-500/25 bg-violet-500/[0.04] p-4 sm:col-span-2 dark:border-violet-400/20 dark:bg-violet-400/[0.04]">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <CalendarDays className="size-4 text-violet-600 dark:text-violet-300" />
                       <p className="text-xs font-black text-foreground">
-                        گروه‌های زمان‌بندی دوره
+                        {form.type === "hybrid"
+                          ? "گروه‌های زمان‌بندی بخش حضوری دوره"
+                          : "گروه‌های زمان‌بندی دوره"}
                       </p>
                     </div>
                     <span className="select-none rounded-full border border-foreground/10 bg-foreground/[0.04] px-2.5 py-1 text-[0.65rem] font-black text-muted-foreground dark:border-white/10 dark:bg-white/[0.04]">
@@ -1437,25 +1495,16 @@ export function CoursesModule() {
                     placeholder="۰ = رایگان"
                   />
                 </Field>
-                <Field label="کارآموزان" htmlFor="course-students">
-                  <Input
-                    id="course-students"
-                    type="number"
-                    min={0}
-                    value={form.students}
-                    onChange={(e) => set("students", e.target.value)}
-                  />
-                </Field>
                 <Field
                   label="ظرفیت دوره (نفر)"
                   htmlFor="course-capacity"
                   hint={
-                    form.type === "inperson" && form.groups.length > 0
+                    form.type !== "online" && form.groups.length > 0
                       ? "مجموع ظرفیت گروه‌ها — به‌صورت خودکار محاسبه می‌شود"
-                      : "پیش‌فرض: حضوری ۱۰ · آنلاین ۲۰ — صفر یعنی بدون محدودیت"
+                      : "پیش‌فرض: حضوری ۱۰ · آنلاین ۲۰ · حضوری و آنلاین ۲۰ — صفر یعنی بدون محدودیت"
                   }
                 >
-                  {form.type === "inperson" && form.groups.length > 0 ? (
+                  {form.type !== "online" && form.groups.length > 0 ? (
                     <div className="flex h-9 items-center justify-between rounded-md border border-foreground/[0.08] bg-foreground/[0.02] px-3 dark:border-white/[0.08] dark:bg-white/[0.02]">
                       <span className="text-sm font-black tabular-nums text-foreground">
                         {faDigits(groupsCapacitySum)}
@@ -1718,22 +1767,14 @@ export function CoursesModule() {
                 </Field>
               </div>
 
-              {/* انتشار */}
-              <div className="flex items-center justify-between rounded-xl border border-border bg-foreground/[0.02] p-3 sm:col-span-2">
-                <div className="space-y-0.5">
-                  <Label htmlFor="course-published" className="text-sm font-bold">
-                    فعال / غیرفعال
-                  </Label>
-                  <p className="text-[0.65rem] text-muted-foreground">
-                    دوره‌های غیرفعال در صفحه‌ی اصلی و فرم پیش‌ثبت‌نام نمایش داده نمی‌شوند و فقط در پنل دیده می‌شوند.
-                  </p>
-                </div>
-                <Switch
+              {/* وضعیت انتشار: منتشر شده (در سایت) یا پیش‌نویس (فقط پنل مدیر) */}
+              <Field label="وضعیت انتشار" htmlFor="course-published-published">
+                <PublishStatusSelect
                   id="course-published"
-                  checked={form.published}
-                  onCheckedChange={(v) => set("published", v)}
+                  value={form.published}
+                  onChange={(v) => set("published", v)}
                 />
-              </div>
+              </Field>
             </div>
           ) : null}
 

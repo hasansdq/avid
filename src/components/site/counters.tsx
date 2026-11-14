@@ -5,6 +5,8 @@ import { Users, CircleCheck, BarChart3, type LucideIcon } from "lucide-react";
 import type { SiteSettings } from "@prisma/client";
 import { faDigits } from "@/lib/fa";
 import { Reveal } from "@/components/reveal";
+import { EditableText } from "@/components/site/editable-texts";
+import { parseSiteCounterNumber } from "@/lib/site-texts";
 
 function CountUp({
   end,
@@ -15,11 +17,19 @@ function CountUp({
 }) {
   const ref = React.useRef<HTMLSpanElement>(null);
   const started = React.useRef(false);
+  const prevEnd = React.useRef(end);
   const [display, setDisplay] = React.useState(0);
 
   React.useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    // عدد درجا تغییر کرده (ویرایش با مداد) → بلافاصله مقدار نو نمایش داده می‌شود
+    if (started.current && prevEnd.current !== end) {
+      prevEnd.current = end;
+      setDisplay(end);
+      return;
+    }
+    prevEnd.current = end;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && !started.current) {
@@ -43,9 +53,26 @@ function CountUp({
   return <span ref={ref}>{faDigits(display)}</span>;
 }
 
+/**
+ * رندر متن سفارشیِ جایگاه عددی شمارنده —
+ * اگر متن عددی داشته باشد (مثل «۳۲۰» یا «بیش از ۳۰۰»)، شمارنده تا همان عدد
+ * انیمیشن می‌شود؛ در غیر این صورت متن عیناً (بدون انیمیشن) نمایش داده می‌شود.
+ */
+function renderCounterText(text: string): React.ReactNode {
+  const n = parseSiteCounterNumber(text);
+  if (n !== null) return <CountUp end={n} />;
+  return text;
+}
+
 interface Stat {
   icon: LucideIcon;
   value: number;
+  /** کلید جایگاه عددی (ویرایشگر مدادی) */
+  numberKey: string;
+  /** کلید جایگاه عنوان کارت */
+  labelKey: string;
+  /** کلید جایگاه توضیح کارت */
+  descriptionKey: string;
   label: string;
   description: string;
   tile: string;
@@ -94,6 +121,9 @@ export function Counters({ settings }: { settings: SiteSettings }) {
     {
       icon: Users,
       value: settings.studentsCount,
+      numberKey: "stats.students",
+      labelKey: "stats.students.label",
+      descriptionKey: "stats.students.description",
       label: "کارآموزان",
       description: "در حال یادگیری در دوره‌های مختلف آکادمی",
       tile: "from-teal-400 to-emerald-600",
@@ -104,6 +134,9 @@ export function Counters({ settings }: { settings: SiteSettings }) {
     {
       icon: CircleCheck,
       value: settings.completedCoursesCount,
+      numberKey: "stats.completed",
+      labelKey: "stats.completed.label",
+      descriptionKey: "stats.completed.description",
       label: "دوره‌های پایان‌یافته",
       description: "دوره‌ی برگزارشده با موفقیت تا امروز",
       tile: "from-violet-400 to-purple-600",
@@ -121,13 +154,15 @@ export function Counters({ settings }: { settings: SiteSettings }) {
         <Reveal className="mb-10 text-center">
           <span className="glass inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold text-teal-700 dark:text-teal-300">
             <BarChart3 className="size-3.5" />
-            رشد آکادمی در یک نگاه
+            <EditableText k="stats.badge">
+              رشد آکادمی در یک نگاه
+            </EditableText>
           </span>
         </Reveal>
 
         <div ref={gridRef} className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           {stats.map((stat, i) => (
-            <Reveal key={stat.label} delay={i * 0.15}>
+            <Reveal key={stat.labelKey} delay={i * 0.15}>
               <div className="gradient-border group relative overflow-hidden rounded-[1.75rem] bg-foreground/[0.02] p-8 backdrop-blur-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-2xl hover:shadow-teal-500/10 dark:bg-white/[0.03]">
                 {/* decorative icon watermark */}
                 <stat.icon className="pointer-events-none absolute -bottom-8 -left-8 size-36 text-foreground/[0.04] transition-transform duration-500 group-hover:scale-110 dark:text-white/[0.03]" />
@@ -141,18 +176,29 @@ export function Counters({ settings }: { settings: SiteSettings }) {
 
                   <div className="min-w-0">
                     <div className="flex items-baseline gap-2">
+                      {/* — عدد شمارنده — با مداد قابل ویرایش است؛
+                          مقدار ذخیره‌شده در تنظیمات (studentsCount و…) آینه می‌شود */}
                       <span className="text-gradient text-5xl font-black tabular-nums tracking-tight sm:text-6xl">
-                        <CountUp end={stat.value} />
+                        <EditableText
+                          k={stat.numberKey}
+                          renderText={renderCounterText}
+                        >
+                          <CountUp end={stat.value} />
+                        </EditableText>
                       </span>
                     </div>
                     <p className="mt-1 text-base font-black text-foreground sm:text-lg">
-                      {stat.label}
+                      <EditableText k={stat.labelKey}>
+                        {stat.label}
+                      </EditableText>
                     </p>
                   </div>
                 </div>
 
                 <p className="mt-5 text-sm leading-7 text-muted-foreground">
-                  {stat.description}
+                  <EditableText k={stat.descriptionKey}>
+                    {stat.description}
+                  </EditableText>
                 </p>
 
                 <div className="mt-6 h-1.5 overflow-hidden rounded-full bg-foreground/[0.06] dark:bg-white/[0.06]">

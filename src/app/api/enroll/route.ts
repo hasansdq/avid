@@ -73,14 +73,14 @@ export async function POST(req: NextRequest) {
       capacity: number;
     } | null = null;
 
-    // — دوره‌ی حضوریِ دارای گروه: انتخاب گروه و اعمال ظرفیت گروه —
-    if (courseRecord.type === "inperson" && courseRecord.groups.length > 0) {
+    // — دوره‌ی گروه‌دار (حضوری/ترکیبی): انتخاب گروه و اعمال ظرفیت گروه —
+    if (courseRecord.type !== "online" && courseRecord.groups.length > 0) {
       const group = courseRecord.groups.find((g) => g.id === groupId);
       if (!group) {
         return NextResponse.json(
           {
             error:
-              "برای این دوره‌ی حضوری، گروه زمانی مورد نظر خود را انتخاب کنید.",
+              "برای این دوره‌ی گروه‌دار، گروه زمانی مورد نظر خود را انتخاب کنید.",
           },
           { status: 400 }
         );
@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
         capacity: group.capacity,
       };
     } else {
-      // — ظرفیت کل دوره (آنلاین یا حضوری بدون گروه) —
+      // — ظرفیت کل دوره (آنلاین یا حضوری/ترکیبی بدون گروه) —
       const enrolledCount = await db.enrollment.count({
         where: { course, status: { not: "archived" } },
       });

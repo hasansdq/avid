@@ -1,6 +1,7 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requestSecure } from "@/lib/http";
 
 export const SESSION_COOKIE = "avid_admin";
 export const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7; // ۷ روز
@@ -22,7 +23,35 @@ export function verifyPassword(password: string, stored: string): boolean {
   return timingSafeEqual(candidate, original);
 }
 
-/* ---------------- نشست‌ها ---------------- */
+/* ---------------- کوکی نشست ---------------- */
+
+/**
+ * گزینه‌های یکدست کوکی نشست مدیر.
+ *
+ * پشت دروازه‌ی HTTPS کوکی با sameSite:none صادر می‌شود تا در iframe
+ * پنل پیش‌نمایش ( زمینه‌ی متفرقه) هم ذخیره و ارسال شود — چون مرورگرهای
+ * جدید کوکی‌های lax/strict متفرقه را می‌بندند؛ صفت Partitioned (CHIPS)
+ * هم اضافه می‌شود تا حتی با «انسداد کوکی متفرقه» در کروم/فایرفاکس
+ * نشست داخل iframe پایدار بماند. در HTTP محلی همان lax امن‌تر است.
+ */
+export function sessionCookieOptions(req: NextRequest, maxAge: number) {
+  const secure = requestSecure(req);
+  return {
+    httpOnly: true,
+    sameSite: secure ? ("none" as const) : ("lax" as const),
+    secure,
+    partitioned: secure || undefined,
+    maxAge,
+    path: "/",
+  } satisfies {
+    httpOnly: boolean;
+    sameSite: "none" | "lax";
+    secure: boolean;
+    partitioned: true | undefined;
+    maxAge: number;
+    path: string;
+  };
+}
 
 export async function createSession(adminId: string) {
   // پاک‌سازی نشست‌های منقضی

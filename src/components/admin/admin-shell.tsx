@@ -213,8 +213,8 @@ export function AdminShell({
 
       {/* ستون اصلی */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* تاپ‌بار */}
-        <header className="glass sticky top-0 z-40 flex h-16 items-center gap-3 border-b px-4 sm:px-6">
+        {/* تاپ‌بار — پس‌زمینه‌ی تمام‌opaque با رنگ پیش‌فرض سایت (بدون شفافیت glass) */}
+        <header className="sticky top-0 z-40 flex h-16 items-center gap-3 border-b bg-background px-4 sm:px-6">
           <Button
             variant="ghost"
             size="icon"

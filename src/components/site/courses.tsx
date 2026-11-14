@@ -26,6 +26,7 @@ import { faDigits, scrollToSection } from "@/lib/fa";
 import { useEnrollStore } from "@/lib/store";
 import type { AvailabilityMap } from "@/lib/availability";
 import { SectionHeading, Reveal } from "@/components/reveal";
+import { EditableText } from "@/components/site/editable-texts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,7 @@ const FILTERS: { key: CourseFilter; label: string }[] = [
   { key: "all", label: "همه" },
   { key: "online", label: "آنلاین" },
   { key: "inperson", label: "حضوری" },
+  { key: "hybrid", label: "حضوری و آنلاین" },
 ];
 
 function CourseCard({
@@ -152,10 +154,14 @@ function CourseCard({
             <Clock className="size-3 shrink-0 text-teal-600 dark:text-teal-300" />
             {faDigits(course.hours)} ساعت
           </span>
-          <span className="flex items-center gap-1.5 rounded-full bg-foreground/[0.05] px-2.5 py-1">
-            <Users className="size-3 shrink-0 text-teal-600 dark:text-teal-300" />
-            {faDigits(course.students)} کارآموز
-          </span>
+          {/* کارآموزان — عدد نمایشی دوره؛ فقط وقتی مقدار ثبت شده باشد
+              (از فرم مدیر حذف شده؛ دوره‌های جدید بدون این چیپ هستند) */}
+          {course.students > 0 ? (
+            <span className="flex items-center gap-1.5 rounded-full bg-foreground/[0.05] px-2.5 py-1">
+              <Users className="size-3 shrink-0 text-teal-600 dark:text-teal-300" />
+              {faDigits(course.students)} کارآموز
+            </span>
+          ) : null}
           <Badge
             variant="outline"
             className="rounded-full border-teal-600/25 bg-teal-500/10 px-2.5 py-1 text-[0.65rem] font-bold text-teal-700 hover:bg-teal-500/10 dark:border-teal-400/25 dark:bg-teal-400/10 dark:text-teal-300"
@@ -203,8 +209,8 @@ function CourseCard({
           ) : null}
         </div>
 
-        {/* زمان‌بندی (دوره‌های حضوری) */}
-        {course.type === "inperson" && course.schedule ? (
+        {/* زمان‌بندی (دوره‌های حضوری و ترکیبی) */}
+        {course.type !== "online" && course.schedule ? (
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-xl border border-foreground/[0.07] bg-foreground/[0.03] px-3 py-2 text-[0.65rem] font-semibold text-muted-foreground dark:border-white/[0.07] dark:bg-white/[0.03]">
             <span className="flex items-center gap-1.5">
               <CalendarDays className="size-3.5 shrink-0 text-amber-500 dark:text-amber-300" />
@@ -298,6 +304,7 @@ export function Courses({ courses }: { courses: Course[] }) {
       all: courses.length,
       online: courses.filter((c) => c.type === "online").length,
       inperson: courses.filter((c) => c.type === "inperson").length,
+      hybrid: courses.filter((c) => c.type === "hybrid").length,
     }),
     [courses]
   );
@@ -315,12 +322,19 @@ export function Courses({ courses }: { courses: Course[] }) {
           icon={Layers}
           badge="دوره‌های آموزشی"
           title={
-            <>
-              مهارت خود را با دوره‌های{" "}
-              <span className="text-gradient">حرفه‌ای</span> ارتقا دهید
-            </>
+            <EditableText k="courses.title">
+              <>
+                مهارت خود را با دوره‌های{" "}
+                <span className="text-gradient">حرفه‌ای</span> ارتقا دهید
+              </>
+            </EditableText>
           }
-          description="از هوش مصنوعی تا کامپیوتر کودکان؛ هر دوره با پروژه‌های واقعی و پشتیبانی مربی طراحی شده است."
+          description={
+            <EditableText k="courses.description">
+              از هوش مصنوعی تا کامپیوتر کودکان؛ هر دوره با پروژه‌های واقعی و
+              پشتیبانی مربی طراحی شده است.
+            </EditableText>
+          }
         />
 
         {/* filter pills */}

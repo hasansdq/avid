@@ -35,7 +35,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -51,6 +50,11 @@ import { EmptyState } from "@/components/admin/shared/empty-state";
 import { ImageUrlField, OptionalImage } from "@/components/admin/shared/image-url-field";
 import { ModuleHeader } from "@/components/admin/shared/module-header";
 import { PublishSwitch } from "@/components/admin/shared/publish-switch";
+import { PublishStatusSelect } from "@/components/admin/shared/publish-status-select";
+import {
+  SortableRows,
+  SortableTableRow,
+} from "@/components/admin/shared/sortable-rows";
 import { btnGradient } from "@/components/admin/shared/styles";
 import { TableSkeleton } from "@/components/admin/shared/table-skeleton";
 import type { Playlist, Video } from "@/components/admin/types";
@@ -230,6 +234,7 @@ export function VideosModule() {
         const body = new FormData();
         body.append("file", file);
         body.append("kind", "video");
+        body.append("section", "videos");
         xhr.send(body);
       });
       set("url", url);
@@ -277,6 +282,29 @@ export function VideosModule() {
     } catch (error) {
       toastApiError(error);
       throw error;
+    }
+  }
+
+  /* ————— جابه‌جایی با کشیدن و رها کردن ————— */
+
+  /** ذخیره‌ی ترتیب جدید ویدئوها — به‌روی کور محلی، در خطا بازگشت */
+  async function handleReorder(orderedIds: string[]): Promise<void> {
+    const prev = videos;
+    if (!prev) return;
+    const byId = new Map(prev.map((v) => [v.id, v]));
+    const next = orderedIds
+      .map((id) => byId.get(id))
+      .filter((v): v is Video => v !== undefined);
+    setVideos(next);
+    try {
+      await apiFetch("/api/admin/videos/reorder", {
+        method: "POST",
+        body: JSON.stringify({ ids: orderedIds }),
+      });
+      toast.success("ترتیب ویدئوها ذخیره شد.");
+    } catch (error) {
+      toastApiError(error);
+      setVideos(prev);
     }
   }
 
@@ -612,11 +640,18 @@ export function VideosModule() {
           </Button>
         </EmptyState>
       ) : (
+        <SortableRows
+          ids={videos.map((v) => v.id)}
+          onReorder={(ids) => void handleReorder(ids)}
+        >
         <div className="glass overflow-hidden rounded-2xl">
           <div className="max-h-[70vh] overflow-y-auto">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <span className="sr-only">تغییر ترتیب</span>
+                  </TableHead>
                   <TableHead>ویدئو</TableHead>
                   <TableHead>مدت</TableHead>
                   <TableHead>بازدید</TableHead>
@@ -628,7 +663,7 @@ export function VideosModule() {
               </TableHeader>
               <TableBody>
                 {videos.map((video) => (
-                  <TableRow key={video.id}>
+                  <SortableTableRow key={video.id} id={video.id}>
                     <TableCell className="max-w-72">
                       <div className="flex items-center gap-3">
                         {video.thumbnail.trim() ? (
@@ -721,12 +756,13 @@ export function VideosModule() {
                         </ConfirmDelete>
                       </div>
                     </TableCell>
-                  </TableRow>
+                  </SortableTableRow>
                 ))}
               </TableBody>
             </Table>
           </div>
         </div>
+        </SortableRows>
       )}
 
       {/* دیالوگ ایجاد/ویرایش ویدئو */}
@@ -833,6 +869,7 @@ export function VideosModule() {
                   label="تصویر بندانگشتی"
                   value={form.thumbnail}
                   onChange={(v) => set("thumbnail", v)}
+                  section="videos"
                   previewClassName="h-[90px] w-40"
                   previewAlt="پیش‌نمایش بندانگشتی"
                   hint="تصویر کاور ویدئو؛ نسبت پیشنهادی ۱۶ به ۹."
@@ -907,21 +944,14 @@ export function VideosModule() {
                   </Select>
                 </Field>
               </div>
-              <div className="flex items-center justify-between rounded-xl border border-border bg-foreground/[0.02] p-3 sm:col-span-2">
-                <div className="space-y-0.5">
-                  <Label htmlFor="video-published" className="text-sm font-bold">
-                    نمایش در سایت
-                  </Label>
-                  <p className="text-[0.65rem] text-muted-foreground">
-                    ویدئوهای غیرفعال فقط در پنل دیده می‌شوند.
-                  </p>
-                </div>
-                <Switch
+              {/* وضعیت انتشار: منتشر شده (در سایت) یا پیش‌نویس (فقط پنل مدیر) */}
+              <Field label="وضعیت انتشار" htmlFor="video-published-published">
+                <PublishStatusSelect
                   id="video-published"
-                  checked={form.published}
-                  onCheckedChange={(v) => set("published", v)}
+                  value={form.published}
+                  onChange={(v) => set("published", v)}
                 />
-              </div>
+              </Field>
             </div>
           ) : null}
 
@@ -1001,6 +1031,7 @@ export function VideosModule() {
                       prev ? { ...prev, thumbnail: v } : prev
                     )
                   }
+                  section="videos"
                   previewClassName="h-[90px] w-40"
                   previewAlt="پیش‌نمایش بندانگشتی"
                   hint="تصویر کاور لیست پخش؛ نسبت پیشنهادی ۱۶ به ۹."
@@ -1055,25 +1086,18 @@ export function VideosModule() {
                 </Select>
               </div>
 
-              <div className="flex items-center justify-between rounded-xl border border-border bg-foreground/[0.02] p-3">
-                <div className="space-y-0.5">
-                  <Label htmlFor="playlist-published" className="text-sm font-bold">
-                    نمایش در سایت
-                  </Label>
-                  <p className="text-[0.65rem] text-muted-foreground">
-                    لیست‌های غیرفعال فقط در پنل دیده می‌شوند.
-                  </p>
-                </div>
-                <Switch
+              {/* وضعیت انتشار لیست پخش: منتشر شده (در سایت) یا پیش‌نویس (فقط پنل مدیر) */}
+              <Field label="وضعیت انتشار" htmlFor="playlist-published-published">
+                <PublishStatusSelect
                   id="playlist-published"
-                  checked={playlistForm.published}
-                  onCheckedChange={(v) =>
+                  value={playlistForm.published}
+                  onChange={(v) =>
                     setPlaylistForm((prev) =>
                       prev ? { ...prev, published: v } : prev
                     )
                   }
                 />
-              </div>
+              </Field>
             </div>
           ) : null}
 

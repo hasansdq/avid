@@ -6,8 +6,8 @@ import {
   hashPassword,
   createSession,
   SESSION_COOKIE,
+  sessionCookieOptions,
 } from "@/lib/auth";
-import { requestSecure } from "@/lib/http";
 
 /**
  * POST /api/admin/account/password — تغییر رمز عبور مدیر.
@@ -61,13 +61,7 @@ export async function POST(req: NextRequest) {
     const { token, maxAge } = await createSession(admin.id);
 
     const res = NextResponse.json({ ok: true, revokedSessions: true });
-    res.cookies.set(SESSION_COOKIE, token, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: requestSecure(req),
-      maxAge,
-      path: "/",
-    });
+    res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions(req, maxAge));
     return res;
   } catch (error) {
     console.error("change password error:", error);

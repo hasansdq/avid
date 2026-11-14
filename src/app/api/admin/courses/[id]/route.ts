@@ -112,7 +112,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
       data: courseData,
     });
 
-    // — همگام‌سازی گروه‌ها (فقط حضوری؛ برای آنلاین همه‌ی گروه‌ها حذف می‌شوند) —
+    // — همگام‌سازی گروه‌ها (دوره‌های حضوری/ترکیبی؛ برای آنلاین همه‌ی گروه‌ها حذف می‌شوند) —
     const blocked = await syncGroups(id, groups);
     if (blocked) return blocked;
 

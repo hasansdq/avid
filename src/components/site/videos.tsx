@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { faDigits } from "@/lib/fa";
 import { SectionHeading, Reveal } from "@/components/reveal";
 import { Button } from "@/components/ui/button";
+import { EditableText } from "@/components/site/editable-texts";
 import {
   Dialog,
   DialogContent,
@@ -166,12 +167,18 @@ export function Videos({
           icon={Film}
           badge="ویدئوهای آموزشی"
           title={
-            <>
-              آموزش‌های رایگان را{" "}
-              <span className="text-gradient">تماشا کنید</span>
-            </>
+            <EditableText k="videos.title">
+              <>
+                آموزش‌های رایگان را{" "}
+                <span className="text-gradient">تماشا کنید</span>
+              </>
+            </EditableText>
           }
-          description="همه‌ی ویدئوهای آموزشی به‌صورت کاملاً رایگان و بدون نیاز به ثبت‌نام در دسترس شماست؛ روی هر ویدئو کلیک کنید و همین حالا تماشا کنید."
+          description={
+            <EditableText k="videos.description">
+              همه‌ی ویدئوهای آموزشی به‌صورت کاملاً رایگان و بدون نیاز به ثبت‌نام در دسترس شماست؛ روی هر ویدئو کلیک کنید و همین حالا تماشا کنید.
+            </EditableText>
+          }
         />
 
         {/* دکمه‌ی هدایت به صفحه‌ی اختصاصی ویدئوها */}

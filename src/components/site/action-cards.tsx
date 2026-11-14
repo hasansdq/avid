@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   UserPlus,
   MonitorPlay,
+  ShieldCheck,
   ArrowLeft,
   Compass,
   Check,
@@ -12,6 +13,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { SectionHeading, Reveal } from "@/components/reveal";
+import { EditableText } from "@/components/site/editable-texts";
 
 interface Action {
   href: string;
@@ -65,6 +67,23 @@ const actions: Action[] = [
       glow: "bg-amber-500/25 dark:bg-amber-400/20",
     },
   },
+  {
+    href: "/certificate",
+    icon: ShieldCheck,
+    title: "استعلام گواهی‌نامه",
+    description:
+      "اصالت گواهی‌نامه‌های پایان دوره را فقط با کد ملی دارنده‌ی آن بررسی کنید و فایل گواهی‌نامه را دانلود کنید.",
+    cta: "استعلام گواهی‌نامه",
+    points: ["بدون نیاز به ورود به حساب کاربری", "دانلود مستقیم فایل گواهی‌نامه"],
+    accent: {
+      tile: "from-violet-400 to-purple-600",
+      ring: "shadow-violet-500/30",
+      text: "text-violet-600 dark:text-violet-300",
+      hover: "hover:border-violet-500/40 hover:shadow-violet-500/[0.15] dark:hover:border-violet-400/40",
+      btn: "hover:bg-violet-500 hover:text-white hover:shadow-violet-500/30 dark:hover:bg-violet-400 dark:hover:text-violet-950",
+      glow: "bg-violet-500/25 dark:bg-violet-400/20",
+    },
+  },
 ];
 
 export function ActionCards() {
@@ -75,13 +94,15 @@ export function ActionCards() {
           icon={Compass}
           badge="از کجا شروع کنید؟"
           title={
-            <>
-              دو مسیر برای <span className="text-gradient">شروع سریع</span> شما
-            </>
+            <EditableText k="actions.title">
+              <>
+                سه مسیر برای <span className="text-gradient">شروع سریع</span> شما
+              </>
+            </EditableText>
           }
         />
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           {actions.map((action, i) => (
             <Reveal key={action.href} delay={i * 0.12} className="h-full">
               <a
@@ -143,6 +164,9 @@ export function ActionCards() {
             <span className="hidden h-3 w-px bg-foreground/10 dark:bg-white/10 sm:block" />
             <PlayCircle className="size-3.5 text-amber-600 dark:text-amber-300" />
             ویدئوها بدون نیاز به پیش‌نیاز قابل مشاهده هستند
+            <span className="hidden h-3 w-px bg-foreground/10 dark:bg-white/10 sm:block" />
+            <ShieldCheck className="size-3.5 text-violet-600 dark:text-violet-300" />
+            اصالت گواهی‌نامه‌ها با کد ملی قابل استعلام است
           </p>
         </Reveal>
       </div>

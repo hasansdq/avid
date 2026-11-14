@@ -71,12 +71,26 @@ rsync -a --delete \
 # محافظ: فایل‌های حیاتی باید در آرشیو باشند (regression: مسیر آپلود یک‌بار
 # با exclude 'upload' سراسری حذف شده بود)
 for CRITICAL in \
-  "src/app/api/admin/upload/route.ts" \
+  "src/app/api/admin/upload-image/route.ts" \
+  "src/lib/uploaded-files.ts" \
   "src/app/uploads/[...path]/route.ts" \
   "src/app/api/payment/callback/route.ts" \
   "src/app/api/payment/start/route.ts" \
   "src/lib/payment.ts" \
   "src/app/api/health/route.ts" \
+  "src/app/api/user/otp/request/route.ts" \
+  "src/app/api/panel/otp/request/route.ts" \
+  "src/lib/sms.ts" \
+  "src/app/api/admin/sms-settings/route.ts" \
+  "src/app/api/admin/sms-test/route.ts" \
+  "src/app/api/admin/sms-send/route.ts" \
+  "src/app/api/admin/sms-logs/route.ts" \
+  "src/components/admin/modules/sms-module.tsx" \
+  "src/lib/backup.ts" \
+  "src/app/api/admin/backup/route.ts" \
+  "src/app/api/admin/backup/import/route.ts" \
+  "src/components/admin/modules/backup-module.tsx" \
+  "src/components/site/enroll-form.tsx" \
   "scripts/migrate.ts" \
   "scripts/bootstrap.ts" \
   "scripts/backup.ts" \
@@ -84,6 +98,7 @@ for CRITICAL in \
   "scripts/healthcheck.ts" \
   "prisma/migrations/0_init/migration.sql" \
   "mini-services/chat-service/index.ts" \
+  "mini-services/chat-service/web-dev-supervisor.ts" \
   "compose.yaml" \
   "Dockerfile" \
   "deploy/update.sh" \

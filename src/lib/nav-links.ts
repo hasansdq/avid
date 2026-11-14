@@ -26,14 +26,16 @@ export const DEFAULT_NAV_LINKS: NavLinkSeed[] = [
   { id: "seed-nav-header-register", section: "header", label: "ثبت‌نام", url: "#register", kind: "internal", target: "same", isButton: false, sortOrder: 3 },
   { id: "seed-nav-header-videos", section: "header", label: "ویدئوها", url: "/videos", kind: "internal", target: "same", isButton: false, sortOrder: 4 },
   { id: "seed-nav-header-testimonials", section: "header", label: "نظرات", url: "#testimonials", kind: "internal", target: "same", isButton: false, sortOrder: 5 },
+  { id: "seed-nav-header-cert", section: "header", label: "استعلام گواهی‌نامه", url: "/certificate", kind: "internal", target: "same", isButton: false, sortOrder: 6 },
   // — هدر: دکمه‌ی برجسته (CTA) به صفحه‌ی ثبت‌نام —
-  { id: "seed-nav-header-cta", section: "header", label: "ثبت‌نام در دوره‌ها", url: "/register", kind: "internal", target: "same", isButton: true, sortOrder: 6 },
+  { id: "seed-nav-header-cta", section: "header", label: "ثبت‌نام در دوره‌ها", url: "/register", kind: "internal", target: "same", isButton: true, sortOrder: 7 },
   // — فوتر: دسترسی سریع —
   { id: "seed-nav-footer-home", section: "footer", label: "خانه", url: "#home", kind: "internal", target: "same", isButton: false, sortOrder: 1 },
   { id: "seed-nav-footer-courses", section: "footer", label: "دوره‌ها", url: "#courses", kind: "internal", target: "same", isButton: false, sortOrder: 2 },
   { id: "seed-nav-footer-register", section: "footer", label: "ثبت‌نام", url: "#register", kind: "internal", target: "same", isButton: false, sortOrder: 3 },
   { id: "seed-nav-footer-videos", section: "footer", label: "ویدئوها", url: "/videos", kind: "internal", target: "same", isButton: false, sortOrder: 4 },
   { id: "seed-nav-footer-testimonials", section: "footer", label: "نظرات", url: "#testimonials", kind: "internal", target: "same", isButton: false, sortOrder: 5 },
+  { id: "seed-nav-footer-cert", section: "footer", label: "استعلام گواهی‌نامه", url: "/certificate", kind: "internal", target: "same", isButton: false, sortOrder: 6 },
 ];
 
 /** ساخت لینک‌های پیش‌فرض در صورت خالی بودن جدول (idempotent و امن در برابر رقابت همزمانی) */

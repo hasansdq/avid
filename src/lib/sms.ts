@@ -4,10 +4,21 @@ import type { SmsSettings } from "@prisma/client";
 /**
  * ارسال پیامک — یکپارچه‌سازی با ملی پیامک (Melipayamak)
  *
- * دو روش اتصال پشتیبانی می‌شود (از تنظیمات پنل مدیریت، رکورد یگانه‌ی SmsSettings):
- *  • rest    → وب‌سرویس REST (rest.payamak-panel.com) با «نام کاربری/رمز» یا «کلید API»
- *  • console → کنسول ملی پیامک (console.melipayamak.com) با کلید API کنسول
- *  • none    → حالت نمایشی: پیامکی ارسال نمی‌شود و کد OTP در پاسخ API برمی‌گردد
+ * پیاده‌سازی دقیقاً بر اساس مستندات رسمی ملی پیامک:
+ *  • وب‌سرویس REST  → docs.payamak-panel.com (rest.payamak-panel.com)
+ *    - همه‌ی متدها POST با Content-Type: application/json; charset=utf-8
+ *    - احراز هویت: username + password داخل بدنه‌ی JSON
+ *      (طبق مستندات رسمی، مقدار password همان «کلید API» است که در بخش
+ *      تنظیمات وب‌سرویس پنل تولید می‌شود و جایگزین رمز عبور می‌شود)
+ *    - پاسخ: { Value, RetStatus, StrRetStatus } — موفقیت = RetStatus ۱
+ *      و Value حاوی شناسه‌ی رسالت (recId)؛ کدهای خطا در Value برمی‌گردند
+ *    - متد اختصاصی OTP: /api/SendSMS/SendOTP (ارسال سریع بدون تایید متن)
+ *  • کنسول ملی پیامک → console.melipayamak.com (REST بر پایه‌ی توکن)
+ *    - توکن داخل مسیر URL قرار می‌گیرد: /api/send/simple/{token}
+ *      (فراخوانی بدون توکن در مسیر، خطای HTTP 405 برمی‌گرداند)
+ *    - بدنه‌ی JSON: { from, to, text } — گیرنده به‌صورت رشته‌ی تکی
+ *    - پترن خدماتی: /api/send/shared/{token} با { to, bodyId, args }
+ *  • none → حالت نمایشی: پیامکی ارسال نمی‌شود و کد OTP در پاسخ API برمی‌گردد
  *
  * هیچ‌کدام از توابع این ماژول استثنا پرتاب نمی‌کنند؛ همیشه SmsSendResult
  * برمی‌گردانند تا جریان ثبت‌نام هرگز به‌خاطر قطعی سرویس پیامک متوقف نشود.
@@ -20,7 +31,7 @@ export interface SmsSendResult {
   /** آیا پیامک به مخابرات تحویل شد؟ */
   delivered: boolean;
   provider: "rest" | "console" | "none";
-  /** شناسه‌ی رسالت ملی پیامک (Value) */
+  /** شناسه‌ی رسالت ملی پیامک (Value / recId) */
   recId?: string;
   /** پاسخ خام سرویس (کوتاه‌شده تا ۳۰۰ نویسه) برای عیب‌یابی */
   response: string;
@@ -30,6 +41,10 @@ export interface SmsSendResult {
 
 /** نوع ارسال — برای ثبت در گزارش SmsLog */
 export type SmsKind = "manual" | "otp" | "test" | "system";
+
+/** متن پیامک OTP (بدون امضا — مسیر OTP از خط مجاز پیش‌تاییدشده ارسال می‌شود) */
+const OTP_TEXT = (code: string) =>
+  `آوید | کد تایید شما: ${code}\nاین کد ۵ دقیقه معتبر است.`;
 
 /* ------------------------------------------------------------------ */
 /*                    تنظیمات (رکورد یگانه + کش ۱۰ ثانیه‌ای)           */
@@ -65,18 +80,26 @@ export function invalidateSmsSettingsCache(): void {
 /*                        اعتبارسنجی و ابزارها                         */
 /* ------------------------------------------------------------------ */
 
-/** آیا اعتبار وب‌سرویس REST در دسترس است؟ (کلید API یا نام کاربری/رمز) */
-function hasRestCredentials(s: SmsSettings): boolean {
-  return !!s.apiKey || (!!s.username && !!s.password);
+/**
+ * اعتبارنامه‌های وب‌سرویس REST — طبق مستندات رسمی:
+ * username همیشه الزامی است و password همان رمز عبور پنل یا «کلید API»
+ * تولیدشده در بخش تنظیمات وب‌سرویس (کلید API جایگزین رمز عبور می‌شود).
+ */
+function restCredentials(
+  s: SmsSettings
+): { username: string; password: string } | null {
+  const username = s.username.trim();
+  const password = s.password.trim() || s.apiKey.trim();
+  return username && password ? { username, password } : null;
 }
 
 /** آیا سرویس پیامکی واقعاً پیکربندی شده است؟ (بدون آن → حالت نمایشی) */
 export function isSmsConfigured(s: SmsSettings): boolean {
   if (s.provider === "rest") {
-    return hasRestCredentials(s) && !!s.fromNumber;
+    return restCredentials(s) !== null && !!s.fromNumber.trim();
   }
   if (s.provider === "console") {
-    return !!s.consoleApiKey && !!s.fromNumber;
+    return !!s.consoleApiKey.trim() && !!s.fromNumber.trim();
   }
   return false;
 }
@@ -92,41 +115,6 @@ function normalizePhone(phone: string): string {
 /** کوتاه‌کردن رشته برای ذخیره/گزارش */
 function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) : s;
-}
-
-/** پیام خطای فارسی برای کدهای RetStatus وب‌سرویس REST ملی پیامک */
-const REST_ERROR_MESSAGES: Record<string, string> = {
-  "2": "اعتبار حساب پیامکی کافی نیست.",
-  "3": "محدودیت ارسال در روزِ جاری رسیده است.",
-  "5": "شماره‌ی گیرنده نامعتبر است.",
-  "6": "شماره‌ی خط فرستنده نامعتبر است.",
-  "7": "متن پیامک نامعتبر است.",
-  "8": "متن پیامک شامل کلمات فیلترشده است.",
-  "9": "ارسال در این بازه‌ی ساعتی مجاز نیست.",
-  "10": "حساب پیامکی فعال نیست.",
-  "11": "نام کاربری یا رمز عبور اشتباه است.",
-  "12": "حساب کاربری غیرفعال است.",
-  "13": "اعتبار حساب کافی نیست.",
-  "14": "فرمان ارسال غیرمعتبر است.",
-  "15": "شماره‌ی فرستنده معتبر نیست.",
-  "16": "شماره‌ی گیرنده یا متن پیام نامعتبر است.",
-  "17": "متن پیامک نامعتبر است.",
-  "18": "تعداد گیرندگان بیش از حد مجاز است.",
-  "19": "امکان ارسال به این شماره وجود ندارد.",
-  "20": "شماره‌ی گیرنده نامعتبر است.",
-  "22": "شماره‌ی فرستنده (خط اختیاری) معتبر نیست.",
-  "100": "پارامترهای ارسالی به سرویس ناقص است.",
-};
-
-function restErrorMessage(
-  retStatus: string,
-  strRetStatus: unknown
-): string {
-  const mapped = REST_ERROR_MESSAGES[retStatus];
-  if (mapped) return mapped;
-  const raw = typeof strRetStatus === "string" ? strRetStatus.trim() : "";
-  if (raw) return `سرویس پیامک پیام را نپذیرفت: ${truncate(raw, 120)}`;
-  return `سرویس پیامک پیام را نپذیرفت (کد وضعیت: ${retStatus || "نامشخص"}).`;
 }
 
 /** ثبت گزارش ارسال در SmsLog — هرگز استثنا پرتاب نمی‌کند */
@@ -161,6 +149,7 @@ async function logSms(entry: {
 /* ------------------------------------------------------------------ */
 
 const REST_SEND_URL = "https://rest.payamak-panel.com/api/SendSMS/SendSMS";
+const REST_OTP_URL = "https://rest.payamak-panel.com/api/SendSMS/SendOTP";
 const REST_PATTERN_URL =
   "https://rest.payamak-panel.com/api/SendSMS/BaseServiceNumber";
 
@@ -170,266 +159,457 @@ interface RestResponse {
   StrRetStatus?: unknown;
 }
 
-/** ارسال ساده از طریق REST — پاسخ {Value, RetStatus, StrRetStatus} */
+/**
+ * پیام خطای فارسی برای کدهای بازگشتی وب‌سرویس REST ملی پیامک.
+ * طبق مستندات رسمی، کدهای خطا در فیلد Value برمی‌گردند (و RetStatus
+ * وضعیت کلی را نشان می‌دهد؛ ۱ = موفق، ۳۵ = داده نامعتبر).
+ */
+const REST_ERROR_MESSAGES: Record<string, string> = {
+  "0": "نام کاربری یا رمز عبور (کلید API) صحیح نیست.",
+  "2": "اعتبار حساب پیامکی کافی نیست.",
+  "3": "محدودیت ارسال روزانه تکمیل شده است.",
+  "4": "محدودیت حجم ارسال رعایت نشده است.",
+  "5": "شماره‌ی خط فرستنده معتبر نیست.",
+  "6": "ارسال از این خط مجاز نیست یا سامانه در حال به‌روزرسانی است.",
+  "7": "متن پیامک حاوی کلمه‌ی فیلترشده است.",
+  "8": "متن پیامک حاوی کلمات فیلترشده است.",
+  "9": "ارسال از خطوط عمومی از طریق وب‌سرویس امکان‌پذیر نیست.",
+  "10": "حساب کاربری فعال نیست.",
+  "11": "ارسال پیامک انجام نشد.",
+  "12": "مدارک کاربر کامل نیست.",
+  "14": "متن پیامک حاوی لینک است.",
+  "15": "عبارت «لغو11» در انتهای متن پیامک وجود ندارد.",
+  "16": "شماره‌ی گیرنده‌ای یافت نشد.",
+  "17": "متن پیامک خالی است.",
+  "18": "شماره‌ی موبایل معتبر نیست.",
+  "19": "سقف ارسال روزانه‌ی API تکمیل شده است.",
+  "20": "شماره‌ی گیرنده نامعتبر است.",
+  "22": "شماره‌ی خط فرستنده (خط اختیاری) معتبر نیست.",
+  "35": "داده‌ی ارسالی نامعتبر است؛ نام کاربری/رمز و قالب پارامترها را بررسی کنید.",
+  "100": "پارامترهای ارسالی به سرویس ناقص است.",
+  "-1": "داده‌ی ارسالی نامعتبر است یا دسترسی وب‌سرویس غیرفعال است.",
+  "-2": "در هر فراخوانی فقط یک شماره موبایل قابل ارسال است.",
+  "-3": "خط ارسال در سیستم تعریف نشده است.",
+  "-4": "شناسه‌ی متن خدماتی (پترن) صحیح نیست یا هنوز تأیید نشده است.",
+  "-5": "متن ارسالی با متغیرهای پترن همخوانی ندارد.",
+  "-6": "خطای داخلی سامانه رخ داده است.",
+  "-10": "ارسال لینک در متغیرهای پترن مجاز نیست.",
+  "-100": "خطای داخلی یا پارامتر نامعتبر؛ در صورت تکرار با پشتیبانی تماس بگیرید.",
+  "-108": "IP سرور شما به دلیل تلاش‌های ناموفق مسدود شده است.",
+  "-109": "ابتدا IP مجاز سرور را در تنظیمات وب‌سرویس پنل ثبت کنید.",
+  "-110": "استفاده از کلید API به جای رمز عبور الزامی است.",
+  "-111": "IP درخواست‌کننده مجاز نیست.",
+  "-112": "دسترسی وب‌سرویس برای این حساب غیرفعال است.",
+};
+
+/** ساخت پیام خطای REST — اولویت: کد Value، سپس RetStatus، سپس متن خام */
+function restError(json: RestResponse | null, responseText: string): string {
+  const valueStr =
+    json?.Value !== undefined && json?.Value !== null
+      ? String(json.Value)
+      : "";
+  const retStr =
+    json?.RetStatus !== undefined && json?.RetStatus !== null
+      ? String(json.RetStatus)
+      : "";
+
+  const byValue = REST_ERROR_MESSAGES[valueStr];
+  if (byValue) return byValue;
+  const byRet = REST_ERROR_MESSAGES[retStr];
+  if (byRet) return byRet;
+
+  const raw =
+    typeof json?.StrRetStatus === "string" ? json.StrRetStatus.trim() : "";
+  if (raw) return `سرویس پیامک پیام را نپذیرفت: ${truncate(raw, 120)}`;
+  return `سرویس پیامک پیام را نپذیرفت (پاسخ خام: ${truncate(responseText, 120) || "بدون پاسخ"}).`;
+}
+
+/**
+ * تحلیل پاسخ REST — موفقیت یعنی RetStatus = 1 و Value حاوی شناسه‌ی
+ * رسالت (عددی مثبت) باشد؛ در غیر این صورت کد خطا از Value خوانده می‌شود.
+ */
+function parseRestResponse(responseText: string): {
+  delivered: boolean;
+  recId?: string;
+  error?: string;
+} {
+  let json: RestResponse | null = null;
+  try {
+    json = JSON.parse(responseText) as RestResponse;
+  } catch {
+    json = null;
+  }
+
+  const retStatus = json?.RetStatus;
+  const retOk = retStatus === 1 || retStatus === "1";
+  const rawValue = json?.Value;
+  const valueStr =
+    rawValue !== undefined && rawValue !== null ? String(rawValue) : "";
+  const valueNum = Number(valueStr);
+
+  // موفقیت: RetStatus=1 و Value یک شناسه‌ی رسالت معتبر است
+  // (عددی مثبت — کدهای خطا یا ۰/منفی‌اند یا در جدول خطاها هستند)
+  const valueIsRecId =
+    valueStr !== "" &&
+    (Number.isFinite(valueNum) ? valueNum > 0 : !/^-?\d+$/.test(valueStr));
+
+  if (retOk && valueIsRecId) {
+    return { delivered: true, recId: valueStr };
+  }
+  return { delivered: false, error: restError(json, responseText) };
+}
+
+/** POST امن به وب‌سرویس REST با بدنه‌ی JSON و مهلت ۱۵ ثانیه */
+async function restPost(
+  url: string,
+  body: Record<string, unknown>
+): Promise<{ responseText: string; networkError?: string }> {
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
+    });
+    return { responseText: await res.text() };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { responseText: "", networkError: truncate(message, 120) };
+  }
+}
+
+/** ثبت نتیجه در SmsLog و ساخت SmsSendResult برای مسیر REST */
+async function finishRest(params: {
+  to: string;
+  text: string;
+  kind: SmsKind;
+  responseText: string;
+  networkError?: string;
+}): Promise<SmsSendResult> {
+  if (params.networkError) {
+    const result: SmsSendResult = {
+      delivered: false,
+      provider: "rest",
+      response: "",
+      error: `خطا در ارتباط با وب‌سرویس ملی پیامک: ${params.networkError}`,
+    };
+    await logSms({
+      phone: params.to,
+      text: params.text,
+      kind: params.kind,
+      provider: "rest",
+      delivered: false,
+      response: "",
+    });
+    return result;
+  }
+
+  const parsed = parseRestResponse(params.responseText);
+  const result: SmsSendResult = {
+    delivered: parsed.delivered,
+    provider: "rest",
+    ...(parsed.recId !== undefined ? { recId: parsed.recId } : {}),
+    response: truncate(params.responseText, 300),
+    ...(parsed.error !== undefined ? { error: parsed.error } : {}),
+  };
+  await logSms({
+    phone: params.to,
+    text: params.text,
+    kind: params.kind,
+    provider: "rest",
+    delivered: parsed.delivered,
+    ...(parsed.recId !== undefined ? { recId: parsed.recId } : {}),
+    response: params.responseText,
+  });
+  return result;
+}
+
+/**
+ * ارسال ساده از طریق REST — POST /api/SendSMS/SendSMS
+ * بدنه: { username, password, to, from, text, isflash }
+ */
 async function sendViaRest(
   settings: SmsSettings,
   to: string,
   text: string,
   kind: SmsKind
 ): Promise<SmsSendResult> {
-  const useApiKey = !!settings.apiKey;
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (useApiKey) headers["X-API-KEY"] = settings.apiKey;
-
-  const body = useApiKey
-    ? { to, from: settings.fromNumber, text, isFlash: false }
-    : {
-        username: settings.username,
-        password: settings.password,
-        to,
-        from: settings.fromNumber,
-        text,
-        isFlash: false,
-      };
-
-  try {
-    const res = await fetch(REST_SEND_URL, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(15_000),
-    });
-    const responseText = await res.text();
-
-    let json: RestResponse | null = null;
-    try {
-      json = JSON.parse(responseText) as RestResponse;
-    } catch {
-      json = null;
-    }
-
-    const retStatus = json?.RetStatus;
-    const delivered = retStatus === 1 || retStatus === "1";
-    const rawValue = json?.Value;
-    const recId =
-      rawValue !== undefined && rawValue !== null && String(rawValue) !== ""
-        ? String(rawValue)
-        : undefined;
-
-    const result: SmsSendResult = {
-      delivered,
-      provider: "rest",
-      ...(recId !== undefined ? { recId } : {}),
-      response: truncate(responseText, 300),
-    };
-    if (!delivered) {
-      result.error = restErrorMessage(String(retStatus ?? ""), json?.StrRetStatus);
-    }
-
-    await logSms({
-      phone: to,
-      text,
-      kind,
-      provider: "rest",
-      delivered,
-      ...(recId !== undefined ? { recId } : {}),
-      response: responseText,
-    });
-    return result;
-  } catch (error) {
-    // خطای شبکه/مهلت زمانی — هرگز استثنا بیرون نمی‌رود
-    const message = error instanceof Error ? error.message : String(error);
-    const result: SmsSendResult = {
+  const creds = restCredentials(settings);
+  if (!creds) {
+    return {
       delivered: false,
       provider: "rest",
       response: "",
-      error: `خطا در ارتباط با وب‌سرویس ملی پیامک: ${truncate(message, 120)}`,
+      error: "نام کاربری و رمز عبور (یا کلید API) وب‌سرویس تنظیم نشده است.",
     };
-    await logSms({
-      phone: to,
-      text,
-      kind,
-      provider: "rest",
-      delivered: false,
-      response: "",
-    });
-    return result;
   }
+
+  const { responseText, networkError } = await restPost(REST_SEND_URL, {
+    username: creds.username,
+    password: creds.password,
+    to,
+    from: settings.fromNumber,
+    text,
+    isflash: false,
+  });
+  return finishRest({ to, text, kind, responseText, networkError });
 }
 
-/** ارسال با پترن خدماتی (BaseServiceNumber) — متن فقط کد است */
+/**
+ * ارسال کد یک‌بارمصرف از طریق متد رسمی OTP — POST /api/SendSMS/SendOTP
+ * بدنه: { username, password, to, from, code } — ارسال سریع بدون تایید متن
+ */
+async function sendRestOtp(
+  settings: SmsSettings,
+  to: string,
+  code: string
+): Promise<SmsSendResult> {
+  const creds = restCredentials(settings);
+  if (!creds) {
+    return {
+      delivered: false,
+      provider: "rest",
+      response: "",
+      error: "نام کاربری و رمز عبور (یا کلید API) وب‌سرویس تنظیم نشده است.",
+    };
+  }
+
+  const { responseText, networkError } = await restPost(REST_OTP_URL, {
+    username: creds.username,
+    password: creds.password,
+    to,
+    from: settings.fromNumber,
+    code,
+  });
+  return finishRest({
+    to,
+    text: `کد تایید: ${code}`,
+    kind: "otp",
+    responseText,
+    networkError,
+  });
+}
+
+/**
+ * ارسال با پترن خدماتی — POST /api/SendSMS/BaseServiceNumber
+ * بدنه: { username, password, text, to, bodyId } — text فقط متغیرهای پترن است
+ */
 async function sendRestPattern(
   settings: SmsSettings,
   to: string,
   bodyId: string,
   code: string
 ): Promise<SmsSendResult> {
-  const useApiKey = !!settings.apiKey;
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (useApiKey) headers["X-API-KEY"] = settings.apiKey;
-
-  const body = useApiKey
-    ? { to, bodyId, text: code }
-    : {
-        username: settings.username,
-        password: settings.password,
-        to,
-        bodyId,
-        text: code,
-      };
-
-  try {
-    const res = await fetch(REST_PATTERN_URL, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(15_000),
-    });
-    const responseText = await res.text();
-
-    let json: RestResponse | null = null;
-    try {
-      json = JSON.parse(responseText) as RestResponse;
-    } catch {
-      json = null;
-    }
-
-    const retStatus = json?.RetStatus;
-    const delivered = retStatus === 1 || retStatus === "1";
-    const rawValue = json?.Value;
-    const recId =
-      rawValue !== undefined && rawValue !== null && String(rawValue) !== ""
-        ? String(rawValue)
-        : undefined;
-
-    const result: SmsSendResult = {
-      delivered,
-      provider: "rest",
-      ...(recId !== undefined ? { recId } : {}),
-      response: truncate(responseText, 300),
-    };
-    if (!delivered) {
-      result.error = restErrorMessage(String(retStatus ?? ""), json?.StrRetStatus);
-    }
-
-    await logSms({
-      phone: to,
-      text: code,
-      kind: "otp",
-      provider: "rest",
-      delivered,
-      ...(recId !== undefined ? { recId } : {}),
-      response: responseText,
-    });
-    return result;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const result: SmsSendResult = {
+  const creds = restCredentials(settings);
+  if (!creds) {
+    return {
       delivered: false,
       provider: "rest",
       response: "",
-      error: `خطا در ارتباط با وب‌سرویس ملی پیامک (ارسال پترن): ${truncate(message, 120)}`,
+      error: "نام کاربری و رمز عبور (یا کلید API) وب‌سرویس تنظیم نشده است.",
     };
-    await logSms({
-      phone: to,
-      text: code,
-      kind: "otp",
-      provider: "rest",
-      delivered: false,
-      response: "",
-    });
-    return result;
   }
+
+  const { responseText, networkError } = await restPost(REST_PATTERN_URL, {
+    username: creds.username,
+    password: creds.password,
+    text: code,
+    to,
+    bodyId: Number(bodyId),
+  });
+  return finishRest({
+    to,
+    text: `پترن ${bodyId}: ${code}`,
+    kind: "otp",
+    responseText,
+    networkError,
+  });
 }
 
 /* ------------------------------------------------------------------ */
 /*                       کنسول ملی پیامک                               */
 /* ------------------------------------------------------------------ */
 
-const CONSOLE_SEND_URL = "https://console.melipayamak.com/api/send/simple/";
+/**
+ * توکن کنسول داخل «مسیر URL» قرار می‌گیرد (نه هدر Authorization).
+ * فراخوانی بدون توکن در مسیر → خطای HTTP 405 (Method Not Allowed).
+ */
+const CONSOLE_SEND_URL = "https://console.melipayamak.com/api/send/simple";
+const CONSOLE_SHARED_URL = "https://console.melipayamak.com/api/send/shared";
 
-/** ارسال ساده از طریق کنسول — پاسخ 2xx یعنی تحویل موفق */
+/** POST امن به کنسول ملی پیامک با مهلت ۱۵ ثانیه */
+async function consolePost(
+  url: string,
+  token: string,
+  body: Record<string, unknown>
+): Promise<{ status: number; ok: boolean; responseText: string; networkError?: string }> {
+  try {
+    const res = await fetch(`${url}/${encodeURIComponent(token)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
+    });
+    return {
+      status: res.status,
+      ok: res.ok,
+      responseText: await res.text(),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      status: 0,
+      ok: false,
+      responseText: "",
+      networkError: truncate(message, 120),
+    };
+  }
+}
+
+/** پیام‌هایی که نشانه‌ی موفقیت‌اند (کنسول گاهی status متنی برمی‌گرداند) */
+const CONSOLE_SUCCESS_RE = /موفق|ثبت شد|انجام شد|ارسال شد/;
+
+/** ساختارهای رایج پاسخ موفق کنسول (recId سطح بالا یا داخل data) */
+function consoleRecId(json: unknown): string | undefined {
+  if (!json || typeof json !== "object") return undefined;
+  const j = json as {
+    recId?: unknown;
+    corId?: unknown;
+    Value?: unknown;
+    data?: { recId?: unknown; messageId?: unknown; id?: unknown };
+  };
+  const candidates = [
+    j.recId,
+    j.corId,
+    j.data?.recId,
+    j.data?.messageId,
+    j.data?.id,
+    j.Value,
+  ];
+  for (const c of candidates) {
+    if (c !== undefined && c !== null && String(c) !== "") {
+      return String(c);
+    }
+  }
+  return undefined;
+}
+
+/** ثبت نتیجه در SmsLog و ساخت SmsSendResult برای مسیر کنسول */
+async function finishConsole(params: {
+  to: string;
+  text: string;
+  kind: SmsKind;
+  status: number;
+  ok: boolean;
+  responseText: string;
+  networkError?: string;
+}): Promise<SmsSendResult> {
+  let json: unknown = null;
+  try {
+    json = JSON.parse(params.responseText);
+  } catch {
+    json = null;
+  }
+  const recId = consoleRecId(json);
+
+  // پیام متنی status — خطاها به‌صورت { "status": "..." } برمی‌گردند
+  // (مثل «کلید کنسول معتبر نیست»)؛ پیام موفقیت هم ممکن است متنی باشد.
+  const statusRaw =
+    json && typeof json === "object"
+      ? (json as { status?: unknown }).status
+      : undefined;
+  const statusMsg =
+    typeof statusRaw === "string" ? statusRaw.trim() : "";
+
+  let delivered: boolean;
+  let error: string | undefined;
+
+  if (params.networkError) {
+    delivered = false;
+    error = `خطا در ارتباط با کنسول ملی پیامک: ${params.networkError}`;
+  } else if (!params.ok) {
+    // خطای HTTP — مثل 400 کلید نامعتبر یا 405/404 مسیر اشتباه
+    delivered = false;
+    error =
+      statusMsg ||
+      `کنسول ملی پیامک پیام را نپذیرفت (کد HTTP ${params.status}).`;
+  } else if (statusMsg && !CONSOLE_SUCCESS_RE.test(statusMsg)) {
+    // پاسخ 2xx ولی status متنی خطا
+    delivered = false;
+    error = statusMsg;
+  } else {
+    delivered = true;
+  }
+
+  const result: SmsSendResult = {
+    delivered,
+    provider: "console",
+    ...(recId !== undefined ? { recId } : {}),
+    response: truncate(params.responseText, 300),
+    ...(error !== undefined ? { error } : {}),
+  };
+  await logSms({
+    phone: params.to,
+    text: params.text,
+    kind: params.kind,
+    provider: "console",
+    delivered,
+    ...(recId !== undefined ? { recId } : {}),
+    response: params.responseText,
+  });
+  return result;
+}
+
+/**
+ * ارسال ساده از طریق کنسول — POST /api/send/simple/{token}
+ * بدنه: { from, to, text } — گیرنده رشته‌ی تکی «09xxxxxxxxx»
+ */
 async function sendViaConsole(
   settings: SmsSettings,
   to: string,
   text: string,
   kind: SmsKind
 ): Promise<SmsSendResult> {
-  try {
-    const res = await fetch(CONSOLE_SEND_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${settings.consoleApiKey}`,
-      },
-      body: JSON.stringify({ from: settings.fromNumber, to, text }),
-      signal: AbortSignal.timeout(15_000),
-    });
-    const responseText = await res.text();
+  const { status, ok, responseText, networkError } = await consolePost(
+    CONSOLE_SEND_URL,
+    settings.consoleApiKey.trim(),
+    { from: settings.fromNumber, to, text }
+  );
+  return finishConsole({
+    to,
+    text,
+    kind,
+    status,
+    ok,
+    responseText,
+    networkError,
+  });
+}
 
-    // استخراج شناسه‌ی رسالت از ساختارهای رایج پاسخ کنسول
-    let recId: string | undefined;
-    try {
-      const json = JSON.parse(responseText) as {
-        data?: { recId?: unknown; messageId?: unknown; id?: unknown };
-        Value?: unknown;
-      };
-      const candidate =
-        json?.data?.recId ?? json?.data?.messageId ?? json?.data?.id ?? json?.Value;
-      if (
-        candidate !== undefined &&
-        candidate !== null &&
-        String(candidate) !== ""
-      ) {
-        recId = String(candidate);
-      }
-    } catch {
-      // پاسخ غیر JSON — مهم نیست؛ وضعیت HTTP ملاک است
-    }
-
-    const delivered = res.ok;
-    const result: SmsSendResult = {
-      delivered,
-      provider: "console",
-      ...(recId !== undefined ? { recId } : {}),
-      response: truncate(responseText, 300),
-    };
-    if (!delivered) {
-      result.error = `کنسول ملی پیامک پیام را نپذیرفت (کد HTTP ${res.status}).`;
-    }
-
-    await logSms({
-      phone: to,
-      text,
-      kind,
-      provider: "console",
-      delivered,
-      ...(recId !== undefined ? { recId } : {}),
-      response: responseText,
-    });
-    return result;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const result: SmsSendResult = {
-      delivered: false,
-      provider: "console",
-      response: "",
-      error: `خطا در ارتباط با کنسول ملی پیامک: ${truncate(message, 120)}`,
-    };
-    await logSms({
-      phone: to,
-      text,
-      kind,
-      provider: "console",
-      delivered: false,
-      response: "",
-    });
-    return result;
-  }
+/**
+ * ارسال پترن خدماتی از طریق کنسول — POST /api/send/shared/{token}
+ * بدنه: { to, bodyId, args: [...] } — args آرایه‌ی متغیرهای پترن است
+ */
+async function sendConsoleShared(
+  settings: SmsSettings,
+  to: string,
+  bodyId: string,
+  args: string[]
+): Promise<SmsSendResult> {
+  const { status, ok, responseText, networkError } = await consolePost(
+    CONSOLE_SHARED_URL,
+    settings.consoleApiKey.trim(),
+    { to, bodyId: Number(bodyId), args }
+  );
+  return finishConsole({
+    to,
+    text: `پترن ${bodyId}: ${args.join(" | ")}`,
+    kind: "otp",
+    status,
+    ok,
+    responseText,
+    networkError,
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -485,8 +665,12 @@ export async function sendSms(
 }
 
 /**
- * ارسال کد تایید (OTP) — در صورت تنظیم پترن خدماتی از همان مسیر
- * استفاده می‌شود؛ در غیر این صورت پیامک متنی استاندارد.
+ * ارسال کد تایید (OTP) — مسیر رسمی ملی پیامک:
+ *  ۱) اگر پترن خدماتی (otpBodyId) تنظیم شده → ارسال با پترن
+ *     (REST: BaseServiceNumber / کنسول: shared)
+ *  ۲) وگرنه REST → متد اختصاصی SendOTP (سریع، بدون تایید متن)
+ *  ۳) وگرنه کنسول → ارسال ساده با متن کامل کد
+ *  ۴) بدون سرویس متصل → حالت نمایشی (کد در پاسخ API برمی‌گردد)
  */
 export async function sendOtpSms(
   phone: string,
@@ -495,29 +679,30 @@ export async function sendOtpSms(
   try {
     const settings = await getSmsSettings();
     const to = normalizePhone(phone);
+    const bodyId = settings.otpBodyId.trim();
 
-    // — مسیر ۱: پترن خدماتی REST (BaseServiceNumber) —
+    if (settings.provider === "rest") {
+      if (restCredentials(settings) && settings.fromNumber) {
+        if (bodyId) {
+          return await sendRestPattern(settings, to, bodyId, code);
+        }
+        return await sendRestOtp(settings, to, code);
+      }
+    }
+
     if (
-      settings.provider === "rest" &&
-      settings.otpBodyId &&
-      hasRestCredentials(settings)
+      settings.provider === "console" &&
+      settings.consoleApiKey.trim() &&
+      settings.fromNumber
     ) {
-      return await sendRestPattern(settings, to, settings.otpBodyId, code);
+      if (bodyId) {
+        return await sendConsoleShared(settings, to, bodyId, [code]);
+      }
+      return await sendViaConsole(settings, to, OTP_TEXT(code), "otp");
     }
 
-    // — مسیر ۲: ارسال متنی ساده (rest یا console) —
-    if (isSmsConfigured(settings)) {
-      return await sendSms(
-        phone,
-        `آوید | کد تایید شما: ${code}\nاین کد ۵ دقیقه معتبر است.`,
-        "otp"
-      );
-    }
-
-    // — مسیر ۳: حالت نمایشی — کد در پاسخ API برگردانده می‌شود —
-    console.log(
-      `[SMS demo] → ${phone}: آوید | کد تایید شما: ${code}\nاین کد ۵ دقیقه معتبر است.`
-    );
+    // — حالت نمایشی: کد در پاسخ API برگردانده می‌شود —
+    console.log(`[SMS demo] → ${phone}: ${OTP_TEXT(code)}`);
     return demoResult();
   } catch (error) {
     console.error("otp sms send error:", error);

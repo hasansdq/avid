@@ -9,14 +9,20 @@ import {
   ChevronRight,
   ClipboardList,
   Eye,
+  GraduationCap,
+  Hourglass,
+  IdCard,
   Inbox,
   Loader2,
+  LogIn,
   Pencil,
   Phone,
   RefreshCw,
   Save,
   Search,
   Trash2,
+  UserPlus,
+  Users,
   Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -40,14 +46,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { apiFetch, toastApiError } from "@/components/admin/api";
@@ -57,19 +57,28 @@ import { InstallmentsDialog } from "@/components/admin/shared/installments-dialo
 import { UserPaymentsDialog } from "@/components/admin/shared/user-payments-dialog";
 import { ModuleHeader } from "@/components/admin/shared/module-header";
 import {
-  InstallmentsOverviewSection,
+  InstallmentsOverviewStats,
+  RecentPaidSection,
+  RemainingSection,
   useInstallmentsOverview,
 } from "@/components/admin/shared/installments-overview";
 import { StatusBadge } from "@/components/admin/shared/status-badge";
 import { TableSkeleton } from "@/components/admin/shared/table-skeleton";
 import { btnGradient, tileGradient } from "@/components/admin/shared/styles";
 import type {
+  CourseWithUsage,
   EnrollmentWithInstallments,
   User,
   UserWithStats,
 } from "@/components/admin/types";
 import { isEnrollmentStatus } from "@/lib/course-theme";
 import { faDate, faDigits } from "@/lib/fa";
+import {
+  isValidNationalId,
+  NATIONAL_ID_INVALID_MESSAGE,
+  normalizeNationalId,
+  toEnDigits,
+} from "@/lib/national-id";
 
 type StatusFilter = "all" | "active" | "blocked";
 
@@ -138,6 +147,39 @@ function faAmount(n: number): string {
   return faDigits(n.toLocaleString("en-US"));
 }
 
+/** نشان شمارنده‌ی کوچک کنار عنوان تب‌های ماژول */
+function TabPill({
+  count,
+  tone,
+}: {
+  count: number | undefined;
+  tone: "emerald" | "amber" | "violet";
+}) {
+  const tones = {
+    emerald: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+    amber: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+    violet: "bg-violet-500/15 text-violet-700 dark:text-violet-300",
+  } as const;
+  if (count === undefined) {
+    return (
+      <span
+        aria-hidden
+        className="size-3.5 shrink-0 animate-pulse rounded-full bg-foreground/10"
+      />
+    );
+  }
+  return (
+    <span
+      className={cn(
+        "shrink-0 rounded-full px-2 py-0.5 text-[0.6rem] font-black tabular-nums",
+        tones[tone]
+      )}
+    >
+      {faDigits(count)}
+    </span>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /*  دیالوگ ویرایش کاربر                                                */
 /* ------------------------------------------------------------------ */
@@ -158,6 +200,7 @@ function EditUserDialog({
     firstName: "",
     lastName: "",
     phone: "",
+    nationalId: "",
     status: "active",
     note: "",
   });
@@ -169,6 +212,7 @@ function EditUserDialog({
         firstName: user.firstName,
         lastName: user.lastName,
         phone: user.phone,
+        nationalId: user.nationalId ?? "",
         status: user.status === "blocked" ? "blocked" : "active",
         note: user.note ?? "",
       });
@@ -193,6 +237,12 @@ function EditUserDialog({
       toast.error("شماره موبایل معتبر نیست (مثال: 09123456789).");
       return;
     }
+    // کد ملی اختیاری — اگر چیزی وارد شده باشد باید معتبر باشد
+    const nationalId = normalizeNationalId(draft.nationalId);
+    if (nationalId !== "" && !isValidNationalId(nationalId)) {
+      toast.error(NATIONAL_ID_INVALID_MESSAGE);
+      return;
+    }
     if (draft.note.trim().length > 500) {
       toast.error("یادداشت نمی‌تواند بیش از ۵۰۰ نویسه باشد.");
       return;
@@ -206,6 +256,7 @@ function EditUserDialog({
           firstName,
           lastName,
           phone,
+          nationalId,
           status: draft.status,
           note: draft.note.trim(),
         }),
@@ -271,6 +322,30 @@ function EditUserDialog({
             />
           </div>
           <div className="space-y-2">
+            <Label htmlFor="edit-national-id" className="text-xs font-black text-foreground/90">
+              کد ملی <span className="font-semibold text-muted-foreground">(اختیاری)</span>
+            </Label>
+            <Input
+              id="edit-national-id"
+              value={draft.nationalId}
+              onChange={(e) =>
+                setDraft((d) => ({
+                  ...d,
+                  nationalId: toEnDigits(e.target.value)
+                    .replace(/\D/g, "")
+                    .slice(0, 10),
+                }))
+              }
+              inputMode="numeric"
+              dir="ltr"
+              placeholder="1234567891"
+              className="h-11 rounded-xl bg-foreground/[0.03] text-center font-black tabular-nums dark:bg-white/[0.04]"
+            />
+            <p className="text-[0.6rem] font-semibold leading-5 text-muted-foreground">
+              با ثبت کد ملی، گواهی‌نامه‌های کاربر با استعلام کد ملی قابل بررسی است — خالی = حذف.
+            </p>
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="edit-status" className="text-xs font-black text-foreground/90">
               وضعیت حساب
             </Label>
@@ -332,6 +407,506 @@ function EditUserDialog({
             variant="outline"
             onClick={() => onOpenChange(false)}
             disabled={saving}
+            className="h-10 rounded-xl px-6 text-xs font-bold"
+          >
+            انصراف
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  دیالوگ افزودن کاربر جدید                                            */
+/* ------------------------------------------------------------------ */
+
+/** افزودن کاربر دلخواه توسط مدیر — فیلدهای الزامی: نام، نام خانوادگی، شماره */
+function AddUserDialog({
+  open,
+  onOpenChange,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSaved: () => void;
+}) {
+  const [draft, setDraft] = useState({
+    firstName: "",
+    lastName: "",
+    phone: "",
+    nationalId: "",
+  });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setDraft({ firstName: "", lastName: "", phone: "", nationalId: "" });
+    }
+  }, [open]);
+
+  async function save() {
+    const firstName = draft.firstName.trim();
+    const lastName = draft.lastName.trim();
+    const phone = draft.phone.replace(/[\s-]/g, "");
+
+    if (firstName.length < 2 || firstName.length > 40) {
+      toast.error("نام باید ۲ تا ۴۰ نویسه باشد.");
+      return;
+    }
+    if (lastName.length < 2 || lastName.length > 40) {
+      toast.error("نام خانوادگی باید ۲ تا ۴۰ نویسه باشد.");
+      return;
+    }
+    if (!/^09\d{9}$/.test(phone)) {
+      toast.error("شماره موبایل معتبر نیست (مثال: 09123456789).");
+      return;
+    }
+    // کد ملی اختیاری — اگر چیزی وارد شده باشد باید معتبر باشد
+    const nationalId = normalizeNationalId(draft.nationalId);
+    if (nationalId !== "" && !isValidNationalId(nationalId)) {
+      toast.error(NATIONAL_ID_INVALID_MESSAGE);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await apiFetch("/api/admin/users", {
+        method: "POST",
+        body: JSON.stringify({
+          firstName,
+          lastName,
+          phone,
+          ...(nationalId !== "" ? { nationalId } : {}),
+        }),
+      });
+      toast.success(`کاربر «${firstName} ${lastName}» افزوده شد`);
+      onOpenChange(false);
+      onSaved();
+    } catch (error) {
+      toastApiError(error);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent dir="rtl" className="max-h-[85vh] overflow-y-auto rounded-2xl">
+        <DialogHeader className="text-right sm:text-right">
+          <DialogTitle className="text-base">افزودن کاربر جدید</DialogTitle>
+          <DialogDescription className="leading-6">
+            نام، نام خانوادگی و شماره موبایل الزامی است؛ شماره‌ی موبایل باید یکتا
+            باشد و وضعیت حساب «فعال» خواهد بود.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="add-first-name" className="text-xs font-black text-foreground/90">
+              نام <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="add-first-name"
+              value={draft.firstName}
+              onChange={(e) => setDraft((d) => ({ ...d, firstName: e.target.value }))}
+              placeholder="مثلاً: سارا"
+              maxLength={40}
+              className="h-11 rounded-xl bg-foreground/[0.03] dark:bg-white/[0.04]"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="add-last-name" className="text-xs font-black text-foreground/90">
+              نام خانوادگی <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="add-last-name"
+              value={draft.lastName}
+              onChange={(e) => setDraft((d) => ({ ...d, lastName: e.target.value }))}
+              placeholder="مثلاً: محمدی"
+              maxLength={40}
+              className="h-11 rounded-xl bg-foreground/[0.03] dark:bg-white/[0.04]"
+            />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="add-phone" className="text-xs font-black text-foreground/90">
+              شماره موبایل <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="add-phone"
+              value={draft.phone}
+              onChange={(e) => setDraft((d) => ({ ...d, phone: e.target.value }))}
+              inputMode="tel"
+              dir="ltr"
+              placeholder="09123456789"
+              maxLength={13}
+              className="h-11 rounded-xl bg-foreground/[0.03] text-left dark:bg-white/[0.04]"
+            />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="add-national-id" className="text-xs font-black text-foreground/90">
+              کد ملی <span className="font-semibold text-muted-foreground">(اختیاری)</span>
+            </Label>
+            <div className="relative">
+              <IdCard className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="add-national-id"
+                value={draft.nationalId}
+                onChange={(e) =>
+                  setDraft((d) => ({
+                    ...d,
+                    nationalId: toEnDigits(e.target.value)
+                      .replace(/\D/g, "")
+                      .slice(0, 10),
+                  }))
+                }
+                inputMode="numeric"
+                dir="ltr"
+                placeholder="1234567891"
+                className="h-11 rounded-xl bg-foreground/[0.03] pr-10 text-center font-black tabular-nums dark:bg-white/[0.04]"
+              />
+            </div>
+            <p className="text-[0.6rem] font-semibold leading-5 text-muted-foreground">
+              با ثبت کد ملی، گواهی‌نامه‌های کاربر با استعلام کد ملی قابل بررسی است.
+            </p>
+          </div>
+        </div>
+
+        <DialogFooter className="flex-row-reverse gap-2 sm:justify-start">
+          <Button
+            onClick={save}
+            disabled={saving}
+            className={`h-10 rounded-xl px-6 text-xs ${btnGradient}`}
+          >
+            {saving ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                در حال افزودن...
+              </>
+            ) : (
+              <>
+                <UserPlus className="size-4" />
+                افزودن کاربر
+              </>
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={saving}
+            className="h-10 rounded-xl px-6 text-xs font-bold"
+          >
+            انصراف
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  دیالوگ افزودن کاربر به دانشجویان یک دوره                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * افزودن کاربر به دانشجویان یک دوره‌ی مشخص (دکمه‌ی «+» ردیف کاربر) —
+ * دوره انتخاب می‌شود؛ اگر دوره‌ی حضوری/ترکیبی گروه‌های زمان‌بندی داشته
+ * باشد، گروه هم انتخاب می‌شود (ظرفیت‌ها در سرور اعمال می‌شود).
+ */
+function EnrollUserDialog({
+  user,
+  open,
+  onOpenChange,
+  onSaved,
+}: {
+  user: UserWithStats | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSaved: () => void;
+}) {
+  const [courses, setCourses] = useState<CourseWithUsage[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [courseId, setCourseId] = useState("");
+  const [groupId, setGroupId] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open || !user) return;
+    setCourseId("");
+    setGroupId("");
+    setCourses(null);
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const data = await apiFetch<CourseWithUsage[]>("/api/admin/courses");
+        if (!cancelled) setCourses(data);
+      } catch (error) {
+        toastApiError(error);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, user]);
+
+  const selectedCourse = courses?.find((c) => c.id === courseId) ?? null;
+  const groups = selectedCourse?.groups ?? [];
+  const needsGroup =
+    !!selectedCourse &&
+    selectedCourse.type !== "online" &&
+    groups.length > 0;
+
+  async function save() {
+    if (!user || !selectedCourse) {
+      toast.error("ابتدا دوره را انتخاب کنید.");
+      return;
+    }
+    if (needsGroup && !groupId) {
+      toast.error("گروه زمانی این دوره را انتخاب کنید.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await apiFetch("/api/admin/enrollments", {
+        method: "POST",
+        body: JSON.stringify({
+          userId: user.id,
+          courseId: selectedCourse.id,
+          groupId: needsGroup ? groupId : undefined,
+        }),
+      });
+      toast.success(
+        `«${displayName(user)}» به دانشجویان دوره «${selectedCourse.title}» افزوده شد`
+      );
+      onOpenChange(false);
+      onSaved();
+    } catch (error) {
+      toastApiError(error);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent dir="rtl" className="max-h-[85vh] overflow-y-auto rounded-2xl">
+        <DialogHeader className="text-right sm:text-right">
+          <DialogTitle className="text-base">افزودن به دانشجویان دوره</DialogTitle>
+          <DialogDescription className="leading-6">
+            کاربر «{user ? displayName(user) : ""}» به دانشجویان کدام دوره افزوده شود؟
+            ثبت‌نام با وضعیت «ثبت‌نام نهایی» ایجاد می‌شود و ظرفیت دوره/گروه رعایت می‌شود.
+          </DialogDescription>
+        </DialogHeader>
+
+        {loading || !courses ? (
+          <div className="space-y-3">
+            <Skeleton className="h-11 w-full rounded-xl" />
+            <Skeleton className="h-11 w-full rounded-xl" />
+          </div>
+        ) : courses.length === 0 ? (
+          <p className="glass rounded-2xl px-5 py-6 text-center text-sm text-muted-foreground">
+            هنوز دوره‌ای ثبت نشده است؛ ابتدا از ماژول «دوره‌ها» دوره ایجاد کنید.
+          </p>
+        ) : (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="enroll-course" className="text-xs font-black text-foreground/90">
+                دوره <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={courseId}
+                onValueChange={(v) => {
+                  setCourseId(v);
+                  setGroupId("");
+                }}
+                dir="rtl"
+              >
+                <SelectTrigger
+                  id="enroll-course"
+                  className="h-11 w-full rounded-xl bg-foreground/[0.03] text-sm dark:bg-white/[0.04]"
+                >
+                  <SelectValue placeholder="دوره مورد نظر را انتخاب کنید" />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  {courses.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.title}
+                      {!c.published ? " (پیش‌نویس)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedCourse ? (
+                <p className="text-[0.7rem] leading-5 text-muted-foreground">
+                  ثبت‌نام‌های فعال: {faDigits(selectedCourse.enrolledCount ?? 0)}
+                  {selectedCourse.capacity > 0
+                    ? ` از ${faDigits(selectedCourse.capacity)} نفر`
+                    : " نفر (بدون سقف)"}
+                  {!selectedCourse.published ? " · این دوره هنوز منتشر نشده است" : ""}
+                </p>
+              ) : null}
+            </div>
+
+            {needsGroup ? (
+              <div className="space-y-2">
+                <Label htmlFor="enroll-group" className="text-xs font-black text-foreground/90">
+                  گروه زمانی <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={groupId}
+                  onValueChange={(v) => setGroupId(v)}
+                  dir="rtl"
+                >
+                  <SelectTrigger
+                    id="enroll-group"
+                    className="h-11 w-full rounded-xl bg-foreground/[0.03] text-sm dark:bg-white/[0.04]"
+                  >
+                    <SelectValue placeholder="گروه مورد نظر را انتخاب کنید" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {groups.map((g) => (
+                      <SelectItem key={g.id} value={g.id}>
+                        {g.title} · {faDigits(g.enrolledCount ?? 0)}
+                        {g.capacity > 0 ? ` / ${faDigits(g.capacity)}` : " / بدون سقف"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[0.7rem] leading-5 text-muted-foreground">
+                  {selectedCourse.schedule
+                    ? `زمان‌بندی دوره: ${selectedCourse.schedule}`
+                    : "برای دوره‌های حضوری/ترکیبی گروه‌دار، انتخاب گروه الزامی است."}
+                </p>
+              </div>
+            ) : null}
+          </div>
+        )}
+
+        <DialogFooter className="flex-row-reverse gap-2 sm:justify-start">
+          <Button
+            onClick={save}
+            disabled={saving || loading || !courses || !courseId || (needsGroup && !groupId)}
+            className={`h-10 rounded-xl px-6 text-xs ${btnGradient}`}
+          >
+            {saving ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                در حال افزودن...
+              </>
+            ) : (
+              <>
+                <GraduationCap className="size-4" />
+                افزودن به دوره
+              </>
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={saving}
+            className="h-10 rounded-xl px-6 text-xs font-bold"
+          >
+            انصراف
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  دیالوگ ورود مدیر به سایت به عنوان کاربر                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * ورود مدیر به سایت با هویت کاربر — بدون تایید پیامکی و بدون رمز.
+ * نشست سایت ساخته می‌شود و پنل کاربران در تب جدید باز می‌شود؛
+ * نشست مدیر دست‌نخورده می‌ماند.
+ */
+function LoginAsUserDialog({
+  user,
+  open,
+  onOpenChange,
+}: {
+  user: UserWithStats | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  async function login() {
+    if (!user) return;
+    // تب را هم‌زمان با کلیک باز می‌کنیم تا مسدودکننده‌ی پاپ‌آپ جلوی آن را نگیرد
+    const tab = window.open("", "_blank");
+    setBusy(true);
+    try {
+      const data = await apiFetch<{ redirect: string }>(
+        `/api/admin/users/${user.id}/login`,
+        { method: "POST" }
+      );
+      const target = data.redirect || "/panel";
+      if (tab) {
+        try {
+          tab.document.title = "در حال ورود به سایت...";
+        } catch {
+          /* تیتر اختیاری است */
+        }
+        tab.location.href = target;
+        toast.success(
+          `وارد سایت شدید به عنوان «${displayName(user)}» — تب جدید باز شد`
+        );
+        onOpenChange(false);
+      } else {
+        // پاپ‌آپ بسته شد → در همین تب وارد می‌شویم
+        window.location.href = target;
+      }
+    } catch (error) {
+      tab?.close();
+      toastApiError(error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => (busy ? undefined : onOpenChange(o))}>
+      <DialogContent dir="rtl" className="rounded-2xl">
+        <DialogHeader className="text-right sm:text-right">
+          <DialogTitle className="text-base">ورود به سایت به عنوان کاربر</DialogTitle>
+          <DialogDescription className="leading-6">
+            بدون تایید پیامکی و بدون رمز، با هویت «{user ? displayName(user) : ""}»
+            وارد سایت می‌شوید؛ پنل کاربران این حساب در تب جدید باز می‌شود و نشست
+            مدیر شما دست‌نخورده باقی می‌ماند. برای خروج از حساب کاربر، از پنل او
+            «خروج» را بزنید.
+          </DialogDescription>
+        </DialogHeader>
+
+        <DialogFooter className="flex-row-reverse gap-2 sm:justify-start">
+          <Button
+            onClick={login}
+            disabled={busy}
+            className={`h-10 rounded-xl px-6 text-xs ${btnGradient}`}
+          >
+            {busy ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                در حال ورود...
+              </>
+            ) : (
+              <>
+                <LogIn className="size-4" />
+                ورود به سایت
+              </>
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={busy}
             className="h-10 rounded-xl px-6 text-xs font-bold"
           >
             انصراف
@@ -605,6 +1180,11 @@ export function UsersModule() {
     title: string;
   } | null>(null);
 
+  /* — افزودن کاربر / افزودن به دوره / ورود به عنوان کاربر — */
+  const [addOpen, setAddOpen] = useState(false);
+  const [enrollTarget, setEnrollTarget] = useState<UserWithStats | null>(null);
+  const [loginTarget, setLoginTarget] = useState<UserWithStats | null>(null);
+
   /* — جست‌وجو با تأخیر — */
   useEffect(() => {
     const t = setTimeout(() => {
@@ -694,6 +1274,35 @@ export function UsersModule() {
     const busy = busyId === user.id;
     return (
       <div className={cn("flex items-center gap-1.5", compact ? "" : "flex-wrap")}>
+        {/* افزودن به دانشجویان یک دوره (دکمه‌ی +) */}
+        <Button
+          variant="ghost"
+          size={compact ? "icon" : "default"}
+          onClick={() => setEnrollTarget(user)}
+          aria-label={`افزودن ${displayName(user)} به دانشجویان یک دوره`}
+          title="افزودن به دانشجویان یک دوره"
+          className={cn(
+            compact ? "size-8" : "size-10 rounded-xl",
+            "text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-400/10 dark:hover:text-emerald-200"
+          )}
+        >
+          <UserPlus className="size-4" />
+        </Button>
+        {/* ورود مدیر به سایت با هویت این کاربر (بدون تایید پیامکی و رمز) */}
+        <Button
+          variant="ghost"
+          size={compact ? "icon" : "default"}
+          onClick={() => setLoginTarget(user)}
+          disabled={blocked}
+          aria-label={`ورود به سایت به عنوان ${displayName(user)}`}
+          title={blocked ? "کاربر مسدود است" : "ورود به سایت به عنوان کاربر"}
+          className={cn(
+            compact ? "size-8" : "size-10 rounded-xl",
+            "text-violet-600 hover:bg-violet-500/10 hover:text-violet-700 dark:text-violet-300 dark:hover:bg-violet-400/10 dark:hover:text-violet-200"
+          )}
+        >
+          <LogIn className="size-4" />
+        </Button>
         <Button
           variant="ghost"
           size={compact ? "icon" : "default"}
@@ -797,298 +1406,384 @@ export function UsersModule() {
         </Badge>
       </ModuleHeader>
 
-      {/* — بخش جداگانه: وضعیت اقساط همه‌ی کاربران (پرداخت‌های اخیر + باقیمانده) — */}
-      <InstallmentsOverviewSection
+      {/* — خلاصه‌ی وضعیت اقساط (سربرگ + کارت‌های آماری) — ثابت بالای تب‌ها — */}
+      <InstallmentsOverviewStats
         data={overview.data}
         loading={overview.loading}
         refreshing={overview.refreshing}
         onRefresh={() => overview.reload(true)}
-        onChanged={() => overview.reload(true)}
       />
 
-      {/* — فیلترها: جست‌وجو + وضعیت + به‌روزرسانی — */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute right-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="جستجوی نام یا شماره موبایل..."
-            aria-label="جستجوی کاربر"
-            className="h-11 rounded-xl bg-foreground/[0.03] pr-10 text-sm dark:bg-white/[0.04]"
-          />
-        </div>
-        <Select
-          value={status}
-          onValueChange={(v) => {
-            if (v === "") return;
-            changeStatusFilter(v as StatusFilter);
-          }}
-          dir="rtl"
-        >
-          <SelectTrigger
-            aria-label="فیلتر وضعیت حساب"
-            className="h-11 w-full rounded-xl bg-foreground/[0.03] text-sm sm:w-44 dark:bg-white/[0.04]"
+      {/* — تب‌های ماژول: اقساط پرداخت‌شده‌ی اخیر / اقساط باقیمانده / لیست کاربران — */}
+      <Tabs defaultValue="recent-paid" dir="rtl" className="gap-5">
+        <TabsList className="glass h-auto w-full flex-wrap justify-start gap-1 rounded-2xl p-1.5 sm:w-auto">
+          <TabsTrigger
+            value="recent-paid"
+            className="flex-none gap-2 rounded-xl px-3.5 py-2 text-xs font-bold"
           >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">همه‌ی وضعیت‌ها</SelectItem>
-            <SelectItem value="active">فعال</SelectItem>
-            <SelectItem value="blocked">مسدود</SelectItem>
-          </SelectContent>
-        </Select>
-        <Button
-          variant="outline"
-          onClick={() => load()}
-          disabled={loading}
-          aria-label="به‌روزرسانی فهرست"
-          title="به‌روزرسانی"
-          className="h-11 rounded-xl px-4 font-bold"
-        >
-          <RefreshCw className={cn("size-4", loading && "animate-spin")} />
-          <span className="sm:hidden">به‌روزرسانی</span>
-        </Button>
-      </div>
+            <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-300" />
+            اقساط پرداخت‌شده‌ی اخیر
+            <TabPill count={overview.data?.recentPaid.length} tone="emerald" />
+          </TabsTrigger>
+          <TabsTrigger
+            value="remaining"
+            className="flex-none gap-2 rounded-xl px-3.5 py-2 text-xs font-bold"
+          >
+            <Hourglass className="size-4 shrink-0 text-amber-600 dark:text-amber-300" />
+            همه‌ی اقساط باقیمانده کاربران
+            <TabPill count={overview.data?.remaining.length} tone="amber" />
+          </TabsTrigger>
+          <TabsTrigger
+            value="users"
+            className="flex-none gap-2 rounded-xl px-3.5 py-2 text-xs font-bold"
+          >
+            <Users className="size-4 shrink-0 text-violet-600 dark:text-violet-300" />
+            لیست کاربران
+            <TabPill count={total} tone="violet" />
+          </TabsTrigger>
+        </TabsList>
 
-      {/* — جدول (دسکتاپ) + کارت (موبایل) — */}
-      {showSkeleton ? (
-        <>
-          <div className="hidden md:block">
-            <TableSkeleton rows={6} cols={6} />
-          </div>
-          <div className="space-y-3 md:hidden" aria-hidden>
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="glass h-32 animate-pulse rounded-2xl" />
-            ))}
-          </div>
-        </>
-      ) : showEmpty ? (
-        <EmptyState
-          icon={Inbox}
-          title="کاربری یافت نشد"
-          description={
-            query || status !== "all"
-              ? "با این جست‌وجو یا فیلتر کاربری وجود ندارد؛ عبارت دیگری را امتحان کنید."
-              : "هنوز کاربری از فرم ثبت‌نام سایت عضو نشده است."
-          }
-        />
-      ) : users ? (
-        <>
-          {/* — جدول دسکتاپ — */}
-          <div className="glass hidden overflow-hidden rounded-2xl md:block">
-            <div className="max-h-[70vh] overflow-y-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>کاربر</TableHead>
-                    <TableHead>ثبت‌نام‌ها</TableHead>
-                    <TableHead>اقساط</TableHead>
-                    <TableHead>وضعیت حساب</TableHead>
-                    <TableHead>تاریخ عضویت</TableHead>
-                    <TableHead className="text-left">عملیات</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {users.map((u) => {
-                    const statusMeta =
-                      u.status in ACCOUNT_STATUS
-                        ? ACCOUNT_STATUS[u.status]
-                        : ACCOUNT_STATUS.active;
-                    const instTotal = u.installmentPaid + u.installmentPending;
-                    return (
-                      <TableRow key={u.id}>
-                        <TableCell className="max-w-44">
-                          <div className="flex items-center gap-3">
-                            <span
-                              className={`flex size-9 shrink-0 items-center justify-center rounded-xl text-sm font-black text-white ${tileGradient} shadow-md`}
-                              aria-hidden
-                            >
-                              {displayName(u).charAt(0)}
-                            </span>
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-bold text-foreground">
-                                {displayName(u)}
-                              </p>
-                              <a
-                                href={`tel:${u.phone}`}
-                                dir="ltr"
-                                className="flex w-fit items-center justify-start gap-1 text-xs font-semibold text-teal-600 transition-colors hover:underline dark:text-teal-300 dark:hover:text-teal-200"
-                                title="تماس با کاربر"
-                              >
-                                <Phone className="size-3" />
-                                {faDigits(u.phone)}
-                              </a>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-foreground/[0.05] px-2.5 py-1 text-xs font-bold tabular-nums text-foreground">
-                            <ClipboardList className="size-3.5 text-teal-600/70 dark:text-teal-300/70" />
-                            {faDigits(u.enrollmentsCount)}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          {instTotal > 0 ? (
-                            <div className="space-y-0.5">
-                              <p className="whitespace-nowrap text-xs font-bold tabular-nums text-foreground">
-                                {faDigits(u.installmentPaid)}
-                                <span className="text-muted-foreground">
-                                  {" "}
-                                  / {faDigits(instTotal)}
-                                </span>
-                              </p>
-                              {u.installmentTotalAmount > 0 ? (
-                                <p className="whitespace-nowrap text-[0.6rem] font-medium tabular-nums text-muted-foreground">
-                                  {faAmount(u.installmentPaidAmount)} از{" "}
-                                  {faAmount(u.installmentTotalAmount)} تومان
-                                </p>
-                              ) : null}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground/50">
-                              —
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <span
-                            className={cn(
-                              "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[0.65rem] font-bold",
-                              statusMeta.badge
-                            )}
-                          >
-                            {u.status === "blocked" ? (
-                              <Ban className="size-3" />
-                            ) : (
-                              <CheckCircle2 className="size-3" />
-                            )}
-                            {statusMeta.label}
-                          </span>
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                            <CalendarDays className="size-3.5 text-teal-600/70 dark:text-teal-300/70" />
-                            {faDate(u.createdAt)}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-left">
-                          {rowActions(u, true)}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+        {/* — تب «اقساط پرداخت‌شده‌ی اخیر» — */}
+        <TabsContent value="recent-paid">
+          <RecentPaidSection data={overview.data} />
+        </TabsContent>
+
+        {/* — تب «همه‌ی اقساط باقیمانده کاربران» — */}
+        <TabsContent value="remaining">
+          <RemainingSection
+            data={overview.data}
+            onChanged={() => overview.reload(true)}
+          />
+        </TabsContent>
+
+        {/* — تب «لیست کاربران»: فیلترها + جدول/کارت‌ها + صفحه‌بندی — */}
+        <TabsContent value="users" className="space-y-5">
+
+          {/* — فیلترها: جست‌وجو + وضعیت + به‌روزرسانی — */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute right-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="جستجوی نام یا شماره موبایل..."
+                aria-label="جستجوی کاربر"
+                className="h-11 rounded-xl bg-foreground/[0.03] pr-10 text-sm dark:bg-white/[0.04]"
+              />
             </div>
-          </div>
-
-          {/* — کارت‌های موبایل — */}
-          <div className="space-y-3 md:hidden">
-            {users.map((u) => {
-              const statusMeta =
-                u.status in ACCOUNT_STATUS
-                  ? ACCOUNT_STATUS[u.status]
-                  : ACCOUNT_STATUS.active;
-              const instTotal = u.installmentPaid + u.installmentPending;
-              return (
-                <article key={u.id} className="glass space-y-3 rounded-2xl p-4">
-                  <div className="flex items-start gap-3">
-                    <span
-                      className={`flex size-12 shrink-0 items-center justify-center rounded-xl text-base font-black text-white ${tileGradient} shadow-md`}
-                      aria-hidden
-                    >
-                      {displayName(u).charAt(0)}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="truncate text-sm font-black text-foreground">
-                          {displayName(u)}
-                        </p>
-                        <span
-                          className={cn(
-                            "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[0.6rem] font-bold",
-                            statusMeta.badge
-                          )}
-                        >
-                          {statusMeta.label}
-                        </span>
-                      </div>
-                      <a
-                        href={`tel:${u.phone}`}
-                        dir="ltr"
-                        className="mt-0.5 flex w-fit items-center justify-start gap-1 text-xs font-semibold text-teal-600 dark:text-teal-300"
-                        title="تماس با کاربر"
-                      >
-                        <Phone className="size-3" />
-                        {faDigits(u.phone)}
-                      </a>
-                      <p className="mt-1 flex items-center gap-1.5 text-[0.65rem] text-muted-foreground">
-                        <CalendarDays className="size-3" />
-                        عضویت: {faDate(u.createdAt)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-1.5 text-[0.6rem] font-bold">
-                    <span className="rounded-full bg-foreground/[0.05] px-2.5 py-1 tabular-nums text-foreground">
-                      {faDigits(u.enrollmentsCount)} ثبت‌نام
-                    </span>
-                    {instTotal > 0 ? (
-                      <span className="rounded-full bg-foreground/[0.05] px-2.5 py-1 tabular-nums text-muted-foreground">
-                        اقساط {faDigits(u.installmentPaid)} از {faDigits(instTotal)}
-                        {u.installmentTotalAmount > 0
-                          ? ` · ${faAmount(u.installmentPaidAmount)} تومان`
-                          : ""}
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-foreground/[0.05] px-2.5 py-1 text-muted-foreground">
-                        بدون اقساط
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="border-t border-foreground/[0.07] pt-3 dark:border-white/[0.07]">
-                    {rowActions(u, false)}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-
-          {/* — صفحه‌بندی — */}
-          {pageCount > 1 && (
-            <nav
-              aria-label="صفحه‌بندی کاربران"
-              className="flex items-center justify-between gap-3"
+            <Select
+              value={status}
+              onValueChange={(v) => {
+                if (v === "") return;
+                changeStatusFilter(v as StatusFilter);
+              }}
+              dir="rtl"
             >
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1 || loading}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                className="h-10 rounded-xl px-5 text-xs font-bold"
+              <SelectTrigger
+                aria-label="فیلتر وضعیت حساب"
+                className="h-11 w-full rounded-xl bg-foreground/[0.03] text-sm sm:w-44 dark:bg-white/[0.04]"
               >
-                <ChevronRight className="size-4" />
-                قبلی
-              </Button>
-              <span className="text-xs font-bold tabular-nums text-muted-foreground">
-                صفحه‌ی {faDigits(page)} از {faDigits(pageCount)}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= pageCount || loading}
-                onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-                className="h-10 rounded-xl px-5 text-xs font-bold"
-              >
-                بعدی
-                <ChevronLeft className="size-4" />
-              </Button>
-            </nav>
-          )}
-        </>
-      ) : null}
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">همه‌ی وضعیت‌ها</SelectItem>
+                <SelectItem value="active">فعال</SelectItem>
+                <SelectItem value="blocked">مسدود</SelectItem>
+              </SelectContent>
+            </Select>
+            {/* افزودن کاربر جدید (نام، نام خانوادگی و شماره الزامی) */}
+            <Button
+              onClick={() => setAddOpen(true)}
+              aria-label="افزودن کاربر جدید"
+              className={`h-11 rounded-xl px-5 text-xs font-bold ${btnGradient}`}
+            >
+              <UserPlus className="size-4" />
+              افزودن کاربر
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => load()}
+              disabled={loading}
+              aria-label="به‌روزرسانی فهرست"
+              title="به‌روزرسانی"
+              className="h-11 rounded-xl px-4 font-bold"
+            >
+              <RefreshCw className={cn("size-4", loading && "animate-spin")} />
+              <span className="sm:hidden">به‌روزرسانی</span>
+            </Button>
+          </div>
+
+          {/* — جدول (دسکتاپ) + کارت (موبایل) — */}
+          {showSkeleton ? (
+            <>
+              <div className="hidden md:block">
+                <TableSkeleton rows={6} cols={6} />
+              </div>
+              <div className="space-y-3 md:hidden" aria-hidden>
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} className="glass h-32 animate-pulse rounded-2xl" />
+                ))}
+              </div>
+            </>
+          ) : showEmpty ? (
+            <EmptyState
+              icon={Inbox}
+              title="کاربری یافت نشد"
+              description={
+                query || status !== "all"
+                  ? "با این جست‌وجو یا فیلتر کاربری وجود ندارد؛ عبارت دیگری را امتحان کنید."
+                  : "هنوز کاربری از فرم ثبت‌نام سایت عضو نشده است."
+              }
+            >
+              {!query && status === "all" ? (
+                <Button
+                  onClick={() => setAddOpen(true)}
+                  size="sm"
+                  className={`rounded-xl ${btnGradient}`}
+                >
+                  <UserPlus className="size-4" />
+                  افزودن اولین کاربر
+                </Button>
+              ) : null}
+            </EmptyState>
+          ) : users ? (
+            <>
+              {/* — جدول دسکتاپ — */}
+              <div className="glass hidden overflow-hidden rounded-2xl md:block">
+                <div className="max-h-[70vh] overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>کاربر</TableHead>
+                        <TableHead>ثبت‌نام‌ها</TableHead>
+                        <TableHead>اقساط</TableHead>
+                        <TableHead>وضعیت حساب</TableHead>
+                        <TableHead>تاریخ عضویت</TableHead>
+                        <TableHead className="text-left">عملیات</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {users.map((u) => {
+                        const statusMeta =
+                          u.status in ACCOUNT_STATUS
+                            ? ACCOUNT_STATUS[u.status]
+                            : ACCOUNT_STATUS.active;
+                        const instTotal = u.installmentPaid + u.installmentPending;
+                        return (
+                          <TableRow key={u.id}>
+                            <TableCell className="max-w-44">
+                              <div className="flex items-center gap-3">
+                                <span
+                                  className={`flex size-9 shrink-0 items-center justify-center rounded-xl text-sm font-black text-white ${tileGradient} shadow-md`}
+                                  aria-hidden
+                                >
+                                  {displayName(u).charAt(0)}
+                                </span>
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-bold text-foreground">
+                                    {displayName(u)}
+                                  </p>
+                                  <a
+                                    href={`tel:${u.phone}`}
+                                    dir="ltr"
+                                    className="flex w-fit items-center justify-start gap-1 text-xs font-semibold text-teal-600 transition-colors hover:underline dark:text-teal-300 dark:hover:text-teal-200"
+                                    title="تماس با کاربر"
+                                  >
+                                    <Phone className="size-3" />
+                                    {faDigits(u.phone)}
+                                  </a>
+                                  {u.nationalId ? (
+                                    <p
+                                      dir="ltr"
+                                      className="flex w-fit items-center justify-start gap-1 text-[0.6rem] font-bold tabular-nums text-muted-foreground"
+                                      title="کد ملی — برای استعلام گواهی‌نامه"
+                                    >
+                                      <IdCard className="size-3" />
+                                      {faDigits(u.nationalId)}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-foreground/[0.05] px-2.5 py-1 text-xs font-bold tabular-nums text-foreground">
+                                <ClipboardList className="size-3.5 text-teal-600/70 dark:text-teal-300/70" />
+                                {faDigits(u.enrollmentsCount)}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              {instTotal > 0 ? (
+                                <div className="space-y-0.5">
+                                  <p className="whitespace-nowrap text-xs font-bold tabular-nums text-foreground">
+                                    {faDigits(u.installmentPaid)}
+                                    <span className="text-muted-foreground">
+                                      {" "}
+                                      / {faDigits(instTotal)}
+                                    </span>
+                                  </p>
+                                  {u.installmentTotalAmount > 0 ? (
+                                    <p className="whitespace-nowrap text-[0.6rem] font-medium tabular-nums text-muted-foreground">
+                                      {faAmount(u.installmentPaidAmount)} از{" "}
+                                      {faAmount(u.installmentTotalAmount)} تومان
+                                    </p>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground/50">
+                                  —
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <span
+                                className={cn(
+                                  "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[0.65rem] font-bold",
+                                  statusMeta.badge
+                                )}
+                              >
+                                {u.status === "blocked" ? (
+                                  <Ban className="size-3" />
+                                ) : (
+                                  <CheckCircle2 className="size-3" />
+                                )}
+                                {statusMeta.label}
+                              </span>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <CalendarDays className="size-3.5 text-teal-600/70 dark:text-teal-300/70" />
+                                {faDate(u.createdAt)}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-left">
+                              {rowActions(u, true)}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+
+              {/* — کارت‌های موبایل — */}
+              <div className="space-y-3 md:hidden">
+                {users.map((u) => {
+                  const statusMeta =
+                    u.status in ACCOUNT_STATUS
+                      ? ACCOUNT_STATUS[u.status]
+                      : ACCOUNT_STATUS.active;
+                  const instTotal = u.installmentPaid + u.installmentPending;
+                  return (
+                    <article key={u.id} className="glass space-y-3 rounded-2xl p-4">
+                      <div className="flex items-start gap-3">
+                        <span
+                          className={`flex size-12 shrink-0 items-center justify-center rounded-xl text-base font-black text-white ${tileGradient} shadow-md`}
+                          aria-hidden
+                        >
+                          {displayName(u).charAt(0)}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="truncate text-sm font-black text-foreground">
+                              {displayName(u)}
+                            </p>
+                            <span
+                              className={cn(
+                                "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[0.6rem] font-bold",
+                                statusMeta.badge
+                              )}
+                            >
+                              {statusMeta.label}
+                            </span>
+                          </div>
+                          <a
+                            href={`tel:${u.phone}`}
+                            dir="ltr"
+                            className="mt-0.5 flex w-fit items-center justify-start gap-1 text-xs font-semibold text-teal-600 dark:text-teal-300"
+                            title="تماس با کاربر"
+                          >
+                            <Phone className="size-3" />
+                            {faDigits(u.phone)}
+                          </a>
+                          {u.nationalId ? (
+                            <p
+                              dir="ltr"
+                              className="mt-0.5 flex w-fit items-center justify-start gap-1 text-[0.65rem] font-bold tabular-nums text-muted-foreground"
+                              title="کد ملی — برای استعلام گواهی‌نامه"
+                            >
+                              <IdCard className="size-3" />
+                              {faDigits(u.nationalId)}
+                            </p>
+                          ) : null}
+                          <p className="mt-1 flex items-center gap-1.5 text-[0.65rem] text-muted-foreground">
+                            <CalendarDays className="size-3" />
+                            عضویت: {faDate(u.createdAt)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5 text-[0.6rem] font-bold">
+                        <span className="rounded-full bg-foreground/[0.05] px-2.5 py-1 tabular-nums text-foreground">
+                          {faDigits(u.enrollmentsCount)} ثبت‌نام
+                        </span>
+                        {instTotal > 0 ? (
+                          <span className="rounded-full bg-foreground/[0.05] px-2.5 py-1 tabular-nums text-muted-foreground">
+                            اقساط {faDigits(u.installmentPaid)} از {faDigits(instTotal)}
+                            {u.installmentTotalAmount > 0
+                              ? ` · ${faAmount(u.installmentPaidAmount)} تومان`
+                              : ""}
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-foreground/[0.05] px-2.5 py-1 text-muted-foreground">
+                            بدون اقساط
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="border-t border-foreground/[0.07] pt-3 dark:border-white/[0.07]">
+                        {rowActions(u, false)}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+
+              {/* — صفحه‌بندی — */}
+              {pageCount > 1 && (
+                <nav
+                  aria-label="صفحه‌بندی کاربران"
+                  className="flex items-center justify-between gap-3"
+                >
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page <= 1 || loading}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    className="h-10 rounded-xl px-5 text-xs font-bold"
+                  >
+                    <ChevronRight className="size-4" />
+                    قبلی
+                  </Button>
+                  <span className="text-xs font-bold tabular-nums text-muted-foreground">
+                    صفحه‌ی {faDigits(page)} از {faDigits(pageCount)}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= pageCount || loading}
+                    onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                    className="h-10 rounded-xl px-5 text-xs font-bold"
+                  >
+                    بعدی
+                    <ChevronLeft className="size-4" />
+                  </Button>
+                </nav>
+              )}
+            </>
+          ) : null}
+        </TabsContent>
+      </Tabs>
 
       {/* — دیالوگ پرداختی‌ها و اقساط کاربر — */}
       <UserPaymentsDialog
@@ -1126,6 +1821,38 @@ export function UsersModule() {
           if (!o) setEditUser(null);
         }}
         onSaved={load}
+      />
+
+      {/* — دیالوگ افزودن کاربر جدید — */}
+      <AddUserDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        onSaved={() => {
+          void load();
+          overview.reload(true);
+        }}
+      />
+
+      {/* — دیالوگ افزودن کاربر به دانشجویان یک دوره — */}
+      <EnrollUserDialog
+        user={enrollTarget}
+        open={!!enrollTarget}
+        onOpenChange={(o) => {
+          if (!o) setEnrollTarget(null);
+        }}
+        onSaved={() => {
+          void load();
+          overview.reload(true);
+        }}
+      />
+
+      {/* — دیالوگ ورود مدیر به سایت به عنوان کاربر — */}
+      <LoginAsUserDialog
+        user={loginTarget}
+        open={!!loginTarget}
+        onOpenChange={(o) => {
+          if (!o) setLoginTarget(null);
+        }}
       />
 
       {/* — دیالوگ مدیریت اقساط (از پروفایل کاربر باز می‌شود) — */}

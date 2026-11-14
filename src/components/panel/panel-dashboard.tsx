@@ -5,14 +5,17 @@ import Link from "next/link";
 import Image from "next/image";
 import {
   ArrowRight,
+  Award,
   CalendarClock,
   Check,
   ClipboardCheck,
   GraduationCap,
   Hourglass,
+  IdCard,
   Inbox,
   Loader2,
   LogOut,
+  Pencil,
   Phone,
   RotateCw,
   ShieldCheck,
@@ -20,11 +23,27 @@ import {
   Wallet,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 import type { SiteSettings } from "@prisma/client";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { faDate, faDigits } from "@/lib/fa";
+import {
+  isValidNationalId,
+  NATIONAL_ID_INVALID_MESSAGE,
+  normalizeNationalId,
+  toEnDigits,
+} from "@/lib/national-id";
 import {
   ENROLLMENT_STATUSES,
   isEnrollmentStatus,
@@ -35,6 +54,8 @@ import type {
   PanelInstallment,
   PanelMe,
 } from "@/components/panel/types";
+import { ExamsSection } from "@/components/panel/panel-exams";
+import { CertificatesSection } from "@/components/panel/panel-certificates";
 
 /** ظاهر مشترک کارت‌های شیشه‌ای داشبورد — هماهنگ با صفحه‌ی ثبت‌نام */
 const CARD =
@@ -114,6 +135,110 @@ function Chip({
   );
 }
 
+/* ————————————————— بخش‌های داشبورد ————————————————— */
+
+type SectionKey = "courses" | "exams" | "certificates" | "payments";
+
+/** قالب کارت آماری نئونی — استروک رنگی + درخشش؛ رنگ هر بخش متمایز است */
+const SECTIONS: Record<
+  SectionKey,
+  {
+    label: string;
+    icon: React.ComponentType<{
+      className?: string;
+      strokeWidth?: number;
+    }>;
+    idle: string;
+    active: string;
+  }
+> = {
+  courses: {
+    label: "دوره‌ها",
+    icon: GraduationCap,
+    idle: "border-teal-500/60 bg-teal-500/[0.05] text-teal-700 shadow-[0_0_16px_rgba(20,184,166,0.20)] hover:shadow-[0_0_26px_rgba(20,184,166,0.35)] dark:border-teal-400/50 dark:text-teal-300",
+    active:
+      "border-teal-500 bg-teal-500/[0.10] text-teal-800 shadow-[0_0_28px_rgba(20,184,166,0.45)] dark:border-teal-300 dark:text-teal-200 dark:bg-teal-400/[0.12]",
+  },
+  exams: {
+    label: "آزمون‌ها",
+    icon: ClipboardCheck,
+    idle: "border-violet-500/60 bg-violet-500/[0.05] text-violet-700 shadow-[0_0_16px_rgba(139,92,246,0.20)] hover:shadow-[0_0_26px_rgba(139,92,246,0.35)] dark:border-violet-400/50 dark:text-violet-300",
+    active:
+      "border-violet-500 bg-violet-500/[0.10] text-violet-800 shadow-[0_0_28px_rgba(139,92,246,0.45)] dark:border-violet-300 dark:text-violet-200 dark:bg-violet-400/[0.12]",
+  },
+  certificates: {
+    label: "گواهینامه‌ها",
+    icon: Award,
+    idle: "border-amber-500/60 bg-amber-500/[0.05] text-amber-700 shadow-[0_0_16px_rgba(245,158,11,0.22)] hover:shadow-[0_0_26px_rgba(245,158,11,0.38)] dark:border-amber-400/50 dark:text-amber-300",
+    active:
+      "border-amber-500 bg-amber-500/[0.10] text-amber-800 shadow-[0_0_28px_rgba(245,158,11,0.48)] dark:border-amber-300 dark:text-amber-200 dark:bg-amber-400/[0.12]",
+  },
+  payments: {
+    label: "پرداخت‌ها",
+    icon: Wallet,
+    idle: "border-rose-500/60 bg-rose-500/[0.05] text-rose-700 shadow-[0_0_16px_rgba(244,63,94,0.20)] hover:shadow-[0_0_26px_rgba(244,63,94,0.35)] dark:border-rose-400/50 dark:text-rose-300",
+    active:
+      "border-rose-500 bg-rose-500/[0.10] text-rose-800 shadow-[0_0_28px_rgba(244,63,94,0.45)] dark:border-rose-300 dark:text-rose-200 dark:bg-rose-400/[0.12]",
+  },
+};
+
+/** چهار کارت آماری مربعی — بدون تصویر، با استروک نئونی و شمارنده */
+function StatCards({
+  active,
+  onSelect,
+  counts,
+}: {
+  active: SectionKey;
+  onSelect: (key: SectionKey) => void;
+  counts: Record<SectionKey, number | null>;
+}) {
+  return (
+    <nav
+      aria-label="بخش‌های پنل کاربر"
+      className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4"
+    >
+      {(Object.keys(SECTIONS) as SectionKey[]).map((key) => {
+        const meta = SECTIONS[key];
+        const count = counts[key];
+        const isActive = active === key;
+        const Icon = meta.icon;
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onSelect(key)}
+            aria-pressed={isActive}
+            aria-label={`${meta.label} — ${
+              count === null ? "در حال شمارش" : `${faDigits(count)} مورد`
+            }`}
+            title={`${meta.label} — نمایش جزئیات`}
+            className={cn(
+              "group flex aspect-square select-none flex-col items-center justify-center gap-1.5 rounded-2xl border-2 p-3 text-center transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-2",
+              meta.idle,
+              isActive && meta.active
+            )}
+          >
+            <Icon
+              className="size-7 shrink-0 transition-transform duration-200 group-hover:scale-110 sm:size-9"
+              strokeWidth={1.9}
+            />
+            <span className="flex h-8 items-center text-3xl font-black leading-none tabular-nums sm:text-4xl">
+              {count === null ? (
+                <Loader2 className="size-6 animate-spin opacity-60" />
+              ) : (
+                faDigits(count)
+              )}
+            </span>
+            <span className="text-[0.7rem] font-bold sm:text-xs">
+              {meta.label}
+            </span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
 /* ————————————————— داشبورد ————————————————— */
 
 export function PanelDashboard({
@@ -132,6 +257,45 @@ export function PanelDashboard({
   const [logoFailed, setLogoFailed] = React.useState(false);
   const [loggingOut, setLoggingOut] = React.useState(false);
 
+  // بخش فعال داشبورد — با کارت‌های آماری بالای صفحه جابه‌جا می‌شود
+  const [section, setSection] = React.useState<SectionKey>("courses");
+  // شمارنده‌های کارت‌ها — دوره/پرداخت از داده‌ی ثبت‌نام‌ها، آزمون/گواهینامه با یک دریافت سبک
+  const [examsCount, setExamsCount] = React.useState<number | null>(null);
+  const [certificatesCount, setCertificatesCount] = React.useState<
+    number | null
+  >(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadCount(
+      url: string,
+      listKey: string,
+      set: (n: number) => void
+    ): Promise<void> {
+      try {
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) throw new Error();
+        const json = (await res.json()) as Record<string, unknown>;
+        const list = json[listKey];
+        set(Array.isArray(list) ? list.length : 0);
+      } catch {
+        set(0);
+      }
+    }
+
+    void loadCount("/api/panel/exams", "exams", (n) => {
+      if (!cancelled) setExamsCount(n);
+    });
+    void loadCount("/api/panel/certificates", "certificates", (n) => {
+      if (!cancelled) setCertificatesCount(n);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // خروج — دکمه تا پایان عملیات چرخان می‌ماند
   function handleLogout() {
     if (loggingOut) return;
@@ -139,10 +303,68 @@ export function PanelDashboard({
     void onLogout();
   }
 
+  // — کد ملی (اختیاری): نسخه‌ی محلی برای به‌روزرسانی فوری پس از ذخیره —
+  const [nidOverride, setNidOverride] = React.useState<
+    string | null | undefined
+  >(undefined);
+  const [nidOpen, setNidOpen] = React.useState(false);
+  const [nidInput, setNidInput] = React.useState("");
+  const [nidError, setNidError] = React.useState<string | null>(null);
+  const [nidSaving, setNidSaving] = React.useState(false);
+  const nationalId =
+    nidOverride !== undefined ? nidOverride : (data?.user.nationalId ?? null);
+
+  function openNidEdit() {
+    setNidInput(nationalId ?? "");
+    setNidError(null);
+    setNidOpen(true);
+  }
+
+  /** ذخیره‌ی کد ملی — PUT /api/panel/me (خالی = حذف) */
+  async function saveNid() {
+    if (nidSaving) return;
+    const clean = normalizeNationalId(nidInput);
+    if (clean !== "" && !isValidNationalId(clean)) {
+      setNidError(NATIONAL_ID_INVALID_MESSAGE);
+      return;
+    }
+    setNidSaving(true);
+    setNidError(null);
+    try {
+      const res = await fetch("/api/panel/me", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nationalId: clean }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(json.error || "خطا در ذخیره‌ی کد ملی.");
+      setNidOverride(clean === "" ? null : clean);
+      setNidOpen(false);
+      toast.success(
+        clean === "" ? "کد ملی شما حذف شد." : "کد ملی شما ذخیره شد.",
+        {
+          description:
+            "گواهی‌نامه‌های شما با استعلام همین کد ملی در صفحه‌ی استعلام قابل بررسی است.",
+        }
+      );
+    } catch (err) {
+      setNidError(
+        err instanceof Error ? err.message : "خطا در ذخیره‌ی کد ملی."
+      );
+    } finally {
+      setNidSaving(false);
+    }
+  }
+
   /* — اسکلت بارگذاری (ورود موفق؛ داده‌ها هنوز نرسیده‌اند) — */
   if (!data) return <DashboardSkeleton />;
 
   const { user, enrollments } = data;
+
+  // شمارنده‌ی پرداخت‌ها — ثبت‌نام‌های دارای اطلاعات پرداخت/اقساط
+  const paymentsCount = enrollments.filter(
+    (e) => e.paymentMethod !== null || e.installments.length > 0
+  ).length;
 
   return (
     <div
@@ -241,10 +463,32 @@ export function PanelDashboard({
                 </span>
               </span>
               <span className="flex items-center gap-1.5">
+                <IdCard className="size-3.5 shrink-0" />
+                <span dir="ltr" className="tabular-nums">
+                  {nationalId ? faDigits(nationalId) : "—"}
+                </span>
+                کد ملی:
+                <button
+                  type="button"
+                  onClick={openNidEdit}
+                  aria-label="ویرایش کد ملی"
+                  title="ویرایش کد ملی"
+                  className="flex size-6 items-center justify-center rounded-lg border border-foreground/10 bg-foreground/[0.03] text-muted-foreground transition-colors hover:border-teal-500/40 hover:text-teal-600 dark:border-white/10 dark:bg-white/[0.03] dark:hover:border-teal-400/40 dark:hover:text-teal-300"
+                >
+                  <Pencil className="size-3" />
+                </button>
+              </span>
+              <span className="flex items-center gap-1.5">
                 <CalendarClock className="size-3.5 shrink-0" />
                 عضو از: {faDate(user.createdAt)}
               </span>
             </div>
+            {!nationalId ? (
+              <p className="mt-2 text-[0.65rem] font-semibold leading-5 text-muted-foreground">
+                کد ملی خود را ثبت کنید تا گواهی‌نامه‌هایتان با استعلام کد ملی
+                قابل بررسی باشد.
+              </p>
+            ) : null}
           </div>
           <Chip className="ms-auto border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-300">
             <ShieldCheck className="size-3" />
@@ -253,29 +497,280 @@ export function PanelDashboard({
         </div>
       </section>
 
-      {/* ————— ثبت‌نام‌های من ————— */}
-      <section aria-label="ثبت‌نام‌های من">
-        <div className="mb-3 flex items-center justify-between gap-2 sm:mb-4">
-          <h2 className="flex items-center gap-2 text-base font-black text-foreground sm:text-lg">
-            <GraduationCap className="size-5 text-teal-600 dark:text-teal-300" />
-            ثبت‌نام‌های من
-          </h2>
-          <span className="select-none rounded-full border border-foreground/10 bg-foreground/[0.04] px-2.5 py-1 text-[0.6rem] font-black text-muted-foreground dark:border-white/10 dark:bg-white/[0.04]">
-            {faDigits(enrollments.length)} ثبت‌نام
-          </span>
-        </div>
+      {/* ————— ویرایش کد ملی (اختیاری) ————— */}
+      <Dialog open={nidOpen} onOpenChange={setNidOpen}>
+        <DialogContent dir="rtl" className="max-w-sm rounded-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-black text-foreground">
+              <IdCard className="size-4 text-teal-600 dark:text-teal-300" />
+              ویرایش کد ملی
+            </DialogTitle>
+            <DialogDescription className="text-xs leading-6">
+              کد ملی برای استعلام گواهی‌نامه‌های شما استفاده می‌شود و کاملاً
+              اختیاری است — خالی گذاشتن آن، مقدار فعلی را حذف می‌کند.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Input
+              dir="ltr"
+              inputMode="numeric"
+              autoComplete="off"
+              autoFocus
+              value={nidInput}
+              onChange={(e) => {
+                setNidInput(
+                  toEnDigits(e.target.value).replace(/\D/g, "").slice(0, 10)
+                );
+                if (nidError) setNidError(null);
+              }}
+              placeholder="1234567891"
+              aria-invalid={!!nidError}
+              className="h-12 rounded-xl border-foreground/[0.09] bg-foreground/[0.02] text-center font-black tabular-nums placeholder:text-muted-foreground/50 focus-visible:ring-teal-500/30 dark:border-white/10 dark:bg-white/[0.04] dark:focus-visible:ring-teal-400/40"
+            />
+            {nidError ? (
+              <p className="text-xs font-bold leading-5 text-red-600 dark:text-red-300" role="alert">
+                {nidError}
+              </p>
+            ) : (
+              <p className="text-[0.65rem] font-semibold leading-5 text-muted-foreground">
+                کد ملی ۱۰ رقمی — طبق الگوی رسمی کد ملی ایران اعتبارسنجی می‌شود.
+              </p>
+            )}
+          </div>
+          <DialogFooter className="mt-2 gap-2 sm:justify-start">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setNidOpen(false)}
+              disabled={nidSaving}
+              className="h-10 rounded-xl px-4 text-xs font-bold"
+            >
+              انصراف
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void saveNid()}
+              disabled={nidSaving}
+              className="h-10 rounded-xl bg-gradient-to-l from-teal-400 to-emerald-500 px-6 text-xs font-black text-teal-950 shadow-lg shadow-teal-500/25 transition-all hover:scale-[1.01]"
+            >
+              {nidSaving ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Check className="size-4" />
+              )}
+              ذخیره
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-        {enrollments.length === 0 ? (
-          <EmptyEnrollments />
-        ) : (
+      {/* ————— کارت‌های آماری نئونی ————— */}
+      <StatCards
+        active={section}
+        onSelect={setSection}
+        counts={{
+          courses: enrollments.length,
+          exams: examsCount,
+          certificates: certificatesCount,
+          payments: paymentsCount,
+        }}
+      />
+
+      {/* ————— محتوای بخش فعال ————— */}
+
+      {/* دوره‌ها — لیست دوره‌های ثبت‌نام‌شده/گذرانده با حضور و غیاب و معدل */}
+      {section === "courses" ? (
+        <section aria-label="دوره‌های من">
+          <div className="mb-3 flex items-center justify-between gap-2 sm:mb-4">
+            <h2 className="flex items-center gap-2 text-base font-black text-foreground sm:text-lg">
+              <GraduationCap className="size-5 text-teal-600 dark:text-teal-300" />
+              دوره‌های من
+            </h2>
+            <span className="select-none rounded-full border border-foreground/10 bg-foreground/[0.04] px-2.5 py-1 text-[0.6rem] font-black text-muted-foreground dark:border-white/10 dark:bg-white/[0.04]">
+              {faDigits(enrollments.length)} دوره
+            </span>
+          </div>
+
+          {enrollments.length === 0 ? (
+            <EmptyEnrollments />
+          ) : (
+            <div className="flex flex-col gap-4 sm:gap-6">
+              {enrollments.map((e) => (
+                <EnrollmentCard key={e.id} enrollment={e} />
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {/* آزمون‌ها — لیست آزمون‌های قابل مشاهده و نتایج */}
+      {section === "exams" ? <ExamsSection /> : null}
+
+      {/* گواهینامه‌ها — گواهینامه‌های دریافت‌شده با دانلود */}
+      {section === "certificates" ? (
+        <CertificatesSection
+          settings={settings}
+          userName={`${user.firstName} ${user.lastName}`.trim()}
+        />
+      ) : null}
+
+      {/* پرداخت‌ها — لیست پرداخت‌ها و وضعیت اقساط */}
+      {section === "payments" ? (
+        <PaymentsSection enrollments={enrollments} />
+      ) : null}
+    </div>
+  );
+}
+
+/* ————————————————— بخش پرداخت‌ها ————————————————— */
+
+/**
+ * PaymentsSection — لیست پرداخت‌های کاربر:
+ * هر ثبت‌نام دارای اطلاعات پرداخت (نقدی/اقساطی) یک کارت با روش، مبلغ،
+ * وضعیت، کد پیگیری و اقساط خود است. جمع‌بندی کلی بالای لیست می‌نشیند.
+ */
+function PaymentsSection({ enrollments }: { enrollments: PanelEnrollment[] }) {
+  // فقط ثبت‌نام‌های دارای اطلاعات پرداخت
+  const items = enrollments.filter(
+    (e) => e.paymentMethod !== null || e.installments.length > 0
+  );
+
+  // جمع‌بندی — پرداخت‌شده و مانده (نقدی + اقساط)
+  let paidTotal = 0;
+  let pendingTotal = 0;
+  for (const e of items) {
+    if (e.paymentMethod === "cash") {
+      if (e.paymentStatus === "paid") paidTotal += e.paymentAmount ?? 0;
+      else pendingTotal += e.paymentAmount ?? 0;
+    }
+    for (const i of e.installments) {
+      if (i.status === "paid") paidTotal += i.amount;
+      else pendingTotal += i.amount;
+    }
+  }
+
+  return (
+    <section aria-label="پرداخت‌های من" className="space-y-4">
+      {/* سربرگ + جمع‌بندی */}
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2 sm:mb-2">
+        <h2 className="flex items-center gap-2 text-base font-black text-foreground sm:text-lg">
+          <Wallet className="size-5 text-rose-600 dark:text-rose-300" />
+          پرداخت‌های من
+        </h2>
+        <span className="select-none rounded-full border border-foreground/10 bg-foreground/[0.04] px-2.5 py-1 text-[0.6rem] font-black text-muted-foreground dark:border-white/10 dark:bg-white/[0.04]">
+          {faDigits(items.length)} پرداخت
+        </span>
+      </div>
+
+      {items.length === 0 ? (
+        <div
+          className={cn(
+            CARD,
+            "flex flex-col items-center gap-4 px-6 py-12 text-center"
+          )}
+        >
+          <span className="flex size-14 items-center justify-center rounded-2xl bg-foreground/[0.04] dark:bg-white/[0.04]">
+            <Wallet className="size-7 text-muted-foreground" />
+          </span>
+          <div>
+            <p className="text-base font-black text-foreground">
+              هنوز پرداختی ثبت نشده است
+            </p>
+            <p className="mt-1.5 text-xs leading-6 text-muted-foreground">
+              با ثبت‌نام در دوره‌ها، پرداخت‌های نقدی و اقساطی شما همین‌جا نمایش
+              داده می‌شود.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* جمع‌بندی کلی */}
+          <div className={cn(CARD, "flex flex-wrap items-center gap-x-6 gap-y-2")}>
+            <p className="text-xs font-bold text-muted-foreground">
+              جمع پرداخت‌شده: {" "}
+              <span className="tabular-nums font-black text-emerald-600 dark:text-emerald-300">
+                {faAmount(paidTotal)} تومان
+              </span>
+            </p>
+            <p className="text-xs font-bold text-muted-foreground">
+              جمع مانده: {" "}
+              <span className="tabular-nums font-black text-amber-600 dark:text-amber-300">
+                {faAmount(pendingTotal)} تومان
+              </span>
+            </p>
+          </div>
+
           <div className="flex flex-col gap-4 sm:gap-6">
-            {enrollments.map((e) => (
-              <EnrollmentCard key={e.id} enrollment={e} />
+            {items.map((e) => (
+              <PaymentCard key={e.id} enrollment={e} />
             ))}
           </div>
-        )}
-      </section>
-    </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+/** کارت یک پرداخت — روش، مبلغ، وضعیت، کد پیگیری و اقساط */
+function PaymentCard({ enrollment: e }: { enrollment: PanelEnrollment }) {
+  const payStatus = PAYMENT_STATUSES[e.paymentStatus] ?? null;
+  const showInstallments =
+    e.paymentMethod === "installment" && e.installments.length > 0;
+
+  return (
+    <article className={CARD}>
+      {/* عنوان دوره + وضعیت پرداخت */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-foreground/[0.07] pb-3 dark:border-white/[0.07]">
+        <h3 className="text-base font-black leading-7 text-foreground sm:text-lg">
+          {e.course}
+        </h3>
+        {payStatus ? <Chip className={payStatus.badge}>{payStatus.label}</Chip> : null}
+      </div>
+
+      {/* فراداده */}
+      <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {e.paymentMethod ? (
+          <MetaRow label="روش پرداخت">
+            {PAYMENT_METHODS[e.paymentMethod] ?? "—"}
+          </MetaRow>
+        ) : null}
+        {e.paymentAmount !== null && e.paymentAmount !== undefined ? (
+          <MetaRow label="مبلغ">
+            <span className="tabular-nums">{faAmount(e.paymentAmount)} تومان</span>
+          </MetaRow>
+        ) : null}
+        {e.paymentStatus === "paid" && e.paymentRefId ? (
+          <MetaRow label="کد پیگیری">
+            <span dir="ltr" className="tabular-nums">
+              {faDigits(e.paymentRefId)}
+            </span>
+          </MetaRow>
+        ) : null}
+        {e.paymentStatus === "paid" && e.paidAt ? (
+          <MetaRow label="تاریخ پرداخت">{faDate(e.paidAt)}</MetaRow>
+        ) : null}
+        {e.discountCode ? (
+          <MetaRow label="کد تخفیف">
+            <span className="flex items-center gap-1.5">
+              <span dir="ltr" className="font-black tracking-wide">
+                {e.discountCode}
+              </span>
+              {e.discountAmount ? (
+                <Chip className="border-violet-500/30 bg-violet-500/10 text-violet-700 dark:border-violet-400/25 dark:bg-violet-400/10 dark:text-violet-300">
+                  −{faAmount(e.discountAmount)} تومان
+                </Chip>
+              ) : null}
+            </span>
+          </MetaRow>
+        ) : null}
+        <MetaRow label="تاریخ ثبت">{faDate(e.createdAt)}</MetaRow>
+      </dl>
+
+      {/* ————— اقساط ————— */}
+      {showInstallments ? (
+        <InstallmentsBlock installments={e.installments} />
+      ) : null}
+    </article>
   );
 }
 
@@ -391,6 +886,34 @@ function EnrollmentCard({ enrollment: e }: { enrollment: PanelEnrollment }) {
           </MetaRow>
         ) : null}
         <MetaRow label="تاریخ ثبت‌نام">{faDate(e.createdAt)}</MetaRow>
+        {e.grade !== null && e.grade !== undefined ? (
+          <MetaRow label="معدل">
+            <span className="flex items-center gap-1.5">
+              <span
+                className={cn(
+                  "font-black tabular-nums",
+                  e.grade >= 17
+                    ? "text-emerald-600 dark:text-emerald-300"
+                    : e.grade >= 10
+                      ? "text-teal-600 dark:text-teal-300"
+                      : "text-amber-600 dark:text-amber-300"
+                )}
+              >
+                {faDigits(e.grade)} از {faDigits(20)}
+              </span>
+              {e.grade >= 10 ? (
+                <Chip className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-300">
+                  <Check className="size-3" strokeWidth={3} />
+                  گذرانده
+                </Chip>
+              ) : (
+                <Chip className="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-300">
+                  در حال گذراندن
+                </Chip>
+              )}
+            </span>
+          </MetaRow>
+        ) : null}
       </dl>
 
       {/* ————— حضور و غیاب ————— */}
@@ -654,6 +1177,16 @@ function DashboardSkeleton() {
           <div className="h-4 w-40 animate-pulse rounded bg-foreground/10 dark:bg-white/10" />
           <div className="h-3 w-56 animate-pulse rounded bg-foreground/10 dark:bg-white/10" />
         </div>
+      </div>
+
+      {/* کارت‌های آماری */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+        {[0, 1, 2, 3].map((k) => (
+          <div
+            key={k}
+            className="aspect-square animate-pulse rounded-2xl bg-foreground/10 dark:bg-white/10"
+          />
+        ))}
       </div>
 
       {/* سربرگ بخش */}

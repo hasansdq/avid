@@ -334,29 +334,33 @@ function MiniStat({
 }
 
 /* ------------------------------------------------------------------ */
-/*  بخش کامل: پرداخت‌های اخیر + همه‌ی اقساط باقیمانده                    */
+/*  خلاصه‌ی وضعیت اقساط — سربرگ + کارت‌های آماری (بالای تب‌های ماژول)   */
 /* ------------------------------------------------------------------ */
 
-export function InstallmentsOverviewSection({
+/**
+ * سربرگ «وضعیت اقساط کاربران» + کارت‌های خلاصه — همیشه بالای تب‌های
+ * ماژول «مدیریت کاربران» نمایش داده می‌شود (پرداخت‌های اخیر / باقیمانده).
+ */
+export function InstallmentsOverviewStats({
   data,
   loading,
   refreshing,
   onRefresh,
-  onChanged,
 }: {
   data: InstallmentsOverview | null;
   loading: boolean;
   refreshing: boolean;
   onRefresh: () => void;
-  /** پس از ثبت دستی پرداخت — تازه‌سازی داده‌ها */
-  onChanged?: () => void;
 }) {
   if (loading && !data) {
     return (
       <div className="space-y-4">
         <div className="h-9 w-56 animate-pulse rounded-xl bg-foreground/[0.04]" />
-        <div className="glass h-44 animate-pulse rounded-2xl" />
-        <div className="glass h-44 animate-pulse rounded-2xl" />
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="glass h-28 animate-pulse rounded-2xl" />
+          ))}
+        </div>
       </div>
     );
   }
@@ -376,8 +380,7 @@ export function InstallmentsOverviewSection({
   }
 
   return (
-    <div className="space-y-6">
-      {/* سربرگ */}
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/10">
@@ -403,71 +406,115 @@ export function InstallmentsOverviewSection({
           به‌روزرسانی
         </Button>
       </div>
+      <InstallmentsSummaryCards data={data} />
+    </div>
+  );
+}
 
-      {/* کارت‌های خلاصه */}
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <SummaryCard
-          icon={Wallet}
-          tile="from-teal-400 to-emerald-600"
-          label="کل اقساط"
-          value={faDigits(data.summary.total)}
-          sub={`پرداخت‌شده: ${faDigits(data.summary.paid)}`}
-        />
-        <SummaryCard
-          icon={Banknote}
-          tile="from-emerald-400 to-teal-600"
-          label="مبلغ پرداخت‌شده"
-          value={faAmount(data.summary.paidAmount)}
-          sub="تومان — مجموع اقساط تسویه‌شده"
-          isAmount
-        />
-        <SummaryCard
-          icon={Hourglass}
-          tile="from-amber-400 to-orange-500"
-          label="اقساط باقیمانده"
-          value={faDigits(data.summary.pending)}
-          sub={`${faAmount(data.summary.pendingAmount)} تومان باقیمانده`}
-        />
-        <SummaryCard
-          icon={XCircle}
-          tile="from-rose-400 to-red-600"
-          label="معوق"
-          value={faDigits(data.summary.overdue)}
-          sub={`${faAmount(data.summary.overdueAmount)} تومان سررسید گذشته`}
-        />
+/** کارت‌های خلاصه‌ی اقساط — کل، مبلغ پرداخت‌شده، باقیمانده و معوق */
+export function InstallmentsSummaryCards({
+  data,
+}: {
+  data: InstallmentsOverview;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <SummaryCard
+        icon={Wallet}
+        tile="from-teal-400 to-emerald-600"
+        label="کل اقساط"
+        value={faDigits(data.summary.total)}
+        sub={`پرداخت‌شده: ${faDigits(data.summary.paid)}`}
+      />
+      <SummaryCard
+        icon={Banknote}
+        tile="from-emerald-400 to-teal-600"
+        label="مبلغ پرداخت‌شده"
+        value={faAmount(data.summary.paidAmount)}
+        sub="تومان — مجموع اقساط تسویه‌شده"
+        isAmount
+      />
+      <SummaryCard
+        icon={Hourglass}
+        tile="from-amber-400 to-orange-500"
+        label="اقساط باقیمانده"
+        value={faDigits(data.summary.pending)}
+        sub={`${faAmount(data.summary.pendingAmount)} تومان باقیمانده`}
+      />
+      <SummaryCard
+        icon={XCircle}
+        tile="from-rose-400 to-red-600"
+        label="معوق"
+        value={faDigits(data.summary.overdue)}
+        sub={`${faAmount(data.summary.overdueAmount)} تومان سررسید گذشته`}
+      />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  تب «اقساط پرداخت‌شده‌ی اخیر»                                        */
+/* ------------------------------------------------------------------ */
+
+export function RecentPaidSection({
+  data,
+}: {
+  data: InstallmentsOverview | null;
+}) {
+  if (!data) {
+    return <div className="glass h-44 animate-pulse rounded-2xl" />;
+  }
+
+  return (
+    <section className="glass overflow-hidden rounded-2xl">
+      <div className="flex items-center gap-2 border-b border-border p-4 sm:px-5">
+        <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-300" />
+        <h3 className="text-sm font-black text-foreground">
+          اقساط پرداخت‌شده‌ی اخیر
+        </h3>
+        <Badge className="ms-auto rounded-full border-0 bg-emerald-500/15 px-2.5 py-0.5 text-[0.65rem] font-black text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300">
+          {faDigits(data.recentPaid.length)} مورد اخیر
+        </Badge>
       </div>
+      <div className="max-h-[26rem] space-y-2 overflow-y-auto p-4 sm:px-5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-foreground/20">
+        {data.recentPaid.length === 0 ? (
+          <p className="py-6 text-center text-xs font-bold text-muted-foreground">
+            هنوز قسطی پرداخت نشده است.
+          </p>
+        ) : (
+          data.recentPaid.map((inst) => (
+            <div key={inst.id} className="space-y-1">
+              <p className="flex items-center gap-1.5 text-[0.6rem] font-black text-emerald-600 dark:text-emerald-300">
+                <CheckCircle2 className="size-3" />
+                پرداخت در {inst.paidAt ? faDate(inst.paidAt) : "—"}
+              </p>
+              <OverviewRow inst={inst} />
+            </div>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
 
-      {/* پرداخت‌های اخیر */}
-      <section className="glass overflow-hidden rounded-2xl">
-        <div className="flex items-center gap-2 border-b border-border p-4 sm:px-5">
-          <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-300" />
-          <h3 className="text-sm font-black text-foreground">
-            اقساط پرداخت‌شده‌ی اخیر
-          </h3>
-          <Badge className="ms-auto rounded-full border-0 bg-emerald-500/15 px-2.5 py-0.5 text-[0.65rem] font-black text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300">
-            {faDigits(data.recentPaid.length)} مورد اخیر
-          </Badge>
-        </div>
-        <div className="max-h-72 space-y-2 overflow-y-auto p-4 sm:px-5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-foreground/20">
-          {data.recentPaid.length === 0 ? (
-            <p className="py-6 text-center text-xs font-bold text-muted-foreground">
-              هنوز قسطی پرداخت نشده است.
-            </p>
-          ) : (
-            data.recentPaid.map((inst) => (
-              <div key={inst.id} className="space-y-1">
-                <p className="flex items-center gap-1.5 text-[0.6rem] font-black text-emerald-600 dark:text-emerald-300">
-                  <CheckCircle2 className="size-3" />
-                  پرداخت در {inst.paidAt ? faDate(inst.paidAt) : "—"}
-                </p>
-                <OverviewRow inst={inst} />
-              </div>
-            ))
-          )}
-        </div>
-      </section>
+/* ------------------------------------------------------------------ */
+/*  تب «همه‌ی اقساط باقیمانده کاربران»                                  */
+/* ------------------------------------------------------------------ */
 
-      {/* همه‌ی اقساط باقیمانده */}
+export function RemainingSection({
+  data,
+  onChanged,
+}: {
+  data: InstallmentsOverview | null;
+  /** پس از ثبت دستی پرداخت — تازه‌سازی داده‌ها */
+  onChanged?: () => void;
+}) {
+  if (!data) {
+    return <div className="glass h-44 animate-pulse rounded-2xl" />;
+  }
+
+  return (
+    <div className="space-y-4">
       <section className="glass overflow-hidden rounded-2xl">
         <div className="flex items-center gap-2 border-b border-border p-4 sm:px-5">
           <Hourglass className="size-4 shrink-0 text-amber-600 dark:text-amber-300" />
@@ -479,7 +526,7 @@ export function InstallmentsOverviewSection({
             {faAmount(data.summary.pendingAmount)} تومان
           </Badge>
         </div>
-        <div className="max-h-[26rem] space-y-2 overflow-y-auto p-4 sm:px-5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-foreground/20">
+        <div className="max-h-[30rem] space-y-2 overflow-y-auto p-4 sm:px-5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-foreground/20">
           {data.remaining.length === 0 ? (
             <p className="py-6 text-center text-xs font-bold text-muted-foreground">
               قسط باقیمانده‌ای وجود ندارد — همه‌ی اقساط تسویه شده‌اند.
@@ -507,8 +554,8 @@ export function InstallmentsOverviewSection({
       <p className="flex items-center gap-1.5 text-[0.65rem] font-bold text-muted-foreground">
         <ChevronLeft className="size-3 shrink-0" />
         با دکمه‌ی «ثبت پرداخت» روبروی هر قسط، آن را دستی تسویه کنید؛ برای ویرایش
-        مبلغ و سررسید، از بخش «مدیریت کاربران» دکمه‌ی وضعیت پرداختی هر کاربر را
-        باز کنید.
+        مبلغ و سررسید، در تب «لیست کاربران» دکمه‌ی پرداختی‌های هر کاربر را باز
+        کنید.
       </p>
     </div>
   );

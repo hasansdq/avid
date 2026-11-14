@@ -215,12 +215,12 @@ function SettingsTab() {
     if (
       next === "rest" &&
       !(
-        (draft.username.trim() && draft.password.trim()) ||
-        draft.apiKey.trim()
+        draft.username.trim() &&
+        (draft.password.trim() || draft.apiKey.trim())
       )
     ) {
       toast.error(
-        "برای وب‌سرویس REST، نام کاربری و رمز عبور یا کلید API الزامی است."
+        "برای وب‌سرویس REST، نام کاربری و رمز عبور (یا کلید API) الزامی است."
       );
       return;
     }
@@ -340,12 +340,15 @@ function SettingsTab() {
         </div>
         <ol className="space-y-1.5 pr-1 text-xs leading-6 text-muted-foreground">
           <li>
-            ۱) در پنل ملی پیامک (melipayamak.com) وارد بخش «وب‌سرویس» شوید و
-            کلید API خود را دریافت کنید.
+            ۱) روش «وب‌سرویس REST»: در پنل ملی پیامک (payamak-panel.com) وارد
+            بخش «تنظیمات وب‌سرویس» شوید؛ نام کاربری پنل + رمز عبور یا «کلید
+            API» مخصوص وب‌سرویس را وارد کنید (طبق مستندات رسمی، کلید API
+            جایگزین رمز عبور می‌شود).
           </li>
           <li>
-            ۲) روش اتصال را «وب‌سرویس REST» انتخاب کنید و نام کاربری و رمز عبور
-            پنل (یا کلید API) را وارد کنید.
+            ۲) روش «کنسول ملی پیامک»: در کنسول
+            (console.melipayamak.com) وارد «حساب کاربری» شوید و توکن را
+            دریافت کنید؛ سپس توکن را در فیلد کلید کنسول وارد کنید.
           </li>
           <li>
             ۳) شماره‌ی خط فرستنده را از بخش خطوط پنل کپی کنید (مثال:{" "}
@@ -355,16 +358,21 @@ function SettingsTab() {
             ).
           </li>
           <li>
-            ۴) برای OTP خدماتی، شناسه‌ی پترن (BodyId) تاییدشده‌ی خود را وارد
-            کنید.
+            ۴) برای OTP خدماتی (ارسال به لیست سیاه مخابرات)، شناسه‌ی پترن
+            (BodyId) تاییدشده‌ی خود را وارد کنید؛ اگر خالی بماند، OTP با
+            متد رسمی SendOTP (REST) یا ارسال ساده (کنسول) فرستاده می‌شود.
           </li>
         </ol>
         <p className="rounded-xl border border-foreground/[0.07] bg-foreground/[0.02] px-3.5 py-2.5 text-[0.65rem] font-semibold leading-5 text-muted-foreground dark:border-white/[0.07] dark:bg-white/[0.02]">
-          کنسول ملی پیامک:{" "}
+          مستندات رسمی وب‌سرویس REST:{" "}
           <span dir="ltr" className="font-bold">
-            console.melipayamak.com
+            docs.payamak-panel.com
           </span>{" "}
-          ← بخش وب‌سرویس‌ها ← کلید API
+          — مستندات کنسول پس از ورود در
+          <span dir="ltr" className="font-bold">
+            {" "}console.melipayamak.com
+          </span>{" "}
+          قابل مشاهده است.
         </p>
       </section>
 
@@ -428,7 +436,7 @@ function SettingsTab() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="sms-password" className="text-xs font-black text-foreground/90">
-                رمز عبور پنل
+                رمز عبور پنل (یا کلید API وب‌سرویس)
               </Label>
               <Input
                 id="sms-password"
@@ -439,10 +447,15 @@ function SettingsTab() {
                 placeholder="••••••••"
                 className="h-11 rounded-xl bg-foreground/[0.03] text-left dark:bg-white/[0.04]"
               />
+              <p className="text-[0.65rem] leading-5 text-muted-foreground">
+                طبق مستندات رسمی، رمز عبور پنل یا «کلید API» تولیدشده در بخش
+                تنظیمات وب‌سرویس — اگر حساب شما کلید API دارد، استفاده از همان
+                کلید الزامی است.
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="sms-api-key" className="text-xs font-black text-foreground/90">
-                کلید API (اختیاری — جایگزین نام کاربری و رمز)
+                کلید API (اختیاری — جایگزین رمز عبور)
               </Label>
               <Input
                 id="sms-api-key"
@@ -453,6 +466,10 @@ function SettingsTab() {
                 placeholder="••••••••"
                 className="h-11 rounded-xl bg-foreground/[0.03] text-left dark:bg-white/[0.04]"
               />
+              <p className="text-[0.65rem] leading-5 text-muted-foreground">
+                پنل ملی پیامک ← تنظیمات وب‌سرویس ← کلید API — نام کاربری همچنان
+                لازم است؛ این کلید فقط جایگزین رمز عبور می‌شود.
+              </p>
             </div>
           </div>
         )}
@@ -473,7 +490,7 @@ function SettingsTab() {
                 className="h-11 rounded-xl bg-foreground/[0.03] text-left dark:bg-white/[0.04]"
               />
               <p className="text-[0.65rem] leading-5 text-muted-foreground">
-                console.melipayamak.com ← وب‌سرویس‌ها ← API Key
+                console.melipayamak.com ← حساب کاربری ← توکن/API Key
               </p>
             </div>
           </div>
@@ -501,7 +518,7 @@ function SettingsTab() {
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="sms-otp" className="text-xs font-black text-foreground/90">
-              شناسه‌ی پترن OTP — BodyId (اختیاری، فقط وب‌سرویس REST)
+              شناسه‌ی پترن OTP — BodyId (اختیاری)
             </Label>
             <Input
               id="sms-otp"

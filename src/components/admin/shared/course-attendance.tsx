@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { JalaliCalendar } from "@/components/ui/jalali-calendar";
 import {
   Popover,
@@ -51,6 +52,10 @@ interface AttEnrollment {
   name: string;
   phone: string;
   status: string;
+  /** معدل کارآموز در این دوره (۰ تا ۲۰) — null یعنی ثبت نشده */
+  grade: number | null;
+  /** پیوند به حساب کاربری (برای آمار و شناسایی کاربر) */
+  userId: string | null;
 }
 
 interface AttRecord {
@@ -281,6 +286,11 @@ export function CourseAttendancePage({
   /** شماره‌ی جلسه‌ای که تاریخ آن در حال ذخیره است */
   const [pendingDate, setPendingDate] = useState<number | null>(null);
 
+  /** پیش‌نویس ورودی‌های معدل — enrollmentId → رشته */
+  const [gradeDrafts, setGradeDrafts] = useState<Record<string, string>>({});
+  /** ثبت‌نامی که معدل آن در حال ذخیره است */
+  const [pendingGrade, setPendingGrade] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     try {
       setLoading(true);
@@ -313,6 +323,31 @@ export function CourseAttendancePage({
       m.set(`${r.index}:${r.enrollmentId}`, r.present)
     );
     return m;
+  }, [data]);
+
+  /** آمار حضور هر ثبت‌نام — تعداد حاضر/ثبت‌شده از روی رکوردها */
+  const recordedByEnrollment = useMemo(() => {
+    const m = new Map<string, { present: number; total: number }>();
+    (data?.records ?? []).forEach((r) => {
+      const cur = m.get(r.enrollmentId) ?? { present: 0, total: 0 };
+      cur.total += 1;
+      if (r.present) cur.present += 1;
+      m.set(r.enrollmentId, cur);
+    });
+    return m;
+  }, [data]);
+
+  // پیش‌نویس ورودی‌های معدل با داده‌ی تازه هم‌گام می‌شود
+  useEffect(() => {
+    if (!data) return;
+    setGradeDrafts(
+      Object.fromEntries(
+        data.enrollments.map((e) => [
+          e.id,
+          e.grade === null || e.grade === undefined ? "" : String(e.grade),
+        ])
+      )
+    );
   }, [data]);
 
   const enrollments = useMemo(() => data?.enrollments ?? [], [data]);
@@ -418,6 +453,62 @@ export function CourseAttendancePage({
     }
   }
 
+  /* ————— معدل و گواهینامه‌ی کارآموزان ————— */
+
+  /** ثبت/حذف معدل یک کارآموز (۰ تا ۲۰؛ رشته‌ی خالی = حذف نمره) */
+  async function saveGrade(
+    enrollmentId: string,
+    raw: string
+  ): Promise<void> {
+    setPendingGrade(enrollmentId);
+    try {
+      const res = await apiFetch<{ grade: number | null }>(
+        `/api/admin/courses/${course.id}/attendance`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            action: "setGrade",
+            enrollmentId,
+            grade: raw === "" ? null : raw,
+          }),
+        }
+      );
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              enrollments: prev.enrollments.map((e) =>
+                e.id === enrollmentId ? { ...e, grade: res.grade } : e
+              ),
+            }
+          : prev
+      );
+      toast.success(res.grade === null ? "معدل حذف شد." : "معدل ثبت شد.");
+    } catch (error) {
+      toastApiError(error);
+    } finally {
+      setPendingGrade(null);
+    }
+  }
+
+  /** ذخیره‌ی پیش‌نویس فیلد معدل — با خروج از فیلد یا کلید Enter */
+  function commitGrade(e: AttEnrollment) {
+    const draft = (gradeDrafts[e.id] ?? "").trim();
+    const saved =
+      e.grade === null || e.grade === undefined ? "" : String(e.grade);
+    if (draft === saved) return;
+
+    // اعتبارسنجی سریع سمت کلاینت — سرور هم چک می‌کند
+    if (draft !== "") {
+      const n = parseFloat(draft);
+      if (!Number.isFinite(n) || n < 0 || n > 20) {
+        toast.error("معدل باید عددی بین ۰ تا ۲۰ باشد.");
+        return;
+      }
+    }
+    void saveGrade(e.id, draft);
+  }
+
   /* — نمایش هدر — */
   const Icon = getCourseIcon(course.icon);
   const theme = getCourseTheme(course.theme);
@@ -433,7 +524,7 @@ export function CourseAttendancePage({
     <div className="space-y-6">
       <ModuleHeader
         title={`حضور و غیاب — ${course.title}`}
-        description="لیست ثبت‌نام‌کنندگان دوره و وضعیت حضور آن‌ها در جلسه‌ها؛ با فعال‌سازی هر جلسه، همه حاضر ثبت می‌شوند."
+        description="لیست ثبت‌نام‌کنندگان دوره و وضعیت حضور آن‌ها در جلسه‌ها؛ با فعال‌سازی هر جلسه، همه حاضر ثبت می‌شوند. در بخش «نمرات» معدل هر کارآموز را ثبت کنید."
       >
         <Button
           variant="outline"
@@ -722,6 +813,143 @@ export function CourseAttendancePage({
           </div>
         </div>
       )}
+
+      {/* ————— نمرات کارآموزان ————— */}
+      {enrollments.length > 0 ? (
+        <section className="space-y-3" aria-label="نمرات کارآموزان">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="flex items-center gap-2 text-base font-black text-foreground">
+              <ClipboardCheck className="size-5 text-teal-600 dark:text-teal-300" />
+              نمرات کارآموزان
+            </h3>
+            <p className="text-[0.65rem] font-semibold text-muted-foreground">
+              معدل از ۲۰ — با خروج از فیلد ثبت می‌شود
+            </p>
+          </div>
+
+          <div className="glass overflow-hidden rounded-2xl">
+            <div className="max-h-[45vh] overflow-auto">
+              <table className="w-full min-w-[420px] border-separate border-spacing-0 text-sm">
+                <thead>
+                  <tr>
+                    <th
+                      scope="col"
+                      className="sticky top-0 z-10 border-b border-border bg-background px-3 py-2 text-start text-xs font-black text-muted-foreground"
+                    >
+                      کارآموز
+                    </th>
+                    <th
+                      scope="col"
+                      className="sticky top-0 z-10 border-b border-border bg-background px-3 py-2 text-center text-xs font-black text-muted-foreground"
+                    >
+                      حضور
+                    </th>
+                    <th
+                      scope="col"
+                      className="sticky top-0 z-10 border-b border-border bg-background px-3 py-2 text-center text-xs font-black text-muted-foreground"
+                    >
+                      معدل (از ۲۰)
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {enrollments.map((e) => {
+                    const att =
+                      recordedByEnrollment.get(e.id) ??
+                      { present: 0, total: 0 };
+                    const attPct =
+                      att.total > 0
+                        ? Math.round((att.present / att.total) * 100)
+                        : null;
+                    const draft = gradeDrafts[e.id] ?? "";
+                    const saving = pendingGrade === e.id;
+
+                    return (
+                      <tr key={e.id} className="group/row">
+                        <td className="border-b border-border/60 px-3 py-2.5 align-middle transition-colors group-hover/row:bg-muted/40">
+                          <p className="text-sm font-bold text-foreground">
+                            {e.name}
+                          </p>
+                          <p
+                            dir="ltr"
+                            className="text-[0.65rem] tabular-nums text-muted-foreground"
+                          >
+                            {faDigits(e.phone)}
+                          </p>
+                        </td>
+                        <td className="border-b border-border/60 px-3 py-2.5 text-center align-middle transition-colors group-hover/row:bg-muted/40">
+                          {att.total > 0 ? (
+                            <span
+                              className={cn(
+                                "text-xs font-black tabular-nums",
+                                (attPct ?? 0) >= 80
+                                  ? "text-emerald-600 dark:text-emerald-300"
+                                  : (attPct ?? 0) >= 50
+                                    ? "text-amber-600 dark:text-amber-300"
+                                    : "text-red-600 dark:text-red-300"
+                              )}
+                              title={`${faDigits(att.present)} از ${faDigits(att.total)} جلسه‌ی ثبت‌شده`}
+                            >
+                              {faDigits(att.present)} از {faDigits(att.total)} (
+                              {faDigits(attPct ?? 0)}٪)
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              بدون ثبت
+                            </span>
+                          )}
+                        </td>
+                        <td className="border-b border-border/60 px-3 py-2.5 text-center align-middle transition-colors group-hover/row:bg-muted/40">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <Input
+                              type="number"
+                              inputMode="decimal"
+                              dir="ltr"
+                              min={0}
+                              max={20}
+                              step={0.25}
+                              value={draft}
+                              disabled={saving}
+                              onChange={(ev) =>
+                                setGradeDrafts((prev) => ({
+                                  ...prev,
+                                  [e.id]: ev.target.value,
+                                }))
+                              }
+                              onBlur={() => commitGrade(e)}
+                              onKeyDown={(ev) => {
+                                if (ev.key === "Enter")
+                                  ev.currentTarget.blur();
+                              }}
+                              aria-label={`معدل ${e.name}`}
+                              title="عددی بین ۰ تا ۲۰ — با خروج از فیلد ثبت می‌شود"
+                              className="h-9 w-24 text-center tabular-nums"
+                              placeholder="—"
+                            />
+                            {saving ? (
+                              <Loader2
+                                className="size-4 animate-spin text-teal-500 dark:text-teal-300"
+                                aria-label="در حال ثبت معدل"
+                              />
+                            ) : e.grade !== null &&
+                              e.grade !== undefined ? (
+                              <Check
+                                className="size-4 text-emerald-500 dark:text-emerald-400"
+                                strokeWidth={3}
+                                aria-label="ثبت‌شده"
+                              />
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {/* — راهنمای آیکون‌ها — */}
       {enrollments.length > 0 && sessionCount > 0 ? (

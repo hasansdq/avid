@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type { SiteSettings } from "@prisma/client";
 import { SectionHeading, Reveal } from "@/components/reveal";
+import { EditableText } from "@/components/site/editable-texts";
 import { EnrollForm, type PublicCourse } from "@/components/site/enroll-form";
 
 const benefits = [
@@ -33,12 +34,19 @@ export function Register({
           icon={ClipboardList}
           badge="ثبت‌نام در دوره‌ها"
           title={
-            <>
-              جای خود را در دوره‌ها{" "}
-              <span className="text-gradient">رزرو کنید</span>
-            </>
+            <EditableText k="register.title">
+              <>
+                جای خود را در دوره‌ها{" "}
+                <span className="text-gradient">رزرو کنید</span>
+              </>
+            </EditableText>
           }
-          description="فرم زیر را پر کنید؛ ثبت‌نام نهایی پس از تماس کارشناسان آموزشی و پرداخت شهریه انجام می‌شود."
+          description={
+            <EditableText k="register.description">
+              فرم زیر را پر کنید؛ ثبت‌نام نهایی پس از تماس کارشناسان آموزشی و
+              پرداخت شهریه انجام می‌شود.
+            </EditableText>
+          }
         />
 
         <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
@@ -46,16 +54,25 @@ export function Register({
           <Reveal>
             <div className="space-y-6">
               <h3 className="text-2xl font-black leading-10 text-foreground md:text-3xl">
-                چرا آکادمی{" "}
-                <span className="text-gradient">{settings.siteName}</span>؟
+                <EditableText k="register.whyTitle">
+                  <>
+                    چرا آکادمی{" "}
+                    <span className="text-gradient">{settings.siteName}</span>؟
+                  </>
+                </EditableText>
               </h3>
               <ul className="space-y-4">
-                {benefits.map((b) => (
+                {benefits.map((b, i) => (
                   <li key={b} className="flex items-start gap-3">
                     <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg bg-teal-500/15 text-teal-600 dark:bg-teal-400/15 dark:text-teal-300">
                       <Check className="size-3.5" strokeWidth={3} />
                     </span>
-                    <span className="text-sm leading-7 text-foreground/85">{b}</span>
+                    <EditableText
+                      k={`register.benefit-${i + 1}`}
+                      className="text-sm leading-7 text-foreground/85"
+                    >
+                      {b}
+                    </EditableText>
                   </li>
                 ))}
               </ul>

@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
 import { bad, str } from "@/lib/api-helpers";
+import {
+  isValidNationalId,
+  normalizeNationalId,
+} from "@/lib/national-id";
 
 /**
  * GET/PUT/DELETE /api/admin/users/[id] — مدیریت یک کاربر.
@@ -57,6 +61,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
       firstName?: string;
       lastName?: string;
       phone?: string;
+      nationalId?: string | null;
       status?: string;
       note?: string | null;
     } = {};
@@ -90,6 +95,32 @@ export async function PUT(req: NextRequest, { params }: Params) {
         }
       }
       data.phone = phone;
+    }
+
+    // — کد ملی (اختیاری): خالی = حذف؛ مقدار باید معتبر و یکتا باشد —
+    if ("nationalId" in body) {
+      const clean =
+        body.nationalId === null || body.nationalId === undefined
+          ? ""
+          : normalizeNationalId(String(body.nationalId));
+      if (clean !== "") {
+        if (!isValidNationalId(clean)) {
+          return bad(
+            "کد ملی ۱۰ رقمی معتبر وارد کنید یا این فیلد را خالی بگذارید."
+          );
+        }
+        if (clean !== user.nationalId) {
+          const owner = await db.user.findUnique({
+            where: { nationalId: clean },
+          });
+          if (owner && owner.id !== user.id) {
+            return bad("این کد ملی به کاربر دیگری تعلق دارد.", 409);
+          }
+        }
+        data.nationalId = clean;
+      } else {
+        data.nationalId = null;
+      }
     }
 
     // — وضعیت (active | blocked) —

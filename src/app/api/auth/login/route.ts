@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { verifyPassword, createSession, SESSION_COOKIE } from "@/lib/auth";
-import { requestSecure } from "@/lib/http";
+import {
+  verifyPassword,
+  createSession,
+  SESSION_COOKIE,
+  sessionCookieOptions,
+} from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
   try {
@@ -28,14 +32,7 @@ export async function POST(req: NextRequest) {
     const { token, maxAge } = await createSession(admin.id);
 
     const res = NextResponse.json({ ok: true, username: admin.username });
-    res.cookies.set(SESSION_COOKIE, token, {
-      httpOnly: true,
-      sameSite: "lax",
-      // در استقرار HTTPS (پشت پروکسی DirectAdmin) کوکی فقط روی HTTPS ارسال می‌شود
-      secure: requestSecure(req),
-      maxAge,
-      path: "/",
-    });
+    res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions(req, maxAge));
     return res;
   } catch (error) {
     console.error("login error:", error);

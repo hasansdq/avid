@@ -2,7 +2,10 @@
 
 import { Switch } from "@/components/ui/switch";
 
-/** کلید انتشار/نمایش در سایت — برای استفاده در ردیف جدول‌ها */
+/**
+ * کلید وضعیت انتشار — برای استفاده در ردیف جدول‌ها.
+ * روشن = «منتشر شده» (در سایت قابل مشاهده) · خاموش = «پیش‌نویس» (فقط پنل مدیر).
+ */
 export function PublishSwitch({
   published,
   onToggle,
@@ -18,14 +21,14 @@ export function PublishSwitch({
         checked={published}
         onCheckedChange={onToggle}
         disabled={disabled}
-        aria-label={published ? "فعال" : "غیرفعال"}
+        aria-label={published ? "منتشر شده" : "پیش‌نویس"}
       />
       <span
         className={`hidden text-[0.65rem] font-bold whitespace-nowrap lg:inline ${
           published ? "text-teal-600 dark:text-teal-300" : "text-muted-foreground"
         }`}
       >
-        {published ? "فعال" : "غیرفعال"}
+        {published ? "منتشر شده" : "پیش‌نویس"}
       </span>
     </div>
   );

@@ -27,6 +27,7 @@ import {
   BookOpen,
   Calculator,
   Microscope,
+  Layers,
   type LucideIcon,
 } from "lucide-react";
 
@@ -192,12 +193,19 @@ export const COURSE_TYPES = {
       "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-300",
     icon: Users,
   },
+  // دوره‌ی ترکیبی — هم جلسات حضوری دارد هم پخش آنلاین
+  hybrid: {
+    label: "حضوری و آنلاین",
+    badge:
+      "border-violet-500/25 bg-violet-500/10 text-violet-700 dark:border-violet-400/25 dark:bg-violet-400/10 dark:text-violet-300",
+    icon: Layers,
+  },
 } as const;
 
 export type CourseType = keyof typeof COURSE_TYPES;
 
 export function isCourseType(v: string): v is CourseType {
-  return v === "online" || v === "inperson";
+  return v === "online" || v === "inperson" || v === "hybrid";
 }
 
 export const COURSE_LEVELS = ["مقدماتی", "متوسط", "پیشرفته"] as const;

@@ -3,7 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { GraduationCap, Menu, Rocket, Sparkles, UserRound } from "lucide-react";
+import { GraduationCap, LogIn, Menu, Rocket, Sparkles } from "lucide-react";
 import type { NavLink, SiteSettings } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -104,8 +104,8 @@ export function Navbar({
         </ul>
 
         <div className="flex items-center gap-2">
-          {/* دکمه‌ی حساب کاربری — همیشه در هدر (دسکتاپ و موبایل) و خارج از منوی همبرگری */}
-          {/* موبایل: فقط آیکون؛ دسکتاپ: آیکون + برچسب — هدایت به پنل کاربر /panel */}
+          {/* دکمه‌ی «ورود / ثبت‌نام» — همیشه در هدر (دسکتاپ و موبایل) و خارج از منوی همبرگری */}
+          {/* موبایل: فقط آیکون؛ دسکتاپ: آیکون + برچسب — هدایت به /panel که هم ورود و هم ثبت‌نام مستقل (بدون نیاز به انتخاب دوره) را پوشش می‌دهد */}
           <Button
             asChild
             variant="outline"
@@ -113,12 +113,12 @@ export function Navbar({
           >
             <Link
               href="/panel"
-              aria-label="حساب کاربری — ورود به پنل"
-              title="ورود به پنل حساب کاربری"
+              aria-label="ورود یا ثبت‌نام در سایت"
+              title="ورود به حساب کاربری یا ثبت‌نام جدید در سایت"
             >
-              <UserRound className="size-5" />
+              <LogIn className="size-5" />
               <span className="hidden text-sm font-bold sm:inline">
-                حساب کاربری
+                ورود / ثبت‌نام
               </span>
             </Link>
           </Button>

@@ -29,6 +29,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -111,14 +118,38 @@ function toDateInput(d: Date | string): string {
   ).padStart(2, "0")}`;
 }
 
+/* — وضعیت‌های قابل تبدیل قسط — */
+const INSTALLMENT_STATUS_OPTIONS: {
+  value: "pending" | "paid" | "overdue";
+  label: string;
+}[] = [
+  { value: "pending", label: "در انتظار" },
+  { value: "paid", label: "پرداخت‌شده" },
+  { value: "overdue", label: "معوق" },
+];
+
+/** آیکون وضعیت برای داخل سلکت */
+function statusIcon(kind: "paid" | "overdue" | "pending", className = "size-3") {
+  if (kind === "paid") return <CheckCircle2 className={className} />;
+  if (kind === "overdue") return <XCircle className={className} />;
+  return <Hourglass className={className} />;
+}
+
 /* — پیش‌نویس فرم قسط (همه‌چیز رشته؛ هنگام ذخیره تبدیل می‌شود) — */
 interface InstallmentDraft {
   amount: string;
   dueDate: string;
   note: string;
+  /** وضعیت قسط — فقط هنگام ویرایش رکورد موجود قابل تغییر است */
+  status: "pending" | "paid" | "overdue";
 }
 
-const EMPTY_DRAFT: InstallmentDraft = { amount: "", dueDate: "", note: "" };
+const EMPTY_DRAFT: InstallmentDraft = {
+  amount: "",
+  dueDate: "",
+  note: "",
+  status: "pending",
+};
 
 /**
  * دیالوگ مدیریت اقساط یک ثبت‌نام —
@@ -196,6 +227,8 @@ export function InstallmentsDialog({
       amount: String(inst.amount),
       dueDate: toDateInput(inst.dueDate),
       note: inst.note ?? "",
+      status:
+        inst.status === "paid" || inst.status === "overdue" ? inst.status : "pending",
     });
     setFormOpen(true);
   }
@@ -218,6 +251,8 @@ export function InstallmentsDialog({
         amount,
         dueDate: draft.dueDate,
         note: draft.note.trim(),
+        // تبدیل وضعیت (پرداخت‌شده/در انتظار/معوق) در کنار ویرایش مبلغ و سررسید
+        ...(editing ? { status: draft.status } : {}),
       });
       if (editing) {
         await apiFetch(`/api/admin/installments/${editing.id}`, {
@@ -246,16 +281,24 @@ export function InstallmentsDialog({
     }
   }
 
-  /* — ثبت / لغو پرداخت — */
-  async function togglePaid(inst: Installment) {
-    const next = inst.status === "paid" ? "pending" : "paid";
+  /* — تبدیل وضعیت قسط به وضعیت دیگر (پرداخت‌شده ⇄ در انتظار ⇄ معوق) — */
+  async function changeStatus(inst: Installment, next: string) {
+    const value =
+      next === "paid" || next === "overdue" || next === "pending"
+        ? next
+        : null;
+    if (!value || value === inst.status || busyId) return;
     setBusyId(inst.id);
     try {
       await apiFetch(`/api/admin/installments/${inst.id}`, {
         method: "PUT",
-        body: JSON.stringify({ status: next }),
+        body: JSON.stringify({ status: value }),
       });
-      toast.success(next === "paid" ? "پرداخت قسط ثبت شد" : "پرداخت قسط لغو شد");
+      const label =
+        INSTALLMENT_STATUS_OPTIONS.find((o) => o.value === value)?.label ?? value;
+      toast.success(
+        `وضعیت قسط ${faDigits(inst.index)} به «${label}» تغییر یافت`
+      );
       afterChange();
     } catch (error) {
       toastApiError(error);
@@ -317,39 +360,15 @@ export function InstallmentsDialog({
 
   /* — دکمه‌های عملیات هر ردیف (مشترک جدول و کارت) — */
   function rowActions(inst: Installment, compact: boolean) {
-    const paid = inst.status === "paid";
     const busy = busyId === inst.id;
     return (
       <div className={cn("flex items-center gap-1.5", compact ? "" : "flex-wrap")}>
-        <Button
-          variant={paid ? "ghost" : "outline"}
-          size={compact ? "sm" : "default"}
-          onClick={() => togglePaid(inst)}
-          disabled={busy}
-          aria-label={
-            paid ? `لغو پرداخت قسط ${faDigits(inst.index)}` : `ثبت پرداخت قسط ${faDigits(inst.index)}`
-          }
-          className={cn(
-            compact ? "h-7 rounded-full px-3 text-[0.65rem]" : "h-10 rounded-xl px-4 text-xs",
-            "font-bold",
-            paid
-              ? "text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground"
-              : "border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10 dark:border-emerald-400/25 dark:text-emerald-300"
-          )}
-        >
-          {busy ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <CheckCircle2 className={paid ? "size-3.5" : "size-3.5"} />
-          )}
-          {paid ? "لغو پرداخت" : "ثبت پرداخت"}
-        </Button>
         <Button
           variant="ghost"
           size={compact ? "icon" : "default"}
           onClick={() => openEdit(inst)}
           aria-label={`ویرایش قسط ${faDigits(inst.index)}`}
-          title="ویرایش"
+          title="ویرایش مبلغ، سررسید و وضعیت"
           className={cn(
             compact ? "size-7" : "size-10 rounded-xl",
             "text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground"
@@ -375,7 +394,47 @@ export function InstallmentsDialog({
             <Trash2 className="size-3.5" />
           </Button>
         </ConfirmDelete>
+        {compact ? null : (
+          <span className="text-[0.6rem] font-medium text-muted-foreground/70">
+            تغییر وضعیت از ستون «وضعیت»
+          </span>
+        )}
       </div>
+    );
+  }
+
+  /* — سلکت تبدیل وضعیت قسط (جدول و کارت موبایل) —
+     مقدار = وضعیت ذخیره‌شده؛ نمایش = برچسب مؤثر (pendingِ سررسید گذشته = معوق) */
+  function statusSelect(inst: Installment) {
+    const meta = installmentMeta(inst);
+    const busy = busyId === inst.id;
+    return (
+      <Select
+        value={inst.status}
+        onValueChange={(v) => changeStatus(inst, v)}
+        disabled={busy}
+      >
+        <SelectTrigger
+          size="sm"
+          aria-label={`تغییر وضعیت قسط ${faDigits(inst.index)}`}
+          title="وضعیت را به حالت دیگری تبدیل کنید"
+          className={cn(
+            "h-7 w-auto gap-1.5 rounded-full border px-2.5 text-[0.65rem] font-bold",
+            meta.badge,
+            busy && "opacity-60"
+          )}
+        >
+          {statusIcon(meta.icon)}
+          <SelectValue>{meta.label}</SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {INSTALLMENT_STATUS_OPTIONS.map((opt) => (
+            <SelectItem key={opt.value} value={opt.value}>
+              {opt.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     );
   }
 
@@ -390,8 +449,8 @@ export function InstallmentsDialog({
             اقساط دوره‌ی «{enrollmentTitle}»
           </DialogTitle>
           <DialogDescription className="leading-6">
-            طرح اقساط این ثبت‌نام — ثبت و لغو پرداخت، ویرایش مبلغ و سررسید و افزودن
-            قسط دستی.
+            طرح اقساط این ثبت‌نام — تبدیل وضعیت هر قسط به وضعیت دیگر (پرداخت‌شده /
+            در انتظار / معوق)، ویرایش مبلغ و سررسید و افزودن قسط دستی.
           </DialogDescription>
         </DialogHeader>
 
@@ -548,7 +607,6 @@ export function InstallmentsDialog({
                       </TableHeader>
                       <TableBody>
                         {installments.map((inst) => {
-                          const meta = installmentMeta(inst);
                           return (
                             <TableRow key={inst.id}>
                               <TableCell className="font-bold tabular-nums">
@@ -572,21 +630,7 @@ export function InstallmentsDialog({
                                 ) : null}
                               </TableCell>
                               <TableCell>
-                                <span
-                                  className={cn(
-                                    "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[0.65rem] font-bold",
-                                    meta.badge
-                                  )}
-                                >
-                                  {meta.icon === "paid" ? (
-                                    <CheckCircle2 className="size-3" />
-                                  ) : meta.icon === "overdue" ? (
-                                    <XCircle className="size-3" />
-                                  ) : (
-                                    <Hourglass className="size-3" />
-                                  )}
-                                  {meta.label}
-                                </span>
+                                {statusSelect(inst)}
                               </TableCell>
                               <TableCell className="max-w-40">
                                 {inst.note ? (
@@ -616,7 +660,6 @@ export function InstallmentsDialog({
                 {/* — کارت‌های موبایل — */}
                 <div className="space-y-2.5 md:hidden">
                   {installments.map((inst) => {
-                    const meta = installmentMeta(inst);
                     return (
                       <article key={inst.id} className="glass space-y-3 rounded-2xl p-4">
                         <div className="flex items-start justify-between gap-2">
@@ -636,21 +679,7 @@ export function InstallmentsDialog({
                               ) : null}
                             </p>
                           </div>
-                          <span
-                            className={cn(
-                              "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[0.65rem] font-bold",
-                              meta.badge
-                            )}
-                          >
-                            {meta.icon === "paid" ? (
-                              <CheckCircle2 className="size-3" />
-                            ) : meta.icon === "overdue" ? (
-                              <XCircle className="size-3" />
-                            ) : (
-                              <Hourglass className="size-3" />
-                            )}
-                            {meta.label}
-                          </span>
+                          {statusSelect(inst)}
                         </div>
                         {inst.note ? (
                           <p className="rounded-xl bg-foreground/[0.04] px-3 py-2 text-xs leading-5 text-muted-foreground">
@@ -680,12 +709,47 @@ export function InstallmentsDialog({
             </DialogTitle>
             <DialogDescription className="leading-6">
               {editing
-                ? "مبلغ، سررسید یا یادداشت این قسط را اصلاح کنید."
+                ? "مبلغ، سررسید، وضعیت یا یادداشت این قسط را اصلاح کنید — وضعیت را به هر حالت دیگری تبدیل کنید."
                 : "مبلغ و سررسید قسط جدید را وارد کنید."}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
+            {/* — وضعیت (فقط هنگام ویرایش — تبدیل به هر وضعیت) — */}
+            {editing ? (
+              <div className="space-y-2">
+                <Label className="text-xs font-black text-foreground/90">
+                  وضعیت قسط
+                </Label>
+                <Select
+                  value={draft.status}
+                  onValueChange={(v) =>
+                    setDraft((d) => ({
+                      ...d,
+                      status: v === "paid" || v === "overdue" ? v : "pending",
+                    }))
+                  }
+                >
+                  <SelectTrigger
+                    id="inst-status"
+                    className="h-11 rounded-xl bg-foreground/[0.03] dark:bg-white/[0.04]"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INSTALLMENT_STATUS_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[0.65rem] leading-5 text-muted-foreground">
+                  هر وضعیتی را می‌توانید به وضعیت دیگر تبدیل کنید — مثلاً «پرداخت‌شده»
+                  به «در انتظار» یا «معوق».
+                </p>
+              </div>
+            ) : null}
             <div className="space-y-2">
               <Label
                 htmlFor="inst-amount"

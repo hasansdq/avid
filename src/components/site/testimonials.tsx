@@ -6,6 +6,7 @@ import type { Testimonial } from "@prisma/client";
 import { getCourseTheme } from "@/lib/course-theme";
 import { faDigits } from "@/lib/fa";
 import { SectionHeading, Reveal } from "@/components/reveal";
+import { EditableText } from "@/components/site/editable-texts";
 
 export function Testimonials({ testimonials }: { testimonials: Testimonial[] }) {
   return (
@@ -20,12 +21,19 @@ export function Testimonials({ testimonials }: { testimonials: Testimonial[] }) 
           icon={MessagesSquare}
           badge="نظرات کاربران"
           title={
-            <>
-              کارآموزان ما چه{" "}
-              <span className="text-gradient">می‌گویند؟</span>
-            </>
+            <EditableText k="testimonials.title">
+              <>
+                کارآموزان ما چه{" "}
+                <span className="text-gradient">می‌گویند؟</span>
+              </>
+            </EditableText>
           }
-          description="تجربه واقعی افرادی که مسیر یادگیری خود را با ما شروع کردند و امروز به هدفشان رسیده‌اند."
+          description={
+            <EditableText k="testimonials.description">
+              تجربه واقعی افرادی که مسیر یادگیری خود را با ما شروع کردند و امروز
+              به هدفشان رسیده‌اند.
+            </EditableText>
+          }
         />
 
         {testimonials.length === 0 ? (
@@ -91,8 +99,12 @@ export function Testimonials({ testimonials }: { testimonials: Testimonial[] }) 
 
         <Reveal delay={0.2} className="mt-10 text-center">
           <p className="text-xs font-semibold text-muted-foreground">
-            میانگین رضایت {faDigits("4.9")} از {faDigits(5)} بر اساس نظرات
-            کارآموزان
+            <EditableText k="testimonials.ratingNote">
+              <>
+                میانگین رضایت {faDigits("4.9")} از {faDigits(5)} بر اساس نظرات
+                کارآموزان
+              </>
+            </EditableText>
           </p>
         </Reveal>
       </div>

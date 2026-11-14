@@ -13,6 +13,7 @@ import {
   Plus,
   Rocket,
   Save,
+  ShieldCheck,
   Trash2,
   TriangleAlert,
   Type,
@@ -21,6 +22,7 @@ import {
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TrustSeal } from "@/components/site/trust-seal";
 import {
   Dialog,
   DialogContent,
@@ -40,6 +42,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { apiFetch, toastApiError } from "@/components/admin/api";
 import { ConfirmDelete } from "@/components/admin/shared/confirm-delete";
 import { EmptyState } from "@/components/admin/shared/empty-state";
@@ -459,6 +462,43 @@ function Field({
 /* — ماژول اصلی — */
 
 /**
+ * دامنه‌ی صفحه‌ی تأیید زرین‌پال را از کد ذخیره‌شده برمی‌دارد؛ اگر کد
+ * الگوی رسمی ما نباشد (کد سفارشی)، عیناً برگردانده می‌شود.
+ */
+function zarinpalDisplayValue(stored: string | null | undefined): string {
+  const code = (stored ?? "").trim();
+  if (!code) return "";
+  const m = /zarinpal\.com\/trustPage\/([^"'\s<>]+)/i.exec(code);
+  if (m && /badges\/trustLogo/i.test(code)) return m[1];
+  return code;
+}
+
+/**
+ * کد رسمی «لوگو تایید درگاه پرداخت» زرین‌پال را از دامنه می‌سازد (طبق
+ * مستندات رسمی زرین‌پال — docs → لوگوی تایید):
+ *   تصویر:  https://www.zarinpal.com/badges/trustLogo/1.svg
+ *   تأیید:  https://www.zarinpal.com/trustPage/{دامنه‌ی سایت}
+ * نامعتبر → null؛ خالی → "" (حذف لوگو).
+ */
+function buildZarinpalCode(input: string): string | null {
+  const d = input
+    .trim()
+    .replace(/^[a-z]+:\/\//i, "")
+    .replace(/\/.*$/, "")
+    .trim();
+  if (!d) return "";
+  if (
+    !/^[a-z0-9\u0600-\u06FF]([a-z0-9\u0600-\u06FF.-]*[a-z0-9\u0600-\u06FF])?$/i.test(
+      d
+    ) ||
+    !d.includes(".")
+  ) {
+    return null;
+  }
+  return `<a href="https://www.zarinpal.com/trustPage/${d}" target="_blank" title="دروازه پرداخت معتبر"><img src="https://www.zarinpal.com/badges/trustLogo/1.svg" border="0" alt="دروازه پرداخت معتبر"></a>`;
+}
+
+/**
  * ماژول «ویرایش هدر و فوتر» — مدیریت لینک‌ها و دکمه‌های هدر و فوتر سایت
  * + انتخاب فونت هدر و فوتر (ذخیره در تنظیمات سایت).
  */
@@ -478,6 +518,18 @@ export function HeaderFooterModule({ setActive }: ModuleProps) {
   const [fontSaved, setFontSaved] = useState<FontDraft | null>(null);
   const [fontsLoading, setFontsLoading] = useState(true);
   const [savingFonts, setSavingFonts] = useState(false);
+
+  /* — کد اینماد (نماد اعتماد الکترونیکی) — در فوتر سایت رندر می‌شود — */
+  const [enamadDraft, setEnamadDraft] = useState<string | null>(null);
+  const [enamadSaved, setEnamadSaved] = useState<string | null>(null);
+  const [savingEnamad, setSavingEnamad] = useState(false);
+
+  /* — نماد زرین‌پال (لوگو تایید درگاه پرداخت) — در فوتر، سمت راست اینماد — */
+  const [zarinpalDraft, setZarinpalDraft] = useState<string | null>(null);
+  const [zarinpalSaved, setZarinpalSaved] = useState<string | null>(null);
+  const [savingZarinpal, setSavingZarinpal] = useState(false);
+  /** متن معرفی فوتر — برای پیش‌نمایش جایگاه نمادها زیر همین متن — */
+  const [previewDesc, setPreviewDesc] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -500,6 +552,11 @@ export function HeaderFooterModule({ setActive }: ModuleProps) {
       };
       setFontDraft(next);
       setFontSaved(next);
+      setEnamadDraft(settings.enamadCode ?? "");
+      setEnamadSaved(settings.enamadCode ?? "");
+      setZarinpalDraft(zarinpalDisplayValue(settings.zarinpalCode));
+      setZarinpalSaved(settings.zarinpalCode ?? "");
+      setPreviewDesc(settings.footerDescription ?? "");
     } catch (error) {
       toastApiError(error);
     } finally {
@@ -523,6 +580,24 @@ export function HeaderFooterModule({ setActive }: ModuleProps) {
     fontSaved !== null &&
     (fontDraft.headerFont !== fontSaved.headerFont ||
       fontDraft.footerFont !== fontSaved.footerFont);
+
+  const enamadDirty =
+    enamadDraft !== null &&
+    enamadSaved !== null &&
+    enamadDraft.trim() !== enamadSaved.trim();
+
+  const zarinpalDirty =
+    zarinpalDraft !== null &&
+    zarinpalSaved !== null &&
+    zarinpalDraft.trim() !== zarinpalDisplayValue(zarinpalSaved);
+
+  /** کد پیش‌نمایش زرین‌پال — از دامنه ساخته می‌شود؛ کد خام عیناً */
+  const zarinpalPreviewCode = (() => {
+    const input = (zarinpalDraft ?? "").trim();
+    if (!input) return "";
+    if (/<[a-z!/]/i.test(input)) return input;
+    return buildZarinpalCode(input) ?? "";
+  })();
 
   const set = <K extends keyof LinkForm>(key: K, value: LinkForm[K]) => {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -762,6 +837,117 @@ export function HeaderFooterModule({ setActive }: ModuleProps) {
     }
   }
 
+  /* — ذخیره کد اینماد — */
+
+  /**
+   * کد اینماد را عیناً (بدون تغییر) در تنظیمات ذخیره می‌کند تا لوگوی
+   * نماد اعتماد الکترونیکی در فوتر همه‌ی صفحات سایت رندر شود.
+   * خالی کردن کد = حذف لوگو از فوتر.
+   */
+  async function handleSaveEnamad() {
+    if (enamadDraft === null || savingEnamad) return;
+    const code = enamadDraft.trim();
+
+    if (code) {
+      if (code.length > 2000) {
+        toast.error("کد اینماد بیش از حد مجاز (۲۰۰۰ نویسه) است.");
+        return;
+      }
+      if (/<\s*script/i.test(code)) {
+        toast.error("کد اینماد نمی‌تواند شامل تَگ اسکریپت باشد.");
+        return;
+      }
+      if (!/enamad\.ir/i.test(code)) {
+        toast.error(
+          "کد اینماد معتبر به نظر نمی‌رسد — باید به trustseal.enamad.ir اشاره کند."
+        );
+        return;
+      }
+    }
+
+    setSavingEnamad(true);
+    try {
+      const updated = await apiFetch<SiteSettings>("/api/admin/settings", {
+        method: "PUT",
+        body: JSON.stringify({ enamadCode: code }),
+      });
+      setEnamadDraft(updated.enamadCode ?? "");
+      setEnamadSaved(updated.enamadCode ?? "");
+      toast.success(
+        code
+          ? "کد اینماد ذخیره شد — لوگوی آن در فوتر سایت نمایش داده می‌شود"
+          : "کد اینماد پاک شد و لوگو از فوتر سایت حذف می‌شود"
+      );
+    } catch (error) {
+      toastApiError(error);
+    } finally {
+      setSavingEnamad(false);
+    }
+  }
+
+  /* — ذخیره نماد زرین‌پال — */
+
+  /**
+   * نماد زرین‌پال را ذخیره می‌کند — طبق مستندات رسمی زرین‌پال کافی است
+   * دامنه‌ی سایت را وارد کنید تا «لوگو تایید درگاه پرداخت» با پیوند تأیید
+   * ساخته شود؛ همچنین کد HTML آماده نیز عیناً پذیرفته می‌شود.
+   * خالی کردن = حذف لوگو از فوتر.
+   */
+  async function handleSaveZarinpal() {
+    if (zarinpalDraft === null || savingZarinpal) return;
+    const input = zarinpalDraft.trim();
+    let code: string;
+
+    if (input === "") {
+      code = "";
+    } else if (/<[a-z!/]/i.test(input)) {
+      // کد HTML آماده (معمولاً عیناً از مستندات/پنل زرین‌پال)
+      if (input.length > 2000) {
+        toast.error("کد زرین‌پال بیش از حد مجاز (۲۰۰۰ نویسه) است.");
+        return;
+      }
+      if (/<\s*script/i.test(input)) {
+        toast.error("کد زرین‌پال نمی‌تواند شامل تَگ اسکریپت باشد.");
+        return;
+      }
+      if (!/zarinpal/i.test(input)) {
+        toast.error(
+          "کد زرین‌پال معتبر به نظر نمی‌رسد — باید به zarinpal.com اشاره کند."
+        );
+        return;
+      }
+      code = input;
+    } else {
+      const built = buildZarinpalCode(input);
+      if (built === null) {
+        toast.error(
+          "دامنه‌ی معتبر نیست — مثال: avid.academy (بدون https:// و بدون مسیر)"
+        );
+        return;
+      }
+      code = built;
+    }
+
+    setSavingZarinpal(true);
+    try {
+      const updated = await apiFetch<SiteSettings>("/api/admin/settings", {
+        method: "PUT",
+        body: JSON.stringify({ zarinpalCode: code }),
+      });
+      setZarinpalSaved(updated.zarinpalCode ?? "");
+      setZarinpalDraft(zarinpalDisplayValue(updated.zarinpalCode));
+      toast.success(
+        code
+          ? "نماد زرین‌پال ذخیره شد — لوگوی آن در فوتر سایت، سمت راست اینماد و زیر متن معرفی نمایش داده می‌شود"
+          : "نماد زرین‌پال پاک شد و لوگو از فوتر حذف می‌شود"
+      );
+    } catch (error) {
+      toastApiError(error);
+    } finally {
+      setSavingZarinpal(false);
+    }
+  }
+
   /* — رندر — */
 
   return (
@@ -817,6 +1003,178 @@ export function HeaderFooterModule({ setActive }: ModuleProps) {
           />
         </>
       )}
+
+      {/* — نمادهای اعتماد (اینماد و زرین‌پال): در فوتر سایت، زیر متن معرفی رندر می‌شوند — */}
+      <section
+        className="glass space-y-5 rounded-2xl p-5 sm:p-6"
+        aria-labelledby="hf-enamad-title"
+      >
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 shadow-lg shadow-teal-500/20">
+            <ShieldCheck className="size-5 text-white" strokeWidth={1.9} />
+          </span>
+          <div className="min-w-0">
+            <h2
+              id="hf-enamad-title"
+              className="text-sm font-black text-foreground sm:text-base"
+            >
+              نمادهای اعتماد (اینماد و زرین‌پال)
+            </h2>
+            <p className="text-xs leading-5 text-muted-foreground">
+              کد اینماد را عیناً از پنل enamad.ir و نماد زرین‌پال را طبق
+              مستندات رسمی زرین‌پال این‌جا قرار دهید — لوگوها در فوتر همه‌ی
+              صفحات، زیر متن معرفی و با زرین‌پال در سمت راست اینماد نمایش داده
+              می‌شوند
+            </p>
+          </div>
+        </div>
+
+        {fontsLoading && enamadSaved === null ? (
+          <div className="flex h-24 items-center justify-center rounded-2xl border border-dashed border-border bg-foreground/[0.02] dark:bg-white/[0.02]">
+            <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : enamadSaved === null ? (
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border bg-foreground/[0.02] py-10 text-center dark:bg-white/[0.02]">
+            <ShieldCheck
+              className="size-6 text-muted-foreground"
+              strokeWidth={1.8}
+            />
+            <p className="text-sm font-bold text-foreground">
+              دریافت کدهای نماد ذخیره‌شده ناموفق بود
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadFonts}
+              className="rounded-xl"
+            >
+              تلاش مجدد
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <Field
+              label="کد اینماد (HTML)"
+              htmlFor="hf-enamad-code"
+              hint="کد را بدون هیچ تغییری وارد کنید (طبق راهنمای رسمی اینماد، تغییر کد می‌تواند به ابطال نماد منجر شود). برای حذف لوگو، کد را پاک کنید و ذخیره کنید. لوگو از سرورهای اینماد بارگذاری می‌شود؛ تا رسیدن تصویر یک قالب نمایشی دیده می‌شود و اگر دریافت تصویر ناموفق باشد، نشان جایگزینِ «نماد اعتماد» با پیوند تأیید نمایش داده می‌شود — کد همیشه عیناً در فوتر سایت قرار می‌گیرد."
+            >
+              <Textarea
+                id="hf-enamad-code"
+                dir="ltr"
+                value={enamadDraft ?? ""}
+                onChange={(e) => setEnamadDraft(e.target.value)}
+                rows={4}
+                spellCheck={false}
+                disabled={savingEnamad}
+                placeholder={
+                  '<a referrerpolicy="origin" target="_blank" href="https://trustseal.enamad.ir/?id=...&code=..."><img referrerpolicy="origin" src="https://trustseal.enamad.ir/logo.aspx?id=...&code=..." alt="" style="cursor:pointer"></a>'
+                }
+                className="min-h-24 rounded-xl bg-foreground/[0.03] font-mono text-left text-[0.7rem] leading-6 dark:bg-white/[0.04]"
+              />
+            </Field>
+
+            <Field
+              label="نماد زرین‌پال — دامنه‌ی سایت یا کد (HTML)"
+              htmlFor="hf-zarinpal-code"
+              hint="طبق مستندات رسمی زرین‌پال (بخش «لوگوی تایید زرین پال») کافی است دامنه‌ی سایت خود را وارد کنید (مثال: avid.academy — بدون https:// و بدون مسیر) تا لوگوی تایید درگاه پرداخت با پیوند به صفحه‌ی تأیید zarinpal.com ساخته شود؛ اگر کد HTML آماده دارید، عیناً همان را جای‌گذاری کنید. برای حذف لوگو، مقدار را پاک کنید و ذخیره کنید."
+            >
+              <Textarea
+                id="hf-zarinpal-code"
+                dir="ltr"
+                value={zarinpalDraft ?? ""}
+                onChange={(e) => setZarinpalDraft(e.target.value)}
+                rows={2}
+                spellCheck={false}
+                disabled={savingZarinpal}
+                placeholder="example.com   یا کد HTML رسمی زرین‌پال"
+                className="min-h-16 rounded-xl bg-foreground/[0.03] font-mono text-left text-[0.7rem] leading-6 dark:bg-white/[0.04]"
+              />
+            </Field>
+
+            {/* پیش‌نمایش — همان چیزی که فوتر سایت زیر متن معرفی نمایش می‌دهد */}
+            <div className="space-y-2">
+              <p className="text-[0.65rem] font-bold text-muted-foreground">
+                پیش‌نمایش (چنان‌که در فوتر سایت، زیر متن معرفی و با زرین‌پال در
+                سمت راست اینماد دیده می‌شود):
+              </p>
+              <div className="rounded-xl border border-dashed border-border bg-foreground/[0.02] p-4 dark:bg-white/[0.02]">
+                <p className="text-xs leading-7 text-muted-foreground">
+                  {previewDesc}
+                </p>
+                {zarinpalPreviewCode || enamadDraft?.trim() ? (
+                  <div className="mt-5 flex flex-wrap items-center gap-3">
+                    {/* کدهای رسمی عیناً (بدون تغییر) رندر می‌شوند؛ تا رسیدن
+                        تصویر قالب نمایشی و در خطا نشان جایگزین دیده می‌شود */}
+                    {zarinpalPreviewCode ? (
+                      <TrustSeal
+                        html={zarinpalPreviewCode}
+                        tone="amber"
+                        fallbackLabel="نماد اعتماد زرین‌پال"
+                        provider="زرین‌پال"
+                        maxImgClass="[&_img]:max-h-20 [&_img]:max-w-20"
+                      />
+                    ) : null}
+                    {enamadDraft?.trim() ? (
+                      <TrustSeal
+                        html={enamadDraft.trim()}
+                        tone="teal"
+                        fallbackLabel="نماد اعتماد الکترونیکی"
+                        provider="اینماد"
+                        maxImgClass="[&_img]:max-h-20"
+                      />
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-center text-xs font-bold text-muted-foreground">
+                    هنوز کدی وارد نشده — پس از وارد کردن، پیش‌نمایش لوگوها این‌جا
+                    نمایش داده می‌شود.
+                  </p>
+                )}
+                <p className="mt-3 text-[0.62rem] leading-5 text-muted-foreground">
+                  تا رسیدن تصویر از سرورهای اینماد/زرین‌پال قالب نمایشی دیده
+                  می‌شود؛ اگر دریافت تصویر ناموفق باشد (قطعی اینترنت یا
+                  مسدودکننده‌ی تبلیغات در محیط پیش‌نمایش)، به‌جای ناپدیدشدن،
+                  نشان جایگزین با پیوند تأیید رسمی نمایش داده می‌شود.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-[0.7rem] leading-5 text-muted-foreground">
+                {enamadDirty || zarinpalDirty
+                  ? "کد ذخیره‌نشده دارید — پس از ذخیره، لوگوها در فوتر سایت نمایش داده می‌شوند."
+                  : "کدهای ذخیره‌شده در فوتر سایت اعمال می‌شوند."}
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button
+                  onClick={handleSaveEnamad}
+                  disabled={!enamadDirty || savingEnamad}
+                  className={`h-10 w-full rounded-xl sm:w-auto ${btnGradient}`}
+                >
+                  {savingEnamad ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Save className="size-4" />
+                  )}
+                  {savingEnamad ? "در حال ذخیره..." : "ذخیره کد اینماد"}
+                </Button>
+                <Button
+                  onClick={handleSaveZarinpal}
+                  disabled={!zarinpalDirty || savingZarinpal}
+                  className={`h-10 w-full rounded-xl sm:w-auto ${btnGradient}`}
+                >
+                  {savingZarinpal ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Save className="size-4" />
+                  )}
+                  {savingZarinpal ? "در حال ذخیره..." : "ذخیره نماد زرین‌پال"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
 
       {/* فونت هدر و فوتر */}
       <section

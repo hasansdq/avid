@@ -1,8 +1,12 @@
 import {
+  Award,
   Bot,
+  ClipboardCheck,
   ClipboardList,
   CreditCard,
+  DatabaseBackup,
   GraduationCap,
+  Images,
   LayoutDashboard,
   MessageSquare,
   MessagesSquare,
@@ -20,6 +24,8 @@ import { DashboardModule } from "./dashboard-module";
 import { SettingsModule } from "./settings-module";
 import { CoursesModule } from "./courses-module";
 import { VideosModule } from "./videos-module";
+import { ExamsModule } from "./exams-module";
+import { CertificatesModule } from "./certificates-module";
 import { TestimonialsModule } from "./testimonials-module";
 import { EnrollmentsModule } from "./enrollments-module";
 import { PaymentModule } from "./payment-module";
@@ -29,6 +35,8 @@ import { ChatModule } from "./chat-module";
 import { FontsModule } from "./fonts-module";
 import { HeaderFooterModule } from "./header-footer-module";
 import { AccountModule } from "./account-module";
+import { BackupModule } from "./backup-module";
+import { GalleryModule } from "./gallery-module";
 
 /**
  * رجیستری ماژول‌های CMS — قلب معماری ماژولار پنل.
@@ -53,7 +61,7 @@ export const MODULES: AdminModule[] = [
   {
     key: "courses",
     label: "دوره‌ها",
-    description: "مدیریت دوره‌های آنلاین و حضوری",
+    description: "مدیریت دوره‌های آنلاین، حضوری و ترکیبی",
     icon: GraduationCap,
     component: CoursesModule,
   },
@@ -63,6 +71,20 @@ export const MODULES: AdminModule[] = [
     description: "مدیریت ویدئوها و لیست‌های پخش آموزشی سایت",
     icon: MonitorPlay,
     component: VideosModule,
+  },
+  {
+    key: "exams",
+    label: "آزمون‌ها",
+    description: "آزمون‌های دوره‌ای، آزاد و رمزدار — سوالات، پاسخ‌ها و تصحیح تشریحی",
+    icon: ClipboardCheck,
+    component: ExamsModule,
+  },
+  {
+    key: "certificates",
+    label: "صدور گواهینامه",
+    description: "صدور گواهینامه‌ی دوره برای کاربران — آپلود فایل PDF یا تصویر و تخصیص به کاربر و دوره",
+    icon: Award,
+    component: CertificatesModule,
   },
   {
     key: "headerFooter",
@@ -121,11 +143,25 @@ export const MODULES: AdminModule[] = [
     component: FontsModule,
   },
   {
+    key: "gallery",
+    label: "گالری",
+    description: "آرشیو همه‌ی فایل‌های بارگذاری‌شده — دسته‌بندی فرمت، مرتب‌سازی تاریخ/حجم و مشخصات بارگذاری‌کننده",
+    icon: Images,
+    component: GalleryModule,
+  },
+  {
     key: "settings",
     label: "تنظیمات سایت",
     description: "هویت، اطلاعات تماس و پیکربندی عمومی",
     icon: Settings,
     component: SettingsModule,
+  },
+  {
+    key: "backup",
+    label: "بکاپ و بازیابی",
+    description: "دانلود بکاپ داده‌ها و فایل‌ها + بازیابی از فایل بکاپ",
+    icon: DatabaseBackup,
+    component: BackupModule,
   },
   {
     key: "account",

@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ensureFontsSeeded } from "@/lib/fonts";
+import { recordUploadedFile } from "@/lib/uploaded-files";
 
 /**
  * مدیریت فونت‌های نصب‌شده سایت —
@@ -59,7 +60,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { denial } = await requireAdmin(req);
+  const { admin, denial } = await requireAdmin(req);
   if (denial) return denial;
 
   try {
@@ -113,6 +114,18 @@ export async function POST(req: NextRequest) {
 
     const format = ext === "woff2" ? "woff2" : ext === "woff" ? "woff" : ext === "ttf" ? "truetype" : "opentype";
     const cssText = `@font-face{font-family:'${family}';src:url('/uploads/fonts/${name}') format('${format}');font-weight:400;font-style:normal;font-display:swap}`;
+
+    // — ثبت فایل فونت در گالری (بخش «فونت‌ها» + مدیر آپلودکننده) —
+    await recordUploadedFile({
+      url: `/uploads/fonts/${name}`,
+      name,
+      originalName: file.name,
+      ext,
+      mime: file.type,
+      size: file.size,
+      section: "fonts",
+      uploader: admin?.username ?? "",
+    });
 
     const created = await db.installedFont.create({
       data: {

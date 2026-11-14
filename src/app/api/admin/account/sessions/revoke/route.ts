@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireAdmin, SESSION_COOKIE } from "@/lib/auth";
-import { requestSecure } from "@/lib/http";
+import {
+  requireAdmin,
+  SESSION_COOKIE,
+  sessionCookieOptions,
+} from "@/lib/auth";
 
 /**
  * POST /api/admin/account/sessions/revoke — ابطال همه‌ی نشست‌های ورود مدیر.
@@ -19,13 +22,7 @@ export async function POST(req: NextRequest) {
     });
 
     const res = NextResponse.json({ ok: true, revoked: revoked.count });
-    res.cookies.set(SESSION_COOKIE, "", {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: requestSecure(req),
-      maxAge: 0,
-      path: "/",
-    });
+    res.cookies.set(SESSION_COOKIE, "", sessionCookieOptions(req, 0));
     return res;
   } catch (error) {
     console.error("revoke sessions error:", error);

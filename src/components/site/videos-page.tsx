@@ -33,6 +33,7 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { VideoSourcePlayer } from "@/components/site/video-source-player";
 import { LogoMark } from "@/components/admin/shared/logo-mark";
+import { EditableText } from "@/components/site/editable-texts";
 
 /* ------------------------------------------------------------------ */
 /*  ابزارهای مشترک پخش ویدئو — تشخیص منبع از src/lib/video           */
@@ -244,24 +245,32 @@ export function VideosPage() {
             کتابچه‌ی ویدئویی
           </span>
           <h1 className="mt-5 text-3xl font-black leading-[1.25] text-foreground md:text-[2.6rem] md:leading-[1.2]">
-            لیست‌های پخش <span className="text-gradient">آموزشی</span> آوید
+            <EditableText k="videosPage.title">
+              <>
+                لیست‌های پخش <span className="text-gradient">آموزشی</span> آوید
+              </>
+            </EditableText>
           </h1>
           <p className="mt-4 text-sm leading-8 text-muted-foreground md:text-base">
-            مجموعه‌های ویدئویی ما را اینجا تماشا کنید؛ روی هر لیست پخش کلیک کنید تا ویدئوها را
-            پشت‌سرهم ببینید.
-            {data?.isLoggedIn ? null : (
+            <EditableText k="videosPage.description">
               <>
-                {" "}
-                برخی مجموعه‌ها مخصوص کاربران عضو هستند —{" "}
-                <Link
-                  href="/panel"
-                  className="font-bold text-teal-600 underline-offset-4 hover:underline dark:text-teal-300"
-                >
-                  وارد حساب خود شوید
-                </Link>
-                .
+                مجموعه‌های ویدئویی ما را اینجا تماشا کنید؛ روی هر لیست پخش کلیک کنید تا ویدئوها را
+                پشت‌سرهم ببینید.
+                {data?.isLoggedIn ? null : (
+                  <>
+                    {" "}
+                    برخی مجموعه‌ها مخصوص کاربران عضو هستند —{" "}
+                    <Link
+                      href="/panel"
+                      className="font-bold text-teal-600 underline-offset-4 hover:underline dark:text-teal-300"
+                    >
+                      وارد حساب خود شوید
+                    </Link>
+                    .
+                  </>
+                )}
               </>
-            )}
+            </EditableText>
           </p>
         </div>
 

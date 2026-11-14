@@ -11,13 +11,10 @@ import {
   Phone,
   TicketPercent,
   Trash2,
-  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -38,6 +35,10 @@ import { apiFetch, toastApiError } from "@/components/admin/api";
 import { ConfirmDelete } from "@/components/admin/shared/confirm-delete";
 import { EmptyState } from "@/components/admin/shared/empty-state";
 import { ModuleHeader } from "@/components/admin/shared/module-header";
+import {
+  PaymentEditButton,
+  PaymentStatusSelect,
+} from "@/components/admin/shared/payment-controls";
 import { TableSkeleton } from "@/components/admin/shared/table-skeleton";
 import type { Enrollment } from "@/components/admin/types";
 import {
@@ -207,6 +208,14 @@ export function EnrollmentsModule() {
     }
   }
 
+  /** به‌روزرسانی خوش‌بینانه‌ی یک ردیف (مثلاً تبدیل وضعیت پرداخت) */
+  function applyEnrollmentPatch(id: string, patch: Partial<Enrollment>) {
+    setEnrollments(
+      (prev) =>
+        prev?.map((e) => (e.id === id ? { ...e, ...patch } : e)) ?? prev
+    );
+  }
+
   const chips: { key: StatusFilter; label: string; count: number }[] = [
     { key: "all", label: "همه", count: counts.base.all },
     ...(Object.keys(ENROLLMENT_STATUSES) as EnrollmentStatus[]).map((key) => ({
@@ -341,10 +350,6 @@ export function EnrollmentsModule() {
                   const status = isEnrollmentStatus(e.status) ? e.status : "new";
                   const meta = ENROLLMENT_STATUSES[status];
                   const pending = changingId === e.id;
-                  const payMeta =
-                    e.paymentStatus in PAYMENT_STATUSES
-                      ? PAYMENT_STATUSES[e.paymentStatus]
-                      : null;
                   return (
                     <TableRow key={e.id}>
                       <TableCell className="max-w-40 font-bold">
@@ -377,67 +382,72 @@ export function EnrollmentsModule() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {e.paymentAmount ? (
-                          <div className="space-y-0.5">
-                            <p className="flex items-center gap-1.5 text-xs font-bold text-foreground">
-                              {e.paymentMethod === "installment" ? (
-                                <CalendarClock className="size-3.5 text-violet-600 dark:text-violet-300" />
-                              ) : (
-                                <Banknote className="size-3.5 text-teal-600 dark:text-teal-300" />
-                              )}
-                              {METHOD_LABELS[e.paymentMethod ?? "cash"] ?? "نقدی"}
-                              <span className="tabular-nums">
-                                {faAmount(e.paymentAmount)}
-                              </span>
-                              <span className="text-[0.6rem] font-medium text-muted-foreground">
-                                تومان
-                              </span>
-                            </p>
-                            {e.paymentRefId ? (
-                              <p
-                                dir="ltr"
-                                className="truncate text-left text-[0.6rem] font-medium text-muted-foreground"
-                                title={`کد پیگیری: ${e.paymentRefId}`}
-                              >
-                                {e.paymentRefId}
+                        <div className="space-y-1">
+                          {e.paymentAmount ? (
+                            <div className="space-y-0.5">
+                              <p className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                                {e.paymentMethod === "installment" ? (
+                                  <CalendarClock className="size-3.5 text-violet-600 dark:text-violet-300" />
+                                ) : (
+                                  <Banknote className="size-3.5 text-teal-600 dark:text-teal-300" />
+                                )}
+                                {METHOD_LABELS[e.paymentMethod ?? "cash"] ?? "نقدی"}
+                                <span className="tabular-nums">
+                                  {faAmount(e.paymentAmount)}
+                                </span>
+                                <span className="text-[0.6rem] font-medium text-muted-foreground">
+                                  تومان
+                                </span>
                               </p>
-                            ) : null}
-                            {e.discountCode ? (
-                              <p
-                                className="flex items-center gap-1 text-[0.6rem] font-bold text-violet-600 dark:text-violet-300"
-                                title={`کد تخفیف اعمال‌شده: ${e.discountCode}`}
-                              >
-                                <TicketPercent className="size-3" />
-                                {e.discountCode}
-                                {e.discountAmount ? (
-                                  <span className="tabular-nums">
-                                    (−{faAmount(e.discountAmount)})
-                                  </span>
-                                ) : null}
-                              </p>
-                            ) : null}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground/60">
-                            بدون پرداخت
-                          </span>
-                        )}
+                              {e.paymentRefId ? (
+                                <p
+                                  dir="ltr"
+                                  className="truncate text-left text-[0.6rem] font-medium text-muted-foreground"
+                                  title={`کد پیگیری: ${e.paymentRefId}`}
+                                >
+                                  {e.paymentRefId}
+                                </p>
+                              ) : null}
+                              {e.discountCode ? (
+                                <p
+                                  className="flex items-center gap-1 text-[0.6rem] font-bold text-violet-600 dark:text-violet-300"
+                                  title={`کد تخفیف اعمال‌شده: ${e.discountCode}`}
+                                >
+                                  <TicketPercent className="size-3" />
+                                  {e.discountCode}
+                                  {e.discountAmount ? (
+                                    <span className="tabular-nums">
+                                      (−{faAmount(e.discountAmount)})
+                                    </span>
+                                  ) : null}
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground/60">
+                              بدون پرداخت
+                            </span>
+                          )}
+                          {/* — ویرایش دستی مبلغ/وضعیت پرداخت (مخصوص پرداخت‌های نقدی) — */}
+                          <PaymentEditButton
+                            enrollment={e}
+                            compact
+                            label="ویرایش پرداخت"
+                            onChanged={() => void load()}
+                          />
+                        </div>
                       </TableCell>
                       <TableCell>
-                        {payMeta && e.paymentAmount ? (
-                          <span
-                            className={cn(
-                              "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[0.65rem] font-bold",
-                              payMeta.badge
-                            )}
-                          >
-                            {e.paymentStatus === "paid" ? (
-                              <CheckCircle2 className="size-3" />
-                            ) : e.paymentStatus === "failed" ? (
-                              <XCircle className="size-3" />
-                            ) : null}
-                            {payMeta.label}
-                          </span>
+                        {e.paymentAmount ? (
+                          <PaymentStatusSelect
+                            enrollmentId={e.id}
+                            value={e.paymentStatus}
+                            onChanged={(next) =>
+                              applyEnrollmentPatch(e.id, {
+                                paymentStatus: next,
+                              })
+                            }
+                          />
                         ) : (
                           <span className="text-xs text-muted-foreground/60">
                             —
@@ -514,8 +524,8 @@ export function EnrollmentsModule() {
         <ClipboardList className="size-3.5 shrink-0 text-teal-600/70 dark:text-teal-300/70" />
         پیش‌ثبت‌نام‌ها از فرم دومرحله‌ای سایت دریافت می‌شوند (مرحله‌ی اول:
         ثبت‌نام و تایید پیامکی شماره؛ مرحله‌ی دوم: انتخاب دوره/گروه و پرداخت).
-        برای دوره‌های حضوریِ گروه‌دار، گروه انتخابی متقاضی در ستون «گروه» نمایش
-        داده می‌شود. تنظیمات درگاه پرداخت، طرح اقساطی و کدهای تخفیف در ماژول
+        برای دوره‌های گروه‌دار (حضوری یا حضوری و آنلاین)، گروه انتخابی متقاضی در
+        ستون «گروه» نمایش داده می‌شود. تنظیمات درگاه پرداخت، طرح اقساطی و کدهای تخفیف در ماژول
         «تنظیمات درگاه پرداخت» و شهریه‌ی نقدی/اقساطی هر دوره در فرم همان دوره
         (بخش «دوره‌ها») تعیین می‌شود.
       </p>

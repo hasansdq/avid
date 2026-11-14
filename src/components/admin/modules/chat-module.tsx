@@ -601,6 +601,7 @@ function BotSettingsTab() {
           label="تصویر پروفایل چت‌بات"
           value={draft.botAvatar}
           onChange={(v) => set({ botAvatar: v })}
+          section="chat"
           hint="آدرس تصویر (داخلی مثل /images/chat/bot-avatar.png یا لینک خارجی). این تصویر روی دکمه‌ی شناور چت سایت و سربرگ پنجره‌ی چت نمایش داده می‌شود و با تغییر آن، دکمه‌ی چت سایت هم به‌روز می‌شود. تصویر پیش‌فرض: بیزینس‌من حرفه‌ای."
           previewClassName="size-20 rounded-2xl"
           previewAlt="پروفایل چت‌بات"

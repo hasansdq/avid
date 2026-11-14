@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { findActiveOtp, issueOtp, OTP_RESEND_MS } from "@/lib/user-auth";
+import { findActiveOtp, issueOtp, deleteActiveOtp, OTP_RESEND_MS } from "@/lib/user-auth";
 import { sendOtpSms } from "@/lib/sms";
 
 /**
@@ -58,10 +58,13 @@ export async function POST(req: NextRequest) {
     const sms = await sendOtpSms(phone, code);
 
     if (!sms.delivered) {
-      // حالت نمایشی (فقط محیط توسعه): بدون سرویس پیامکی واقعی، کد برای
-      // تست در پاسخ برگردانده می‌شود. در production این مقدار هرگز
-      // برگردانده نمی‌شود (حتی با OTP_DEV_CODE=1).
+      // حالت نمایشی (فقط محیط توسعه و فقط وقتی هیچ سرویس پیامکی تنظیم
+      // نشده است): بدون سرویس پیامکی واقعی، کد برای تست در پاسخ برگردانده
+      // می‌شود. در production این مقدار هرگز برگردانده نمی‌شود (حتی با
+      // OTP_DEV_CODE=1) و اگر سرویس تنظیم شده باشد ولی تحویل شکست خورده
+      // باشد، همان خطای واقعی به فرم برمی‌گردد.
       const devCodeVisible =
+        sms.provider === "none" &&
         process.env.NODE_ENV !== "production" &&
         process.env.OTP_DEV_CODE !== "0";
       if (devCodeVisible) {
@@ -72,7 +75,22 @@ export async function POST(req: NextRequest) {
           expiresInSec: 300,
         });
       }
-      return NextResponse.json({ ok: true, demo: true, expiresInSec: 300 });
+
+      // — ارسال پیامک واقعاً ناموفق بود: کد صادرشده بی‌استفاده است —
+      // حذف می‌شود تا «ارسال مجدد» بلافاصله ممکن باشد (بدون قفل
+      // ۶۰ ثانیه‌ای) و خطا همان‌جا در فرم نمایش داده شود.
+      await deleteActiveOtp(phone);
+      const reason =
+        sms.provider === "none"
+          ? "سرویس پیامک سایت تنظیم نشده است؛ لطفاً با پشتیبانی تماس بگیرید."
+          : sms.error || "تحویل پیامک به مخابرات ناموفق بود.";
+      return NextResponse.json(
+        {
+          error: `ارسال کد پیامکی ناموفق بود — ${reason}`,
+          smsFailed: true,
+        },
+        { status: 502 }
+      );
     }
 
     return NextResponse.json({ ok: true, demo: false, expiresInSec: 300 });

@@ -47,7 +47,7 @@ export function bad(error: string, status = 400) {
 
 /* ---------------- دوره ---------------- */
 
-const COURSE_TYPE_SET = new Set(["online", "inperson"]);
+const COURSE_TYPE_SET = new Set(["online", "inperson", "hybrid"]);
 
 export interface CourseGroupInput {
   /** شناسه‌ی گروه موجود (فقط هنگام ویرایش — برای به‌روزرسانی درجا) */
@@ -99,7 +99,7 @@ function parseGroups(
   body: Record<string, unknown> | null,
   type: string
 ): CourseGroupInput[] | string {
-  if (type !== "inperson") return []; // آنلاین گروه ندارد
+  if (type === "online") return []; // آنلاین گروه ندارد؛ حضوری و ترکیبی (hybrid) گروه‌دار می‌شوند
   const raw = body?.groups;
   if (!Array.isArray(raw)) return []; // حضوری بدون گروه هم مجاز است (سازگاری)
   if (raw.length > 20) return "حداکثر ۲۰ گروه برای هر دوره می‌توان تعریف کرد.";
@@ -174,7 +174,8 @@ export function parseCourse(body: Record<string, unknown> | null): CourseInput |
   if (title.length < 2 || title.length > 120) return "عنوان دوره باید بین ۲ تا ۱۲۰ نویسه باشد.";
   if (description.length < 5 || description.length > 600)
     return "توضیحات دوره باید بین ۵ تا ۶۰۰ نویسه باشد.";
-  if (!COURSE_TYPE_SET.has(type)) return "نوع دوره باید «online» یا «inperson» باشد.";
+  if (!COURSE_TYPE_SET.has(type))
+    return "نوع دوره باید یکی از مقادیر «online»، «inperson» یا «hybrid» باشد.";
 
   const tag = str(body.tag);
 
@@ -194,9 +195,9 @@ export function parseCourse(body: Record<string, unknown> | null): CourseInput |
   const installments = parseInstallments(body, installmentTuition);
   if (typeof installments === "string") return installments;
 
-  // ظرفیت دوره: برای حضوریِ گروه‌دار = مجموع ظرفیت گروه‌ها
+  // ظرفیت دوره: برای دوره‌های گروه‌دارِ حضوری/ترکیبی = مجموع ظرفیت گروه‌ها
   const capacity =
-    type === "inperson" && groups.length > 0
+    type !== "online" && groups.length > 0
       ? groups.reduce((sum, g) => sum + g.capacity, 0)
       : int(body.capacity, 0);
 
@@ -454,6 +455,10 @@ const SETTING_STRING_FIELDS = [
   "youtubeUrl",
   "linkedinUrl",
   "footerDescription",
+  // کد نماد اعتماد الکترونیکی (اینماد) — عیناً از پنل enamad.ir؛ در فوتر سایت رندر می‌شود
+  "enamadCode",
+  // کد نماد اعتماد زرین‌پال (لوگو تایید درگاه پرداخت، طبق مستندات رسمی زرین‌پال) — در فوتر، سمت راست اینماد
+  "zarinpalCode",
   ...SETTING_FONT_FIELDS,
 ] as const;
 
@@ -462,23 +467,42 @@ const SETTING_NUMBER_FIELDS = [
   "completedCoursesCount",
 ] as const;
 
+/** فیلدهای بولی تنظیمات — فعال/غیرفعال‌سازی ماژول‌ها */
+const SETTING_BOOL_FIELDS = ["pencilEditorEnabled"] as const;
+
 export function parseSettings(
   body: Record<string, unknown> | null,
   /** کلیدهای فونت مجاز (از جدول InstalledFont) — در صورت عدم ارائه، فیلد فونت رد می‌شود */
   validFontKeys?: Set<string>
-): Record<string, string | number | undefined> | string {
+): Record<string, string | number | boolean | undefined> | string {
   if (!body) return "بدنه درخواست نامعتبر است.";
 
-  const data: Record<string, string | number | undefined> = {};
+  const data: Record<string, string | number | boolean | undefined> = {};
 
   for (const field of SETTING_STRING_FIELDS) {
     if (field in body) {
-      const value = str(body[field]).slice(0, 600);
+      // سقف کدهای نماد اعتماد بلندتر است (کد HTML کامل + لینک رسمی)
+      const value = str(body[field]).slice(
+        0,
+        field === "enamadCode" || field === "zarinpalCode" ? 2000 : 600
+      );
       if (field === "siteName" && value.length < 2) return "نام سایت باید حداقل ۲ نویسه باشد.";
       // فونت‌ها باید کلید فونت نصب‌شده باشند
       if ((SETTING_FONT_FIELDS as readonly string[]).includes(field)) {
         if (!validFontKeys || !validFontKeys.has(value)) {
           return "کلید فونت انتخاب‌شده معتبر نیست یا فونت نصب نشده است.";
+        }
+      }
+      // کد نمادهای اعتماد: فقط قطعه‌ی HTML رسمی (بدون اسکریپت) پذیرفته می‌شود
+      if ((field === "enamadCode" || field === "zarinpalCode") && value) {
+        if (/<\s*script/i.test(value)) {
+          return `کد ${field === "enamadCode" ? "اینماد" : "زرین‌پال"} نمی‌تواند شامل تَگ اسکریپت باشد.`;
+        }
+        if (field === "enamadCode" && !/enamad\.ir/i.test(value)) {
+          return "کد اینماد معتبر نیست — باید به trustseal.enamad.ir اشاره کند.";
+        }
+        if (field === "zarinpalCode" && !/zarinpal/i.test(value)) {
+          return "کد زرین‌پال معتبر نیست — باید به zarinpal.com اشاره کند.";
         }
       }
       data[field] = value;
@@ -487,6 +511,10 @@ export function parseSettings(
 
   for (const field of SETTING_NUMBER_FIELDS) {
     if (field in body) data[field] = int(body[field], 0);
+  }
+
+  for (const field of SETTING_BOOL_FIELDS) {
+    if (field in body) data[field] = bool(body[field], true);
   }
 
   if ("rating" in body) data.rating = float(body.rating, 0) || 0;

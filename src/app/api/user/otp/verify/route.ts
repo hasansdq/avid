@@ -11,9 +11,10 @@ import { requestSecure } from "@/lib/http";
 /**
  * POST /api/user/otp/verify — تایید کد پیامکی و ورود به حساب کاربری.
  *
- * body: { phone, code, firstName?, lastName? }
+ * body: { phone, code, firstName?, lastName?, nationalId? }
  *
- * با تایید موفق: حساب کاربری ایجاد/به‌روز می‌شود، نشست در کوکی
+ * با تایید موفق: حساب کاربری ایجاد/به‌روز می‌شود (کد ملی اختیاری —
+ * فقط وقتی ارسال شده باشد ثبت/به‌روز می‌شود)، نشست در کوکی
  * ست می‌شود و عبور از مرحله‌ی اول فرم انجام شده است.
  */
 export async function POST(req: NextRequest) {
@@ -27,6 +28,10 @@ export async function POST(req: NextRequest) {
       typeof body?.firstName === "string" ? body.firstName.trim() : "";
     const lastName =
       typeof body?.lastName === "string" ? body.lastName.trim() : "";
+    // کد ملی اختیاری — رشته‌ی خالی یعنی «ارسال نشده» (بدون تغییر می‌ماند)
+    const nationalIdRaw =
+      typeof body?.nationalId === "string" ? body.nationalId.trim() : "";
+    const nationalId = nationalIdRaw === "" ? undefined : nationalIdRaw;
 
     if (!/^09\d{9}$/.test(phone)) {
       return NextResponse.json(
@@ -41,7 +46,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await verifyOtp(phone, code, { firstName, lastName });
+    const result = await verifyOtp(phone, code, {
+      firstName,
+      lastName,
+      nationalId,
+    });
     if (!result.ok) {
       return NextResponse.json(
         { error: result.error },

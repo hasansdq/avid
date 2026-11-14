@@ -456,3 +456,56 @@
     scroll-behavior: auto;
   }
 }
+
+/* ————————————————— چاپ گواهینامه ————————————————— */
+/* هنگام چاپ/ذخیره‌ی PDF فقط «ریشه‌ی چاپ» (cert-print-root — پورتال زیر body)
+   دیده می‌شود؛ بقیه‌ی فرزندان بدنه با display:none کاملاً از چاپ خارج می‌شوند
+   تا خروجی دقیقاً یک برگه‌ی A4 افقی باشد. رنگ‌ها دقیق چاپ می‌شوند. */
+@page {
+  size: A4 landscape;
+  margin: 0;
+}
+
+@media print {
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  /* همه‌ی فرزندان مستقیم بدنه — به‌جز ریشه‌ی چاپ — از چاپ خارج می‌شوند */
+  body > *:not(.cert-print-root) {
+    display: none !important;
+  }
+
+  /* ریشه‌ی چاپ — بالا-چپِ سند، دقیقاً یک صفحه، بدون سرریز */
+  .cert-print-root {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100vh !important;
+    overflow: hidden !important;
+  }
+
+  /* برگه‌ی گواهینامه — بدون حاشیه و سایه، تمام‌عرض */
+  .cert-print-root .certificate-sheet {
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
+  /* لایه‌ی داخلی برگه — کل ارتفاع صفحه (بدون سرریز به صفحه‌ی دوم) */
+  .cert-print-root .certificate-sheet {
+    height: 100% !important;
+  }
+  .cert-print-root .certificate-sheet > div {
+    width: 100% !important;
+    height: 100% !important;
+    aspect-ratio: auto !important;
+    max-height: none !important;
+  }
+}

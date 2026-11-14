@@ -8,6 +8,14 @@ import { toast } from "sonner";
 /** نام رویداد سراسری «دسترسی غیرمجاز» */
 export const UNAUTHORIZED_EVENT = "avid:unauthorized";
 
+/**
+ * سقف زمان پیش‌فرض درخواست‌های مدیریت (۳۰ ثانیه) —
+ * هیچ فراخوانی نباید بی‌پایان در حال انتظار بماند؛ اگر پاسخی نرسید
+ * خطا می‌شود تا UI همیشه به حالت پایدار برمی‌گردد.
+ * فراخواننده می‌تواند سیگنال خودش را بدهد تا این سقف را دور بزند.
+ */
+const DEFAULT_TIMEOUT_MS = 30_000;
+
 /** خطای API همراه با وضعیت HTTP */
 export class ApiError extends Error {
   status: number;
@@ -20,8 +28,11 @@ export class ApiError extends Error {
 }
 
 export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
+  // اگر فراخواننده سیگنال خاصی نداده، سقف زمان پیش‌فرض اعمال می‌شود
+  const signal = init?.signal ?? AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
   const res = await fetch(url, {
     ...init,
+    signal,
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
 

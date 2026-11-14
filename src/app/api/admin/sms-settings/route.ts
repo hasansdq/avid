@@ -89,9 +89,11 @@ export async function PUT(req: NextRequest) {
     const nextFromNumber = fromNumber ?? current.fromNumber;
 
     if (nextProvider === "rest") {
-      if (!((nextUsername && nextPassword) || nextApiKey)) {
+      // طبق مستندات رسمی: username همیشه الزامی است و password همان رمز
+      // عبور پنل یا «کلید API» وب‌سرویس (کلید API جایگزین رمز عبور می‌شود)
+      if (!(nextUsername && (nextPassword || nextApiKey))) {
         return bad(
-          "برای وب‌سرویس REST، نام کاربری و رمز عبور یا کلید API الزامی است."
+          "برای وب‌سرویس REST، نام کاربری و رمز عبور (یا کلید API) الزامی است."
         );
       }
     }

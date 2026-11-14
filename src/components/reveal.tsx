@@ -94,7 +94,8 @@ export function SectionHeading({
 }: {
   badge: string;
   title: React.ReactNode;
-  description?: string;
+  /** متن توضیح زیر تیتر — می‌تواند جایگاه متن قابل‌ویرایش (ویرایشگر مدادی) باشد */
+  description?: React.ReactNode;
   icon: LucideIcon;
   className?: string;
 }) {

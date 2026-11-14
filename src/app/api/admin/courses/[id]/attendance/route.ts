@@ -4,13 +4,13 @@ import { requireAdmin } from "@/lib/auth";
 import { bad, str, int } from "@/lib/api-helpers";
 
 /**
- * GET  /api/admin/courses/[id]/attendance — حضور و غیاب دوره
- * PUT  /api/admin/courses/[id]/attendance — عملیات حضور و غیاب
+ * GET  /api/admin/courses/[id]/attendance — حضور و غیاب و نمرات دوره
+ * PUT  /api/admin/courses/[id]/attendance — عملیات حضور و غیاب و ثبت معدل
  *
  * GET پاسخ:
  *  · course     : { id, title, sessions, type }
  *  · sessions   : ردیف‌های جلسه‌های فعال‌شده/برگزارشده [{ index, active, heldAt }]
- *  · enrollments: ثبت‌نام‌های دوره [{ id, name, phone, status }]
+ *  · enrollments: ثبت‌نام‌های دوره [{ id, name, phone, status, grade, userId }]
  *  · records    : [{ enrollmentId, index, present }]
  *
  * PUT بدنه (action):
@@ -20,6 +20,7 @@ import { bad, str, int } from "@/lib/api-helpers";
  *  · toggle     { index, enrollmentId, present } — تغییر حضور/غیاب یک ثبت‌نام در جلسه.
  *  · setDate    { index, date } — تغییر تاریخ برگزاری جلسه (YYYY-MM-DD یا ISO)؛
  *                            تاریخ پیش‌فرض فعال‌سازی، همان امروز است اما مدیر می‌تواند آن را اصلاح کند.
+ *  · setGrade   { enrollmentId, grade } — ثبت/حذف معدل کارآموز (۰ تا ۲۰؛ null/خالی = حذف نمره).
  */
 
 type Params = { params: Promise<{ id: string }> };
@@ -81,6 +82,10 @@ export async function GET(req: NextRequest, { params }: Params) {
           name: enrollmentName(e),
           phone: e.phone,
           status: e.status,
+          // معدل کارآموز در این دوره (۰ تا ۲۰) — null یعنی هنوز ثبت نشده
+          grade: e.grade ?? null,
+          // پیوند به حساب کاربری
+          userId: e.userId,
         })),
         records: records.map((r) => ({
           enrollmentId: r.enrollmentId,
@@ -114,6 +119,43 @@ export async function PUT(req: NextRequest, { params }: Params) {
     const action = str(body.action);
     const index = int(body.index, 0);
 
+    // ——— ثبت/حذف معدل کارآموز (بدون نیاز به شماره‌ی جلسه) ———
+    if (action === "setGrade") {
+      const enrollmentId = str(body.enrollmentId);
+      if (!enrollmentId) return bad("شناسه‌ی ثبت‌نام لازم است.");
+
+      const enrollment = await db.enrollment.findUnique({
+        where: { id: enrollmentId },
+        select: { id: true, course: true, userId: true },
+      });
+      if (!enrollment || enrollment.course !== course.title) {
+        return bad("این ثبت‌نام متعلق به دوره‌ی مورد نظر نیست.", 404);
+      }
+
+      // خالی/null = حذف معدل؛ در غیر این صورت عدد ۰ تا ۲۰
+      let grade: number | null = null;
+      const raw = body.grade;
+      if (raw !== null && raw !== undefined && String(raw).trim() !== "") {
+        const n = typeof raw === "number" ? raw : parseFloat(String(raw));
+        if (!Number.isFinite(n) || n < 0 || n > 20) {
+          return bad("معدل باید عددی بین ۰ تا ۲۰ باشد.");
+        }
+        grade = Math.round(n * 100) / 100;
+      }
+
+      await db.enrollment.update({
+        where: { id: enrollmentId },
+        data: { grade },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        message: grade === null ? "معدل حذف شد." : "معدل ثبت شد.",
+        grade,
+      });
+    }
+
+    // ——— سایر عملیات به شماره‌ی جلسه نیاز دارند ———
     if (index < 1 || index > course.sessions) {
       return bad(`شماره‌ی جلسه باید بین ۱ تا ${course.sessions} باشد.`);
     }
@@ -227,7 +269,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
       return NextResponse.json({ ok: true });
     }
 
-    return bad("عملیات نامعتبر است (activate | deactivate | toggle).");
+    return bad("عملیات نامعتبر است (activate | deactivate | toggle | setDate | setGrade).");
   } catch (error) {
     console.error("attendance PUT error:", error);
     return NextResponse.json(

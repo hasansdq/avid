@@ -12,6 +12,7 @@ import {
 import type { SiteSettings } from "@prisma/client";
 import { EnrollForm, type PublicCourse } from "@/components/site/enroll-form";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { EditableText } from "@/components/site/editable-texts";
 import { Button } from "@/components/ui/button";
 import { faDigits } from "@/lib/fa";
 
@@ -91,15 +92,23 @@ export function RegisterPage({
           <div className="mb-8 text-center">
             <span className="glass inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold text-teal-700 dark:text-teal-300">
               <GraduationCap className="size-3.5" />
-              ثبت‌نام در دوره‌ها
+              <EditableText k="registerPage.badge">
+                پیش‌ثبت‌نام در دوره‌ها
+              </EditableText>
             </span>
             <h1 className="mt-4 text-3xl font-black leading-[1.3] tracking-tight text-foreground md:text-4xl">
-              جای خود را در دوره‌ها{" "}
-              <span className="text-gradient">رزرو کنید</span>
+              <EditableText k="registerPage.title">
+                <>
+                  ثبت‌نام کنید و به آوید <span className="text-gradient">بپیوندید</span>
+                </>
+              </EditableText>
             </h1>
             <p className="mx-auto mt-3 max-w-md text-sm leading-7 text-muted-foreground">
-              فرم زیر را پر کنید؛ ثبت‌نام نهایی پس از تماس کارشناسان آموزشی و
-              پرداخت شهریه انجام می‌شود.
+              <EditableText k="registerPage.description">
+                فرم زیر را پر کنید؛ پس از تایید شماره موبایل، دوره‌ی مورد نظر خود را
+                انتخاب می‌کنید — انتخاب دوره برای تکمیل ثبت‌نام الزامی است. اگر فعلاً
+                دوره‌ای نمی‌خواهید، از دکمه‌ی «ورود / ثبت‌نام» در هدر سایت حساب بسازید.
+              </EditableText>
             </p>
           </div>
 

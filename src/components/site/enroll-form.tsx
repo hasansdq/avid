@@ -27,13 +27,20 @@ import {
   ArrowRight,
   Globe,
   MapPin,
+  Layers,
   TicketPercent,
   BadgePercent,
+  IdCard,
 } from "lucide-react";
 import type { Course } from "@prisma/client";
 import { useEnrollStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { faDigits, faDate } from "@/lib/fa";
+import {
+  isValidNationalId,
+  normalizeNationalId,
+  toEnDigits,
+} from "@/lib/national-id";
 import type { AvailabilityMap, GroupAvailability } from "@/lib/availability";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,6 +91,11 @@ function faAmount(n: number): string {
   return faDigits(n.toLocaleString("en-US"));
 }
 
+/** برچسب فارسی نوع دوره — آنلاین / حضوری / حضوری و آنلاین (hybrid) */
+function courseTypeLabel(t: string): string {
+  return t === "online" ? "آنلاین" : t === "hybrid" ? "حضوری و آنلاین" : "حضوری";
+}
+
 type PayMethod = "cash" | "installment";
 
 /* ————————————————— مرحله‌ی فرم ————————————————— */
@@ -95,13 +107,15 @@ type Stage = 1 | 2 | 3;
  * EnrollForm — فرم سه‌مرحله‌ای پیش‌ثبت‌نام دوره‌ها
  *
  *  • مرحله‌ی ۱: ثبت‌نام (نام و نام خانوادگی) + تایید شماره موبایل با کد پیامکی
- *  • مرحله‌ی ۲: انتخاب دوره — لیست تک‌انتخابی (عنوان، شهریه، حضوری/آنلاین، زمان
- *    برگزاری کلاس) + گروه زمانی برای دوره‌های حضوریِ گروه‌دار
+ *  • مرحله‌ی ۲: انتخاب دوره — الزامی؛ لیست تک‌انتخابی (عنوان، شهریه،
+ *    حضوری/آنلاین، زمان برگزاری کلاس) + گروه زمانی برای دوره‌های حضوریِ گروه‌دار
  *  • مرحله‌ی ۳: پرداخت وجه پیش‌ثبت‌نام (نقدی/اقساطی و انتقال به درگاه)
  *
  * اگر کاربر وارد حساب کاربری شده باشد (کوکی نشست)، مرحله‌ی اول انجام
  * شده تلقی می‌شود و مستقیم مرحله‌ی دوم نشان داده می‌شود؛ عبور از مرحله‌ی
  * اول برای کاربر واردنشده الزامی است (API هم بدون نشست ثبت‌نام نمی‌پذیرد).
+ * ثبت‌نام مستقل در سایت (بدون انتخاب دوره) از دکمه‌ی «ورود / ثبت‌نام»
+ * هدر و پنل کاربر انجام می‌شود — این فرم فقط برای ثبت‌نام در دوره است.
  *
  * `preselectFromUrl` → اگر true باشد و برگه با ?course=عنوان
  * باز شده باشد، همان دوره به‌صورت پیش‌فرض انتخاب می‌شود.
@@ -123,10 +137,14 @@ export function EnrollForm({
   // — مرحله‌ی ۱: ثبت‌نام و تایید شماره —
   const [firstName, setFirstName] = React.useState("");
   const [lastName, setLastName] = React.useState("");
+  /** کد ملی (اختیاری) — برای استعلام گواهی‌نامه‌ها */
+  const [nationalId, setNationalId] = React.useState("");
   const [phone, setPhone] = React.useState("");
   const [otpSent, setOtpSent] = React.useState(false);
   const [otpCode, setOtpCode] = React.useState("");
   const [devCode, setDevCode] = React.useState<string | null>(null);
+  /** خطای ارسال کد پیامکی — همان‌جا در فرم (جعبه‌ی قرمز + دکمه‌ی ارسال مجدد) */
+  const [otpError, setOtpError] = React.useState<string | null>(null);
   const [sendingOtp, setSendingOtp] = React.useState(false);
   const [verifyingOtp, setVerifyingOtp] = React.useState(false);
   const [resendIn, setResendIn] = React.useState(0);
@@ -234,9 +252,9 @@ export function EnrollForm({
   const courseFull = !!selectedAvail?.full;
   const hasGroups = !!selectedAvail?.groups?.length;
   const groups: GroupAvailability[] = selectedAvail?.groups ?? [];
-  // گروه‌های حضوری فقط برای دوره‌ی انتخاب‌شده‌ی حضوریِ دارای گروه
+  // گروه‌های زمانی برای دوره‌ی گروه‌دار (حضوری یا ترکیبی) دارای گروه
   const showGroups =
-    !!selected && selected.type === "inperson" && hasGroups;
+    !!selected && selected.type !== "online" && hasGroups;
   const selectedGroup = groups.find((g) => g.id === groupId) ?? null;
   const groupFull = !!selectedGroup?.full;
 
@@ -308,6 +326,12 @@ export function EnrollForm({
       toast.error("شماره موبایل معتبر وارد کنید (مثال: ۰۹۱۲۳۴۵۶۷۸۹).");
       return;
     }
+    // کد ملی اختیاری — اگر چیزی وارد شده باشد باید معتبر باشد
+    const cleanNationalId = normalizeNationalId(nationalId);
+    if (cleanNationalId !== "" && !isValidNationalId(cleanNationalId)) {
+      toast.error("کد ملی ۱۰ رقمی معتبر وارد کنید یا این فیلد را خالی بگذارید.");
+      return;
+    }
     if (!notRobot) {
       toast.error("لطفاً گزینه‌ی «من ربات نیستم» را فعال کنید.");
       return;
@@ -315,6 +339,7 @@ export function EnrollForm({
 
     setSendingOtp(true);
     setDevCode(null);
+    setOtpError(null);
     try {
       const res = await fetch("/api/user/otp/request", {
         method: "POST",
@@ -325,8 +350,20 @@ export function EnrollForm({
           phone: cleanPhone,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "خطا در ارسال کد تایید");
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        devCode?: string;
+      };
+      if (!res.ok) {
+        // ارسال پیامک (یا اعتبارسنجی سرور) ناموفق بود — خطا همان‌جا
+        // در فرم نمایش داده می‌شود و «ارسال مجدد» در دسترس است.
+        setOtpError(
+          typeof data.error === "string" && data.error.trim()
+            ? data.error
+            : "خطا در ارسال کد تایید. لطفاً دوباره تلاش کنید."
+        );
+        return;
+      }
 
       setOtpSent(true);
       setResendIn(60);
@@ -341,9 +378,9 @@ export function EnrollForm({
           description: "کد ۵ دقیقه معتبر است.",
         });
       }
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "خطا در ارسال کد تایید."
+    } catch {
+      setOtpError(
+        "ارتباط با سرور برقرار نشد؛ لطفاً اتصال خود را بررسی و دوباره تلاش کنید."
       );
     } finally {
       setSendingOtp(false);
@@ -370,6 +407,10 @@ export function EnrollForm({
           code,
           firstName: firstName.trim(),
           lastName: lastName.trim(),
+          // کد ملی اختیاری — فقط وقتی پر شده ارسال می‌شود
+          ...(normalizeNationalId(nationalId) !== ""
+            ? { nationalId: normalizeNationalId(nationalId) }
+            : {}),
         }),
       });
       const data = await res.json();
@@ -634,7 +675,7 @@ export function EnrollForm({
             {stage === 1
               ? "مرحله‌ی اول: ثبت‌نام و تایید شماره موبایل"
               : stage === 2
-                ? "مرحله‌ی دوم: انتخاب دوره"
+                ? "مرحله‌ی دوم: انتخاب دوره (الزامی)"
                 : "مرحله‌ی سوم: پرداخت و تکمیل ثبت‌نام"}
           </p>
         </div>
@@ -671,6 +712,32 @@ export function EnrollForm({
               <Loader2 className="size-4 shrink-0 animate-spin" />
               در حال بررسی حساب کاربری شما...
             </p>
+          ) : null}
+
+          {/* — خطای ارسال کد پیامکی: نمایش همان‌جا + ارسال مجدد — */}
+          {otpError ? (
+            <div
+              className="space-y-3 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm font-bold text-red-700 dark:border-red-400/25 dark:bg-red-400/10 dark:text-red-300"
+              role="alert"
+            >
+              <p className="flex min-w-0 items-start gap-3 leading-6">
+                <XCircle className="size-5 shrink-0" />
+                {otpError}
+              </p>
+              <button
+                type="button"
+                onClick={handleRequestOtp}
+                disabled={sendingOtp}
+                className="inline-flex select-none items-center gap-1.5 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-black text-red-700 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-400/30 dark:text-red-300 dark:hover:bg-red-400/10"
+              >
+                {sendingOtp ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Send className="size-3.5" />
+                )}
+                {sendingOtp ? "در حال ارسال مجدد..." : "ارسال مجدد کد پیامکی"}
+              </button>
+            </div>
           ) : null}
 
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
@@ -726,6 +793,42 @@ export function EnrollForm({
                 disabled={otpSent || sendingOtp}
               />
             </div>
+          </div>
+
+          {/* کد ملی (اختیاری) — برای استعلام گواهی‌نامه‌ها */}
+          <div className="space-y-2">
+            <Label
+              htmlFor="enroll-nationalId"
+              className="flex items-center gap-2 text-sm font-bold text-foreground/90"
+            >
+              <IdCard className="size-4 text-teal-600 dark:text-teal-300" />
+              کد ملی
+              <span className="text-[0.65rem] font-semibold text-muted-foreground">
+                (اختیاری)
+              </span>
+            </Label>
+            <div className="relative">
+              <IdCard className="pointer-events-none absolute right-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="enroll-nationalId"
+                value={nationalId}
+                onChange={(e) =>
+                  setNationalId(
+                    toEnDigits(e.target.value).replace(/\D/g, "").slice(0, 10)
+                  )
+                }
+                placeholder="1234567891"
+                dir="ltr"
+                inputMode="numeric"
+                autoComplete="off"
+                className="h-12 rounded-xl border-foreground/[0.09] bg-foreground/[0.02] pr-10 text-center font-black tabular-nums placeholder:text-muted-foreground/50 focus-visible:ring-teal-500/30 disabled:opacity-60 dark:border-white/10 dark:bg-white/[0.04] dark:focus-visible:ring-teal-400/40"
+                disabled={otpSent || sendingOtp}
+              />
+            </div>
+            <p className="select-none text-[0.65rem] font-semibold leading-5 text-muted-foreground">
+              با ثبت کد ملی، گواهی‌نامه‌های شما با استعلام کد ملی قابل بررسی و
+              دانلود خواهد بود.
+            </p>
           </div>
 
           {/* — کد تایید پیامکی — */}
@@ -967,9 +1070,9 @@ export function EnrollForm({
                         : null;
                     const active = course === c.title;
 
-                    // زمان برگزاری کلاس
+                    // زمان برگزاری کلاس (دوره‌های حضوری و ترکیبی؛ آنلاین زمان‌بندی ندارد)
                     const scheduleText =
-                      c.type === "inperson"
+                      c.type !== "online"
                         ? c.schedule.trim() ||
                           (itemAvail?.groups?.length
                             ? "هماهنگی در گروه‌های زمانی"
@@ -1055,10 +1158,12 @@ export function EnrollForm({
                             <span className="flex items-center gap-1.5 text-muted-foreground">
                               {c.type === "online" ? (
                                 <Globe className="size-3.5 shrink-0 text-violet-600 dark:text-violet-300" />
+                              ) : c.type === "hybrid" ? (
+                                <Layers className="size-3.5 shrink-0 text-violet-600 dark:text-violet-300" />
                               ) : (
                                 <MapPin className="size-3.5 shrink-0 text-violet-600 dark:text-violet-300" />
                               )}
-                              {c.type === "online" ? "آنلاین" : "حضوری"}
+                              {courseTypeLabel(c.type)}
                             </span>
                             <span className="flex items-center gap-1.5 text-muted-foreground">
                               <CalendarClock className="size-3.5 shrink-0" />
@@ -1271,6 +1376,12 @@ export function EnrollForm({
                   </>
                 )}
               </Button>
+
+              {/* — راهنمای الزامی بودن انتخاب دوره — */}
+              <p className="pt-1 text-center text-[0.65rem] leading-5 text-muted-foreground/80">
+                انتخاب دوره برای تکمیل پیش‌ثبت‌نام الزامی است؛ برای ثبت‌نام مستقل
+                در سایت از دکمه‌ی «ورود / ثبت‌نام» در هدر استفاده کنید.
+              </p>
             </>
           ) : (
             /* ————————————————— مرحله‌ی ۳: پرداخت ————————————————— */
@@ -1327,17 +1438,19 @@ export function EnrollForm({
                         <span className="flex select-none items-center gap-1 rounded-full border border-violet-500/25 bg-violet-500/10 px-2.5 py-1 text-[0.6rem] font-black text-violet-700 dark:border-violet-400/25 dark:bg-violet-400/10 dark:text-violet-300">
                           {selected.type === "online" ? (
                             <Globe className="size-3" />
+                          ) : selected.type === "hybrid" ? (
+                            <Layers className="size-3" />
                           ) : (
                             <MapPin className="size-3" />
                           )}
-                          {selected.type === "online" ? "آنلاین" : "حضوری"}
+                          {courseTypeLabel(selected.type)}
                         </span>
                       </div>
 
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[0.7rem] font-semibold leading-5 text-muted-foreground">
                         <span className="flex items-center gap-1.5">
                           <CalendarClock className="size-3.5 shrink-0" />
-                          {selected.type === "inperson"
+                          {selected.type !== "online"
                             ? selected.schedule.trim() ||
                               (selectedGroup?.schedule
                                 ? `گروه ${selectedGroup.title}: ${selectedGroup.schedule}`

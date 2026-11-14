@@ -27,20 +27,47 @@ model SiteSettings {
   youtubeUrl            String   @default("")
   linkedinUrl           String   @default("")
   footerDescription     String   @default("یادگیری هر مهارتی، سرمایه‌ی شما در آینده است. ما با دوره‌های پروژه‌محور و مربیان متخصص، همراه شما در این مسیر هستیم.")
+  // — کد نماد اعتماد الکترونیکی (اینماد): عیناً از پنل enamad.ir دریافت و بدون تغییر در فوتر سایت رندر می‌شود —
+  enamadCode            String   @default("")
+  // — کد نماد اعتماد زرین‌پال (لوگو تایید درگاه پرداخت، طبق مستندات رسمی زرین‌پال) — در فوتر، سمت راست اینماد رندر می‌شود —
+  zarinpalCode          String   @default("")
   // — فونت‌های قابل انتخاب از ماژول «فونت‌ها» (کلیدهای رجیستری src/lib/fonts.ts) —
   sloganFont            String   @default("vazirmatn") // فونت اسلوگان اصلی صفحه‌ی خانه
   headerFont            String   @default("vazirmatn") // فونت هدر (نوار بالا)
   footerFont            String   @default("vazirmatn") // فونت فوتر (پاورقی)
+  // — ویرایشگر ظاهری مدادی — وقتی فعال باشد، مدیر هنگام مشاهده‌ی سایت
+  // کنار متن‌های کلیدی صفحه‌ی اول آیکون مداد می‌بیند و می‌تواند متن، رنگ،
+  // فونت، اندازه و نمایش/مخفی‌بودن هر متن را در پاپ‌آپ ویرایش کند.
+  pencilEditorEnabled   Boolean  @default(true)
   updatedAt             DateTime @updatedAt
 }
 
-// دوره‌های آموزشی (آنلاین و حضوری)
+// ————————————————— ویرایشگر مدادی متن‌ها —————————————————
+
+// متن‌های قابل‌ویرایش صفحه‌ی اول سایت (ویرایشگر ظاهری مدادی) —
+// هر جایگاه متن با یک کلید یکتا (مثل hero.slogan) شناسایی می‌شود.
+// مقدارهای null یعنی «پیش‌فرض قطعه‌ی سایت» (بدون سفارشی‌سازی).
+// برای دو متن هیرو (hero.slogan و hero.description) متن به‌صورت آینه در
+// SiteSettings (slogan و heroDescription) هم نگه داشته می‌شود تا با ماژول
+// «تنظیمات سایت» پنل مدیر کاملاً هماهنگ بماند؛ فونت اسلوگان نیز با
+// SiteSettings.sloganFont همگام است.
+model SiteText {
+  key       String   @id // کلید یکتای جایگاه متن — رجیستری src/lib/site-texts.ts
+  text      String? // متن سفارشی؛ خالی/null = متن پیش‌فرض قطعه
+  color     String? // رنگ متن (هگز مثل #0d9488)؛ null = رنگ پیش‌فرض قالب
+  fontKey   String? // کلید فونت از رجیستری InstalledFont؛ null = فونت پیش‌فرض قطعه
+  fontSize  Int? // اندازه فونت (پیکسل)؛ null = اندازه‌ی پیش‌فرض قطعه
+  hidden    Boolean  @default(false) // مخفی برای کاربران عادی (مدیر همچنان می‌بیند)
+  updatedAt DateTime @updatedAt
+}
+
+// دوره‌های آموزشی — سه نوع: آنلاین، حضوری و ترکیبی (حضوری و آنلاین)
 model Course {
   id          String   @id @default(cuid())
   title       String
   description String
   category    String   @default("عمومی")
-  type        String   @default("online") // online | inperson
+  type        String   @default("online") // online | inperson | hybrid (آنلاین | حضوری | حضوری و آنلاین)
   level       String   @default("مقدماتی") // مقدماتی | متوسط | پیشرفته
   hours       Int      @default(0)
   sessions    Int      @default(0)
@@ -60,7 +87,7 @@ model Course {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // گروه‌های زمان‌بندی دوره‌های حضوری — هر گروه زمان‌بندی و ظرفیت جداگانه دارد
+  // گروه‌های زمان‌بندی بخش حضوری دوره‌های حضوری/ترکیبی — هر گروه زمان‌بندی و ظرفیت جداگانه دارد
   groups      CourseGroup[]
 
   // — قالب اقساط دوره — تعداد و تاریخ سررسید هر قسط (اختیاری؛
@@ -69,9 +96,15 @@ model Course {
 
   // جلسات حضور و غیاب دوره — یک ردیف برای هر جلسه‌ی فعال‌شده/برگزارشده
   attendanceSessions AttendanceSession[]
+
+  // آزمون‌های وابسته به این دوره
+  exams       Exam[]
+
+  // گواهینامه‌های صادرشده برای این دوره
+  certificates Certificate[]
 }
 
-// گروه‌های زمان‌بندی دوره‌های حضوری —
+// گروه‌های زمان‌بندی بخش حضوری دوره‌های حضوری/ترکیبی —
 // هر گروه (مثلاً دوشنبه/چهارشنبه یا یکشنبه/سه‌شنبه) ظرفیت جداگانه‌ای دارد
 model CourseGroup {
   id         String   @id @default(cuid())
@@ -176,6 +209,47 @@ model NavLink {
   @@index([section])
 }
 
+// ————————————————— نمونه سوالات —————————————————
+
+// دسته‌بندی نمونه سوالات — در برگه‌ی اختصاصی سایت به‌شکل کارت مربعی
+// (آیکون + عنوان + شمارنده‌ی تعداد نمونه سوال) رندر می‌شود.
+model SampleQuestionCategory {
+  id          String            @id @default(cuid())
+  title       String
+  description String            @default("")
+  icon        String            @default("BookOpen") // کلید آیکون از رجیستری sample-question-icons
+  sortOrder   Int               @default(0)
+  published   Boolean           @default(true)
+  items       SampleQuestion[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([published])
+}
+
+// نمونه سوال — فایل تصویر / PDF / ویدئوی بارگذاری‌شده توسط مدیر.
+// فایل در public/uploads/sample-questions ذخیره و در جدول گالری
+// (UploadedFile با بخش sampleQuestions) ثبت می‌شود.
+model SampleQuestion {
+  id         String                  @id @default(cuid())
+  title      String
+  description String                 @default("")
+  fileUrl    String                  @default("") // مسیر عمومی فایل (/uploads/sample-questions/…)
+  ext        String                  @default("") // پسوند کوچک‌شده (pdf، png، mp4…)
+  size       Int                     @default(0) // حجم بایت
+  views      Int                     @default(0) // تعداد بازدید
+  sortOrder  Int                     @default(0)
+  published  Boolean                 @default(true)
+  categoryId String?
+  category   SampleQuestionCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
+
+  @@index([categoryId])
+  @@index([published])
+}
+
 // نظرات کاربران
 model Testimonial {
   id        String   @id @default(cuid())
@@ -211,6 +285,10 @@ model Enrollment {
   user           User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   userId         String?
 
+  // — معدل کارآموز در این دوره (۰ تا ۲۰) — مدیر از صفحه‌ی دوره ثبت می‌کند؛
+  // null یعنی هنوز نمره‌ای ثبت نشده است.
+  grade          Float?
+
   // — کد تخفیف اعمال‌شده (در صورت استفاده) —
   discountCode   String? // متن کد تخفیف ثبت‌شده در فرم
   discountAmount Int? // مبلغ تخفیف اعمال‌شده (تومان)
@@ -221,7 +299,7 @@ model Enrollment {
   paymentStatus  String    @default("pending") // pending | paid | failed
   paymentGateway String? // zarinpal | payping | test
   paymentRefId   String? // کد پیگیری درگاه (authority / refId)
-  paymentAttemptCode String? // کد درخواست ثبت‌شده پیش از رفتن به درگاه
+  paymentAttemptCode String?
   paymentCardPan String? // شماره کارت ماسک‌شده
   paidAt         DateTime?
   createdAt      DateTime  @default(now())
@@ -273,6 +351,8 @@ model User {
   firstName  String
   lastName   String
   phone      String       @unique
+  // کد ملی (اختیاری) — برای استعلام گواهی‌نامه‌ها در صفحه‌ی عمومی /certificate
+  nationalId String?      @unique
   status     String       @default("active") // active | blocked — کاربر مسدود نمی‌تواند وارد پنل شود
   note       String? // یادداشت مدیر درباره‌ی این کاربر
   createdAt  DateTime     @default(now())
@@ -280,6 +360,104 @@ model User {
 
   sessions   UserSession[]
   enrollments Enrollment[]
+  examAttempts ExamAttempt[]
+  certificates Certificate[]
+}
+
+// ————————————————— گواهینامه‌ها —————————————————
+
+// گواهینامه‌ی پایان دوره — از ماژول «صدور گواهینامه» در پنل مدیر ساخته می‌شود:
+// فایل گواهینامه (PDF یا تصویر) آپلود می‌شود و به یک کاربر و دوره‌ای که در آن
+// شرکت کرده تخصیص می‌یابد؛ کاربر آن را در پنل خود می‌بیند و می‌تواند دانلود کند.
+// courseId با حذف دوره null می‌شود اما courseTitle (تصویر لحظه‌ای) حفظ می‌گردد.
+model Certificate {
+  id          String   @id @default(cuid())
+  code        String   @unique // کد رهگیری/اعتبارسنجی برای نمایش روی برگه
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  course      Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  courseId    String?
+  courseTitle String   @default("") // تصویر لحظه‌ای عنوان دوره
+  grade       Float? // معدل ثبت‌شده هنگام صدور (۰ تا ۲۰)
+  note        String   @default("") // توضیح/عنوان اختیاری روی گواهینامه
+  // فایل آپلودشده‌ی گواهینامه (PDF یا تصویر) — /uploads/certificates/...؛
+  // خالی یعنی گواهینامه‌ی بدون فایل (نمایش برگه‌ی سیستمی قابل چاپ در پنل کاربر)
+  fileUrl     String   @default("")
+  issuedAt    DateTime @default(now()) // تاریخ صدور
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([courseId])
+}
+
+// ————————————————— آزمون‌ها —————————————————
+
+// آزمون — سه نوع دسترسی:
+//   course   : آزمون دوره — فقط اعضای همان دوره (ثبت‌نام‌شدگان آن) آن را می‌بینند
+//   open     : آزمون آزاد — همه‌ی کاربران وارد‌شده آن را می‌بینند
+//   password : آزمون رمزدار — با وارد کردن رمز توسط کاربر باز می‌شود
+model Exam {
+  id              String   @id @default(cuid())
+  title           String
+  description     String   @default("")
+  accessType      String   @default("open") // course | open | password
+  course          Course?  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId        String? // آزمون دوره — دوره‌ی وابسته
+  password        String   @default("") // رمز آزمون رمزدار
+  durationMinutes Int      @default(0) // مدت آزمون (دقیقه)؛ صفر = بدون محدودیت زمانی
+  published       Boolean  @default(true) // منتشر شده = قابل مشاهده در پنل کاربر
+  sortOrder       Int      @default(0) // ترتیب نمایش در پنل مدیر و پنل کاربر — با کشیدن و رها کردن تغییر می‌کند
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  questions       ExamQuestion[]
+  attempts        ExamAttempt[]
+
+  @@index([courseId])
+}
+
+// سوال آزمون — هشت نوع پشتیبانی‌شده:
+//   multiple_choice چهارگزینه‌ای · true_false دوگزینه‌ای (درست/نادرست) · fill_blank جای خالی
+//   short_answer پاسخ کوتاه · essay تشریحی · matching وصل‌کردنی · ordering مرتب‌کردنی · table_fill پرکردن جدول
+// options/answer رشته‌ی JSON با ساختار مخصوص هر نوع هستند (در src/lib/exam.ts قراردادشان آمده).
+// تصویر و ویدئو (آپلود یا آدرس) برای همه‌ی انواع قابل‌الحاق است.
+model ExamQuestion {
+  id      String   @id @default(cuid())
+  exam    Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  examId  String
+  type    String
+  text    String   @default("")
+  image   String   @default("") // تصویر سوال (آپلود یا آدرس)
+  video   String   @default("") // ویدئو سوال (آپلود یا آدرس)
+  points  Float    @default(1)
+  options String   @default("{}") // JSON ساختار سوال (گزینه‌ها/جفت‌ها/جدول و…)
+  answer  String   @default("{}") // JSON پاسخ صحیح یا پاسخ‌های مجاز
+  order   Int      @default(0)
+
+  @@index([examId])
+}
+
+// پاسخ کاربر به یک آزمون — هر بار شرکت یک ردیف؛ پاسخ‌ها JSON به ازای هر سوال است.
+// سوالات عینی خودکار تصحیح می‌شوند (autoScore)؛ تشریحی‌‌ها در پنل مدیر
+// دیده می‌شوند و مدیر نمره‌ی نهایی (score) را ثبت می‌کند.
+model ExamAttempt {
+  id          String    @id @default(cuid())
+  exam        Exam      @relation(fields: [examId], references: [id], onDelete: Cascade)
+  examId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  answers     String    @default("{}") // JSON پاسخ‌های کاربر
+  score       Float? // نمره‌ی نهایی — null تا تصحیح تشریحی توسط مدیر
+  autoScore   Float     @default(0) // نمره‌ی خودکار از سوالات عینی
+  totalPoints Float     @default(0) // جمع نمره‌ی کل سوالات
+  hasEssay    Boolean   @default(false) // دارای سوال تشریحی در انتظار تصحیح
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([examId, userId])
+  @@index([userId])
 }
 
 // نشست ورود کاربران سایت
@@ -312,20 +490,20 @@ model Installment {
 }
 
 // تنظیمات پنل پیامکی — ملی پیامک (رکورد یگانه با id = "main")
-// دو روش اتصال: وب‌سرویس REST (rest.payamak-panel.com) با نام کاربری/رمز یا API Key،
-// و کنسول ملی پیامک (console.melipayamak.com) با API Key کنسول
+// دو روش اتصال: وب‌سرویس REST (rest.payamak-panel.com) با نام کاربری + رمز عبور/کلید API،
+// و کنسول ملی پیامک (console.melipayamak.com) با توکن کنسول (داخل مسیر URL)
 model SmsSettings {
   id            String   @id @default("main")
   provider      String   @default("none") // none | rest | console
   // — وب‌سرویس REST —
-  username      String   @default("") // نام کاربری پنل ملی پیامک
-  password      String   @default("") // رمز عبور پنل (یا خالی در صورت استفاده از API Key)
-  apiKey        String   @default("") // کلید API وب‌سرویس (هدر X-API-KEY) — اختیاری به‌جای رمز
+  username      String   @default("") // نام کاربری پنل ملی پیامک (الزامی)
+  password      String   @default("") // رمز عبور پنل (یا خالی در صورت استفاده از کلید API)
+  apiKey        String   @default("") // کلید API وب‌سرویس — جایگزین رمز عبور (داخل بدنه‌ی JSON ارسال می‌شود)
   // — کنسول ملی پیامک —
-  consoleApiKey String   @default("") // کلید API کنسول (وب‌سرویس‌ها ← API Key)
+  consoleApiKey String   @default("") // توکن کنسول (حساب کاربری ← توکن) — داخل مسیر URL ارسال می‌شود
   // — مشترک —
   fromNumber    String   @default("") // شماره‌ی خط فرستنده (مثل 500040...)
-  otpBodyId     String   @default("") // شناسه‌ی پترن OTP برای ارسال خدماتی (اختیاری؛ خالی = ارسال ساده)
+  otpBodyId     String   @default("") // شناسه‌ی پترن OTP برای ارسال خدماتی (اختیاری؛ خالی = ارسال ساده/SendOTP)
   signature     String   @default("") // امضای انتهای همه‌ی پیامک‌ها (اختیاری)
   updatedAt     DateTime @updatedAt
 }
@@ -357,6 +535,31 @@ model OtpCode {
   createdAt  DateTime  @default(now())
 
   @@index([phone, createdAt])
+}
+
+// ————————————————— گالری فایل‌ها —————————————————
+
+// متادیتای فایل‌های آپلودی سایت — هر آپلود (تصویر/ویدئو/فونت/گواهینامه)
+// یک ردیف ثبت می‌کند: چه کسی، در کدام بخش و چه فایلی بارگذاری کرده است.
+// ماژول «گالری» در پنل مدیر همین جدول را همراه با اسکن دیسک
+// (public/uploads) نمایش می‌دهد؛ فایل‌های قدیمی (پیش از این جدول) هنگام
+// همگام‌سازی وارد می‌شوند و بخششان از محل استفاده در دیتابیس استنباط می‌شود.
+model UploadedFile {
+  id           String   @id @default(cuid())
+  url          String   @unique // مسیر عمومی فایل (/uploads/... یا /uploads/videos/...)
+  name         String // نام فایل روی دیسک (نام یکتای تصادفی)
+  originalName String   @default("") // نام اصلی فایل هنگام آپلود
+  ext          String   @default("") // پسوند کوچک‌شده (png، mp4، woff2، pdf…)
+  mime         String   @default("") // نوع MIME اعلام‌شده هنگام آپلود
+  size         Int      @default(0) // حجم فایل (بایت)
+  section      String   @default("other") // بخش سایت: courses | videos | exams | certificates | fonts | settings | chat | other
+  uploader     String   @default("") // نام کاربری آپلودکننده (مدیر)
+  createdAt    DateTime @default(now()) // زمان آپلود / شناسایی فایل
+  updatedAt    DateTime @updatedAt
+
+  @@index([section])
+  @@index([ext])
+  @@index([createdAt])
 }
 
 // کدهای تخفیف پیش‌ثبت‌نام — قابل تعریف برای پرداخت نقدی/اقساطی (یا هر دو)

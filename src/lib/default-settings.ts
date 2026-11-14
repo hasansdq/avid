@@ -25,5 +25,8 @@ export const DEFAULT_SETTINGS: SiteSettings = {
   sloganFont: "vazirmatn",
   headerFont: "vazirmatn",
   footerFont: "vazirmatn",
+  enamadCode: "",
+  zarinpalCode: "",
+  pencilEditorEnabled: true,
   updatedAt: new Date(),
 };

@@ -7,6 +7,9 @@ import type {
   CourseInstallment,
   DiscountCode,
   Enrollment,
+  Exam,
+  ExamAttempt,
+  ExamQuestion,
   InstalledFont,
   Installment,
   NavLink,
@@ -30,6 +33,9 @@ export type {
   CourseInstallment,
   DiscountCode,
   Enrollment,
+  Exam,
+  ExamAttempt,
+  ExamQuestion,
   InstalledFont,
   Installment,
   NavLink,
@@ -84,6 +90,12 @@ export type UserWithStats = User & {
   installmentPaidAmount: number;
 };
 
+/** آزمون + عنوان دوره و شمارنده‌ها (پاسخ GET /api/admin/exams) */
+export type ExamWithStats = Exam & {
+  course?: { title: string } | null;
+  _count?: { questions: number; attempts: number };
+};
+
 /** ثبت‌نام + اقساط (پاسخ GET /api/admin/users/[id]) */
 export type EnrollmentWithInstallments = Enrollment & {
   installments: Installment[];
@@ -95,6 +107,8 @@ export type ModuleKey =
   | "settings"
   | "courses"
   | "videos"
+  | "exams"
+  | "certificates"
   | "testimonials"
   | "enrollments"
   | "payment"
@@ -103,6 +117,8 @@ export type ModuleKey =
   | "chat"
   | "fonts"
   | "headerFooter"
+  | "gallery"
+  | "backup"
   | "account";
 
 /** props مشترک همه‌ی ماژول‌ها (تا از داشبورد بتوان به ماژول دیگر سوئیچ کرد) */
@@ -112,7 +128,7 @@ export interface ModuleProps {
 
 /** ساختار پاسخ GET /api/admin/stats */
 export interface Stats {
-  courses: { total: number; online: number; inperson: number; published: number };
+  courses: { total: number; online: number; inperson: number; hybrid: number; published: number };
   videos: { total: number; published: number };
   testimonials: { total: number; published: number };
   enrollments: { total: number; new: number };

@@ -6,6 +6,7 @@ import {
   Loader2,
   Palette,
   PanelBottom,
+  Pencil,
   Phone,
   Save,
   Share2,
@@ -15,6 +16,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { apiFetch, toastApiError } from "@/components/admin/api";
 import { EmptyState } from "@/components/admin/shared/empty-state";
@@ -46,6 +48,8 @@ interface SettingsDraft {
   youtubeUrl: string;
   linkedinUrl: string;
   footerDescription: string;
+  /** فعال/غیرفعال‌سازی ویرایشگر ظاهری مدادی (تنها فیلد بولی فرم) */
+  pencilEditorEnabled: boolean;
 }
 
 function toDraft(s: SiteSettings): SettingsDraft {
@@ -68,13 +72,19 @@ function toDraft(s: SiteSettings): SettingsDraft {
     youtubeUrl: s.youtubeUrl,
     linkedinUrl: s.linkedinUrl,
     footerDescription: s.footerDescription,
+    pencilEditorEnabled: s.pencilEditorEnabled,
   };
 }
 
 function sameDraft(a: SettingsDraft, b: SettingsDraft): boolean {
-  return (Object.keys(a) as (keyof SettingsDraft)[]).every(
-    (key) => a[key].trim() === b[key].trim()
-  );
+  return (Object.keys(a) as (keyof SettingsDraft)[]).every((key) => {
+    const av = a[key];
+    const bv = b[key];
+    if (typeof av === "boolean" || typeof bv === "boolean") {
+      return av === bv;
+    }
+    return av.trim() === bv.trim();
+  });
 }
 
 /** بخش‌های فرم تنظیمات */
@@ -149,7 +159,7 @@ export function SettingsModule() {
     load();
   }, [load]);
 
-  const set = <K extends keyof SettingsDraft>(key: K, value: string) => {
+  const set = <K extends keyof SettingsDraft>(key: K, value: SettingsDraft[K]) => {
     setDraft((prev) => (prev ? { ...prev, [key]: value } : prev));
   };
 
@@ -195,6 +205,7 @@ export function SettingsModule() {
           youtubeUrl: draft.youtubeUrl,
           linkedinUrl: draft.linkedinUrl,
           footerDescription: draft.footerDescription,
+          pencilEditorEnabled: draft.pencilEditorEnabled,
         }),
       });
       const next = toDraft(updated);
@@ -322,6 +333,7 @@ export function SettingsModule() {
               label="آدرس لوگو"
               value={draft.logoUrl}
               onChange={(v) => set("logoUrl", v)}
+              section="settings"
               previewAlt="پیش‌نمایش لوگو"
               hint="می‌توانید مسیر داخلی مثل /images/logo.png یا آدرس کامل تصویر را وارد کنید."
             />
@@ -329,7 +341,35 @@ export function SettingsModule() {
         </div>
       </SettingsSection>
 
-      {/* ۲ — آمار و اعداد */}
+      {/* ۲ — ویرایشگر ظاهری مدادی متن‌ها */}
+      <SettingsSection icon={Pencil} title="ویرایشگر ظاهری مدادی متن‌ها">
+        <div className="flex items-center justify-between gap-4 rounded-xl border border-border bg-foreground/[0.02] p-4">
+          <div className="min-w-0">
+            <Label htmlFor="set-pencilEditor" className="cursor-pointer">
+              فعال‌سازی ویرایشگر مدادی
+            </Label>
+            <p className="mt-1 text-[0.7rem] leading-5 text-muted-foreground">
+              وقتی فعال باشد، مدیر هنگام مشاهده‌ی سایت (دکمه‌ی «مشاهده سایت» در
+              هدر پنل) کنار متن‌های کلیدی صفحه‌ی اول آیکون مداد می‌بیند؛ با
+              کلیک روی آن می‌تواند متن، رنگ، فونت (از فونت‌های نصب‌شده)، اندازه
+              و نمایش/مخفی‌بودن هر متن را تغییر دهد.
+            </p>
+          </div>
+          <Switch
+            id="set-pencilEditor"
+            checked={draft.pencilEditorEnabled}
+            onCheckedChange={(v) => set("pencilEditorEnabled", v)}
+            aria-label="فعال‌سازی ویرایشگر مدادی متن‌ها"
+          />
+        </div>
+        <p className="text-[0.7rem] leading-5 text-muted-foreground">
+          آیکون مداد فقط برای نقش مدیر نمایش داده می‌شود؛ کاربران عادی آن را
+          نمی‌بینند. متن و فونت اسلوگان و معرفی هیرو با بخش «هویت سایت» بالا
+          کاملاً همگام است — ویرایش از هر دو سمت نتیجه‌ی یکسانی دارد.
+        </p>
+      </SettingsSection>
+
+      {/* ۳ — آمار و اعداد */}
       <SettingsSection icon={BarChart3} title="آمار و اعداد">
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="تعداد دانشجو" htmlFor="set-studentsCount">
@@ -367,7 +407,7 @@ export function SettingsModule() {
         </div>
       </SettingsSection>
 
-      {/* ۳ — اطلاعات تماس */}
+      {/* ۴ — اطلاعات تماس */}
       <SettingsSection icon={Phone} title="اطلاعات تماس">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="تلفن" htmlFor="set-contactPhone">
@@ -377,7 +417,7 @@ export function SettingsModule() {
               className="text-left"
               value={draft.contactPhone}
               onChange={(e) => set("contactPhone", e.target.value)}
-              placeholder="وارد کنید"
+              placeholder="شماره تماس"
             />
           </Field>
           <Field label="ایمیل" htmlFor="set-contactEmail">
@@ -410,7 +450,7 @@ export function SettingsModule() {
         </div>
       </SettingsSection>
 
-      {/* ۴ — شبکه‌های اجتماعی */}
+      {/* ۵ — شبکه‌های اجتماعی */}
       <SettingsSection icon={Share2} title="شبکه‌های اجتماعی">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="اینستاگرام" htmlFor="set-instagramUrl">
@@ -456,7 +496,7 @@ export function SettingsModule() {
         </div>
       </SettingsSection>
 
-      {/* ۵ — فوتر */}
+      {/* ۶ — فوتر */}
       <SettingsSection icon={PanelBottom} title="فوتر">
         <Field label="متن فوتر" htmlFor="set-footerDescription">
           <Textarea

@@ -66,7 +66,14 @@ export function DashboardModule({ setActive }: ModuleProps) {
           label: "دوره‌ها",
           tile: "from-teal-400 to-emerald-600",
           value: stats.courses.total,
-          subtitle: `${faDigits(stats.courses.online)} آنلاین · ${faDigits(stats.courses.inperson)} حضوری`,
+          subtitle: [
+            `${faDigits(stats.courses.online)} آنلاین`,
+            `${faDigits(stats.courses.inperson)} حضوری`,
+            // دوره‌های ترکیبی — فقط وقتی دیده می‌شود که وجود داشته باشند
+            ...(stats.courses.hybrid > 0
+              ? [`${faDigits(stats.courses.hybrid)} حضوری و آنلاین`]
+              : []),
+          ].join(" · "),
         },
         {
           icon: MonitorPlay,

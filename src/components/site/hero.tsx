@@ -1,46 +1,12 @@
 "use client";
 
-import * as React from "react";
 import {
   Play,
   Rocket,
-  BadgeCheck,
-  Bot,
-  Code,
 } from "lucide-react";
 import type { SiteSettings } from "@prisma/client";
 import { Button } from "@/components/ui/button";
-import { ParallaxLayer } from "@/components/parallax";
-
-function FloatingChip({
-  depth,
-  className,
-  animClass,
-  duration,
-  delay,
-  children,
-}: {
-  depth: number;
-  className?: string;
-  animClass: string;
-  duration: number;
-  delay: number;
-  children: React.ReactNode;
-}) {
-  return (
-    <ParallaxLayer
-      depth={depth}
-      className={`pointer-events-none absolute hidden lg:block ${className ?? ""}`}
-    >
-      <div
-        className={animClass}
-        style={{ animationDuration: `${duration}s`, animationDelay: `${delay}s` }}
-      >
-        {children}
-      </div>
-    </ParallaxLayer>
-  );
-}
+import { EditableText } from "@/components/site/editable-texts";
 
 export function Hero({
   settings,
@@ -56,49 +22,26 @@ export function Hero({
   const sloganTail =
     commaIndex >= 0 ? settings.slogan.slice(commaIndex + 1).trim() : "";
 
+  // شکستن اسلوگان به دو خط (تیتر + بخش درخشان) — برای متن سفارشی مداد هم اعمال می‌شود
+  const splitSlogan = (text: string) => {
+    const i = text.indexOf("،");
+    const head = i >= 0 ? text.slice(0, i + 1) : text;
+    const tail = i >= 0 ? text.slice(i + 1).trim() : "";
+    return (
+      <>
+        {head}
+        {tail ? (
+          <span className="text-shine mt-2 block pb-2">{tail}</span>
+        ) : null}
+      </>
+    );
+  };
+
   return (
     <section
       id="home"
       className="relative flex items-center justify-center overflow-visible px-4 pb-8 pt-36 md:pb-10"
     >
-      {/* floating parallax chips (desktop) */}
-      <FloatingChip depth={42} className="right-[7%] top-[30%]" animClass="animate-float-rotate" duration={7} delay={-2}>
-        <div className="glass flex items-center gap-3 rounded-2xl px-4 py-3 shadow-xl shadow-black/10 dark:shadow-black/30">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-teal-400 to-emerald-600">
-            <Bot className="size-5 text-teal-950" />
-          </span>
-          <span className="text-xs font-bold text-foreground/90">
-            هوش مصنوعی
-            <span className="block text-[0.6rem] font-medium text-muted-foreground">
-              محبوب‌ترین دوره
-            </span>
-          </span>
-        </div>
-      </FloatingChip>
-
-      <FloatingChip depth={62} className="left-[6%] top-[38%]" animClass="animate-float" duration={6} delay={-1}>
-        <div className="glass flex items-center gap-3 rounded-2xl px-4 py-3 shadow-xl shadow-black/10 dark:shadow-black/30">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-400 to-purple-600">
-            <Code className="size-5 text-violet-950" />
-          </span>
-          <span className="text-xs font-bold text-foreground/90">
-            طراحی وب
-            <span className="block text-[0.6rem] font-medium text-muted-foreground">
-              پروژه‌محور و عملی
-            </span>
-          </span>
-        </div>
-      </FloatingChip>
-
-      <FloatingChip depth={52} className="bottom-[30%] left-[10%]" animClass="animate-float" duration={8} delay={-4}>
-        <div className="glass flex items-center gap-2.5 rounded-2xl px-4 py-3 shadow-xl shadow-black/10 dark:shadow-black/30">
-          <BadgeCheck className="size-5 text-violet-600 dark:text-violet-300" />
-          <span className="text-xs font-bold text-foreground/90">
-            مربیان متخصص و حرفه‌ای
-          </span>
-        </div>
-      </FloatingChip>
-
       {/* main content — ورود پلکانی فقط با CSS؛ بدون انتظار برای بارگذاری JS */}
       <div className="relative z-10 mx-auto max-w-4xl text-center">
         <h1
@@ -108,17 +51,21 @@ export function Hero({
             fontFamily,
           }}
         >
-          {sloganHead}
-          {sloganTail ? (
-            <span className="text-shine mt-2 block pb-2">{sloganTail}</span>
-          ) : null}
+          <EditableText k="hero.slogan" renderText={splitSlogan}>
+            {sloganHead}
+            {sloganTail ? (
+              <span className="text-shine mt-2 block pb-2">{sloganTail}</span>
+            ) : null}
+          </EditableText>
         </h1>
 
         <p
           className="animate-hero-in mx-auto mt-6 max-w-2xl text-sm leading-8 text-muted-foreground md:text-base md:leading-9"
           style={{ animationDelay: "0.24s" }}
         >
-          {settings.heroDescription}
+          <EditableText k="hero.description">
+            {settings.heroDescription}
+          </EditableText>
         </p>
 
         <div

@@ -18,6 +18,8 @@ import {
 import type { Course, NavLink, SiteSettings } from "@prisma/client";
 import { faDigits } from "@/lib/fa";
 import { anchorProps } from "@/lib/nav-links";
+import { TrustSeal } from "@/components/site/trust-seal";
+import { EditableText } from "@/components/site/editable-texts";
 
 interface SocialLink {
   icon: LucideIcon;
@@ -102,8 +104,36 @@ export function Footer({
               </span>
             </div>
             <p className="mt-5 text-xs leading-7 text-muted-foreground">
-              {settings.footerDescription}
+              <EditableText k="footer.description">
+                {settings.footerDescription}
+              </EditableText>
             </p>
+
+            {/* نمادهای اعتماد — طبق درخواست، زیر متن معرفی؛ زرین‌پال سمت
+                راست اینماد (در RTL، فرزند اول flex در سمت راست قرار می‌گیرد).
+                کدهای رسمی عیناً رندر می‌شوند و تا بارگذاری تصویر/در خطا، نشان
+                جایگزین دیده می‌شود تا جای لوگو هیچ‌وقت خالی نماند. */}
+            {settings.zarinpalCode || settings.enamadCode ? (
+              <div className="mt-5 flex flex-wrap items-center gap-3">
+                {settings.zarinpalCode ? (
+                  <TrustSeal
+                    html={settings.zarinpalCode}
+                    tone="amber"
+                    fallbackLabel="زرین‌پال"
+                    provider="زرین‌پال"
+                  />
+                ) : null}
+                {settings.enamadCode ? (
+                  <TrustSeal
+                    html={settings.enamadCode}
+                    tone="teal"
+                    fallbackLabel="اینماد"
+                    provider="اینماد"
+                  />
+                ) : null}
+              </div>
+            ) : null}
+
             {socials.length > 0 ? (
               <div className="mt-5 flex items-center gap-2">
                 {socials.map((s) => (
@@ -165,25 +195,48 @@ export function Footer({
               {settings.contactPhone ? (
                 <li className="flex items-center gap-2.5">
                   <Phone className="size-4 shrink-0 text-teal-600 dark:text-teal-300" />
-                  <span dir="ltr">{faDigits(settings.contactPhone)}</span>
+                  <span dir="ltr">
+                    <EditableText
+                      k="footer.contactPhone"
+                      renderText={(t) => faDigits(t)}
+                    >
+                      {faDigits(settings.contactPhone)}
+                    </EditableText>
+                  </span>
                 </li>
               ) : null}
               {settings.contactEmail ? (
                 <li className="flex items-center gap-2.5">
                   <Mail className="size-4 shrink-0 text-teal-600 dark:text-teal-300" />
-                  <span dir="ltr">{settings.contactEmail}</span>
+                  <span dir="ltr">
+                    <EditableText k="footer.contactEmail">
+                      {settings.contactEmail}
+                    </EditableText>
+                  </span>
                 </li>
               ) : null}
               {settings.address ? (
                 <li className="flex items-start gap-2.5">
                   <MapPin className="size-4 shrink-0 translate-y-0.5 text-teal-600 dark:text-teal-300" />
-                  <span className="leading-6">{settings.address}</span>
+                  <span className="leading-6">
+                    <EditableText k="footer.address">
+                      {settings.address}
+                    </EditableText>
+                  </span>
                 </li>
               ) : null}
               {settings.supportHours ? (
                 <li className="flex items-center gap-2.5">
                   <Clock className="size-4 shrink-0 text-teal-600 dark:text-teal-300" />
-                  <span>پشتیبانی: {faDigits(settings.supportHours)}</span>
+                  <span>
+                    پشتیبانی:{" "}
+                    <EditableText
+                      k="footer.supportHours"
+                      renderText={(t) => faDigits(t)}
+                    >
+                      {faDigits(settings.supportHours)}
+                    </EditableText>
+                  </span>
                 </li>
               ) : null}
             </ul>
@@ -196,6 +249,7 @@ export function Footer({
           <p className="text-[0.7rem] text-muted-foreground">
             © {faDigits(1404)} آکادمی {settings.siteName} — تمامی حقوق محفوظ است.
           </p>
+
           <p className="flex items-center gap-1.5 text-[0.7rem] text-muted-foreground">
             ساخته‌شده با
             <Heart className="size-3.5 fill-red-400 text-red-400" />
