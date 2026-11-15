@@ -343,49 +343,45 @@ async function reconcileFlow(): Promise<void> {
     console.log(
       `— گام ۳: آشتی‌سازی ${pending.length} مهاجرتِ ثبت‌نشده (${pending.join("، ")}) …`
     );
-    const db = new Database(DB_PATH);
-    try {
-      db.exec("PRAGMA busy_timeout = 5000");
-      ensureHistoryTable(db);
-
-      for (const name of pending) {
+    for (const name of pending) {
+      let skipped = 0;
+      try {
         const sqlPath = join(MIGRATIONS_DIR, name, "migration.sql");
         const statements = parseStatements(readFileSync(sqlPath, "utf8"));
-        let skipped = 0;
-        for (const stmt of statements) {
-          try {
-            db.exec(stmt);
-          } catch (error) {
-            const message = (error as Error | undefined)?.message ?? String(error);
-            if (isAlreadyAppliedError(message)) {
-              // اثر جمله از قبل در دیتابیس هست (مثل ستون zarinpalCode که
-              // ساختارش جلوتر از تاریخچه بوده) — بی‌خطر رد می‌شود
+        const db = new Database(DB_PATH);
+        try {
+          db.exec("PRAGMA busy_timeout = 5000");
+          ensureHistoryTable(db);
+          for (const stmt of statements) {
+            try {
+              db.exec(stmt);
+            } catch (error) {
+              const message = (error as Error | undefined)?.message ?? String(error);
+              if (!isAlreadyAppliedError(message)) {
+                throw new Error(`جمله:\n${stmt.slice(0, 400)}\nخطا: ${message}`);
+              }
               skipped += 1;
-              continue;
             }
-            abortWithRestore(
-              backup,
-              `جمله‌ای از مهاجرت «${name}» با خطای واقعی رد شد`,
-              `جمله:\n${stmt.slice(0, 400)}\nخطا: ${message}`
-            );
           }
+        } finally {
+          // Release SQLite locks before Prisma opens its own writing connection.
+          db.close(true);
         }
+      } catch (error) {
+        abortWithRestore(backup, `اجرای مهاجرت «${name}» ناموفق بود`, String(error));
+      }
 
-        // ثبت مهاجرت در تاریخچه‌ی Prisma (بدون اجرای دوباره توسط deploy)
-        const res = prisma(["migrate", "resolve", "--applied", name]);
-        if (res.status !== 0) {
-          abortWithRestore(
-            backup,
-            `ثبت «${name}» در تاریخچه ناموفق بود`,
-            (res.stderr || res.stdout).trim()
-          );
-        }
-        console.log(
-          `✔ تاریخچه‌ی Prisma: «${name}» به‌عنوان اعمال‌شده ثبت شد${skipped > 0 ? ` (${skipped} جمله‌ی هم‌اکنون‌موجود رد شد)` : ""}.`
+      const res = prisma(["migrate", "resolve", "--applied", name]);
+      if (res.status !== 0) {
+        abortWithRestore(
+          backup,
+          `ثبت «${name}» در تاریخچه ناموفق بود`,
+          (res.stderr || res.stdout).trim()
         );
       }
-    } finally {
-      db.close();
+      console.log(
+        `✔ تاریخچه‌ی Prisma: «${name}» به‌عنوان اعمال‌شده ثبت شد${skipped > 0 ? ` (${skipped} جمله‌ی هم‌اکنون‌موجود رد شد)` : ""}.`
+      );
     }
   }
 
