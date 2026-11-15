@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 # ---------------------------------------------------------------------------
 # آوید — ایمیج اپلیکیشن Next.js (خروجی standalone)
 # مراحل: deps → build → (tools برای عملیات migrate/bootstrap/backup) → runner
