@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
  * ساختار فایل بکاپ (JSON):
  *  {
  *    format: "avid-backup",
- *    version: 1,
+ *    version: 2,
  *    exportedAt: "<ISO>",
  *    tables: { users: [...], courses: [...], ... }
  *  }
@@ -14,10 +14,11 @@ import { db } from "@/lib/db";
  * دامنه:
  *  • شامل همه‌ی داده‌های محتوایی سایت است: تنظیمات، متن‌های ویرایشگر
  *    ظاهری مدادی (SiteText — متن/رنگ/فونت/اندازه/مخفی‌بودن جایگاه‌ها)،
- *    دوره‌ها و گروه‌ها و قالب اقساط، ویدئوها و لیست‌های پخش، کاربران و
- *    ثبت‌نام‌ها و اقساط و حضور و غیاب، کدهای تخفیف، فونت‌ها، لینک‌های
- *    هدر/فوتر، نظرات، تنظیمات پیامک/پرداخت/چت، گزارش پیامک‌ها و
- *    گفتگوهای چت.
+ *    دوره‌ها و گروه‌ها و قالب اقساط، ویدئوها و لیست‌های پخش، آزمون‌ها و
+ *    سؤال‌ها و پاسخ‌های کاربران، نمونه‌سؤال‌ها (دسته‌ها و فایل‌ها)،
+ *    گواهی‌نامه‌ها، کاربران و ثبت‌نام‌ها و اقساط و حضور و غیاب، کدهای
+ *    تخفیف، فونت‌ها، لینک‌های هدر/فوتر، نظرات، تنظیمات پیامک/پرداخت/چت،
+ *    گزارش پیامک‌ها و گفتگوهای چت.
  *  • خارج از بکاپ (عمداً): حساب‌ها و نشست‌های مدیر (AdminUser/AdminSession)،
  *    نشست‌های کاربران (UserSession) و کدهای یک‌بارمصرف (OtpCode).
  *    نتیجه: مدیرِ در حال بازیابی از پنل خارج نمی‌شود و رمز عبور مدیر
@@ -26,12 +27,16 @@ import { db } from "@/lib/db";
  *    این لایه فقط رکوردهای دیتابیس را مدیریت می‌کند (مسیر فایل‌ها در
  *    روت API انجام می‌شود).
  *
- * بازیابی، کل داده‌های فعلیِ همان جدول‌ها را «جایگزین» می‌کند —
+ * بازیابی، داده‌های فعلیِ «جدول‌های موجود در فایل» را «جایگزین» می‌کند —
  * داخل یک تراکنش واحد: یا همه‌چیز برمی‌گردد یا هیچ‌چیز تغییر نمی‌کند.
+ * جدول‌هایی که در فایل بکاپ «نباشند» دست‌نخورده می‌مانند (بکاپ‌های قدیمیِ
+ * فاقد بخش آزمون‌ها/نمونه‌سؤال‌ها/گواهی‌نامه‌ها، داده‌ی فعلی این بخش‌ها را
+ * پاک نمی‌کنند) — مگر آنکه «حذف رکوردهای والد» به‌صورت آبشاری آن‌ها را
+ * تهدید کند؛ آن حالت پیش از هر تغییری بررسی و بدون تأیید صریح رد می‌شود.
  */
 
 export const BACKUP_FORMAT = "avid-backup";
-export const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 2;
 
 /** کلیدهای prisma-ی جدول‌های بکاپ */
 export type BackupTableKey =
@@ -49,7 +54,13 @@ export type BackupTableKey =
   | "courseInstallment"
   | "playlist"
   | "video"
+  | "exam"
+  | "examQuestion"
+  | "sampleQuestionCategory"
+  | "sampleQuestion"
   | "user"
+  | "examAttempt"
+  | "certificate"
   | "enrollment"
   | "installment"
   | "attendanceSession"
@@ -58,13 +69,7 @@ export type BackupTableKey =
   | "chatConversation"
   | "chatMessage"
   | "chatWelcomeLog"
-  | "uploadedFile"
-  | "sampleQuestionCategory"
-  | "sampleQuestion"
-  | "certificate"
-  | "exam"
-  | "examQuestion"
-  | "examAttempt";
+  | "uploadedFile";
 
 interface TableSpec {
   key: BackupTableKey;
@@ -91,7 +96,15 @@ const CREATE_ORDER: TableSpec[] = [
   { key: "courseInstallment", label: "قالب اقساط دوره" },
   { key: "playlist", label: "لیست‌های پخش" },
   { key: "video", label: "ویدئوها" },
+  { key: "exam", label: "آزمون‌ها" },
+  { key: "examQuestion", label: "سؤال‌های آزمون" },
+  { key: "sampleQuestionCategory", label: "دسته‌های نمونه‌سؤال" },
+  { key: "sampleQuestion", label: "نمونه‌سؤال‌ها" },
   { key: "user", label: "کاربران" },
+  // پاسخ‌های آزمون: والد = Exam (پایین‌تر) و User (بالا‌تر) — بعد از هر دو
+  { key: "examAttempt", label: "پاسخ‌های کاربران به آزمون‌ها" },
+  // گواهی‌نامه: والد = User و Course — بعد از هر دو
+  { key: "certificate", label: "گواهی‌نامه‌ها" },
   { key: "enrollment", label: "ثبت‌نام‌ها" },
   { key: "installment", label: "اقساط" },
   { key: "attendanceSession", label: "جلسات حضور و غیاب" },
@@ -100,12 +113,6 @@ const CREATE_ORDER: TableSpec[] = [
   { key: "chatConversation", label: "گفتگوهای چت" },
   { key: "chatMessage", label: "پیام‌های چت" },
   { key: "chatWelcomeLog", label: "لاگ خوش‌آمدگویی چت" },
-  { key: "sampleQuestionCategory", label: "دسته‌بندی نمونه سؤال" },
-  { key: "sampleQuestion", label: "نمونه سؤال" },
-  { key: "certificate", label: "گواهی‌نامه" },
-  { key: "exam", label: "آزمون" },
-  { key: "examQuestion", label: "سؤال آزمون" },
-  { key: "examAttempt", label: "پاسخ آزمون" },
   { key: "uploadedFile", label: "گالری فایل‌ها" },
 ];
 
@@ -125,10 +132,62 @@ const DELETE_ORDER: string[] = [
   "otpCode",
 ];
 
+/**
+ * جدول‌هایی که «نبودنشان در فایل بکاپ قدیمی» باید پیش از بازیابی بررسی
+ * شود — حذف رکوردهای والد (دوره/کاربر/آزمون/دسته) نباید داده‌ی فعلیِ
+ * این بخش‌ها را به‌صورت آبشاری پاک کند.
+ */
+const PROTECTED_TABLES: {
+  key: BackupTableKey;
+  label: string;
+  /** والد‌هایی که حذفشان روی این جدول اثر می‌گذارد */
+  parents: { key: BackupTableKey; onDelete: "cascade" | "setnull" }[];
+}[] = [
+  {
+    key: "exam",
+    label: "آزمون‌ها",
+    parents: [{ key: "course", onDelete: "cascade" }],
+  },
+  {
+    key: "examQuestion",
+    label: "سؤال‌های آزمون",
+    parents: [{ key: "exam", onDelete: "cascade" }],
+  },
+  {
+    key: "examAttempt",
+    label: "پاسخ‌های کاربران به آزمون‌ها",
+    parents: [
+      { key: "exam", onDelete: "cascade" },
+      { key: "user", onDelete: "cascade" },
+    ],
+  },
+  {
+    key: "sampleQuestionCategory",
+    label: "دسته‌های نمونه‌سؤال",
+    parents: [],
+  },
+  {
+    key: "sampleQuestion",
+    label: "نمونه‌سؤال‌ها",
+    parents: [
+      { key: "sampleQuestionCategory", onDelete: "setnull" },
+    ],
+  },
+  {
+    key: "certificate",
+    label: "گواهی‌نامه‌ها",
+    parents: [
+      { key: "user", onDelete: "cascade" },
+      { key: "course", onDelete: "setnull" },
+    ],
+  },
+];
+
 /** مدل‌های prisma به‌صورت امن-نوع برای فراخوانی پویا در تراکنش */
 interface BatchModel {
   deleteMany(args?: { where?: unknown }): Promise<unknown>;
   createMany(args: { data: unknown[] }): Promise<unknown>;
+  count(args?: { where?: unknown }): Promise<number>;
 }
 
 function modelOf(tx: unknown, key: string): BatchModel {
@@ -176,9 +235,7 @@ export async function backupCounts(): Promise<
   const counts: Partial<Record<BackupTableKey, number>> = {};
   for (const { key } of CREATE_ORDER) {
     const model = modelOf(db, key);
-    counts[key] = Number(
-      await (model as unknown as { count(): Promise<number> }).count()
-    );
+    counts[key] = Number(await model.count());
   }
   return counts;
 }
@@ -260,35 +317,126 @@ export interface ImportSummary {
   labels: Partial<Record<BackupTableKey, string>>;
 }
 
+/** یک مورد «از دست رفتن داده‌ی فعلی» در صورت بازیابی بکاپ قدیمی */
+export interface DataLossItem {
+  /** کلید جدولی که داده‌ی فعلی‌اش در خطر است */
+  key: string;
+  /** برچسب فارسی همان بخش */
+  label: string;
+  /** شمار رکوردهای فعلی در خطر */
+  currentCount: number;
+  /** کلیدهای جدول‌های والدی که حذف می‌شوند */
+  parentKeys: string[];
+  /** آیا حذف والد رکوردها را «پاک» می‌کند (cascade) یا فقط پیوند را قطع (setnull) */
+  mode: "cascade" | "setnull";
+}
+
 /**
- * جایگزینی کل داده‌های محتوایی با محتوای فایل بکاپ —
+ * خطای «بازیابی نیازمند تأیید» — بکاپ قدیمی، داده‌ی فعلیِ بخش‌های
+ * حفاظت‌شده را حذف/آسیب می‌زند؛ مدیر باید با force=1 صریحاً تأیید کند.
+ */
+export class BackupDataLossError extends Error {
+  readonly losses: DataLossItem[];
+  constructor(losses: DataLossItem[]) {
+    super(
+      "بازیابی این بکاپ، داده‌های فعلی برخی بخش‌ها را پاک می‌کند؛ برای ادامه تأیید صریح لازم است."
+    );
+    this.name = "BackupDataLossError";
+    this.losses = losses;
+  }
+}
+
+/**
+ * بررسی پیش از بازیابی: آیا جایگزینی والد‌های موجود در فایل، داده‌ی
+ * فعلیِ بخش‌های «حفاظت‌شده‌ی غایب از فایل» را آبشاری پاک می‌کند؟
+ *
+ * سناریوی هدف: فایل بکاپ از نسخه‌ی قدیمی است و بخش آزمون‌ها/سؤال‌ها/
+ * پاسخ‌ها/نمونه‌سؤال‌ها/گواهی‌نامه‌ها را ندارد؛ ولی دوره‌ها و کاربران
+ * (والدها) را جایگزین می‌کند — حذف والدها به‌صورت آبشاری داده‌ی فعلیِ
+ * این بخش‌ها را پاک می‌کرد. این حالت تنها با تأیید صریح مجاز است.
+ */
+async function checkProtectedDataLoss(
+  payload: BackupPayload
+): Promise<DataLossItem[]> {
+  const restoreSet = new Set(
+    Object.keys(payload.tables) as BackupTableKey[]
+  );
+  const losses: DataLossItem[] = [];
+
+  for (const protectedTable of PROTECTED_TABLES) {
+    // بخش در فایل هست → به‌طور کامل جایگزین می‌شود (رفتار عادی بازیابی)
+    if (restoreSet.has(protectedTable.key)) continue;
+
+    // شمار رکوردهای فعلیِ این بخش
+    let currentCount = 0;
+    try {
+      currentCount = Number(await modelOf(db, protectedTable.key).count());
+    } catch {
+      continue; // جدول در این نسخه/دیتابیس وجود ندارد — مشکلی نیست
+    }
+    if (currentCount === 0) continue;
+
+    // کدام والدها جایگزین می‌شوند؟
+    const affectedParents = protectedTable.parents.filter((p) =>
+      restoreSet.has(p.key)
+    );
+    if (affectedParents.length === 0) continue;
+
+    // حذف آبشاری از جدولِ اولِ مؤثر مهم‌تر است (پاک‌شدن کامل رکورد)
+    const cascade = affectedParents.find((p) => p.onDelete === "cascade");
+    losses.push({
+      key: protectedTable.key,
+      label: protectedTable.label,
+      currentCount,
+      parentKeys: affectedParents.map((p) => p.key),
+      mode: cascade ? "cascade" : "setnull",
+    });
+  }
+  return losses;
+}
+
+/**
+ * جایگزینی داده‌های محتوایی با محتوای فایل بکاپ —
  * داخل یک تراکنش: پاک‌سازی فرزند→والد، سپس درج والد→فرزند.
- * نشست مدیر دست‌نخورده می‌ماند؛ نشست کاربران و کدهای OTP فعال پاک می‌شوند.
+ *
+ *  • فقط جدول‌های «موجود در فایل» جایگزین می‌شوند؛ جدول‌های غایب از
+ *    فایل (بکاپ قدیمی) دست‌نخورده می‌مانند.
+ *  • نشست مدیر دست‌نخورده می‌ماند؛ نشست کاربران و کدهای OTP فعال
+ *    همیشه پاک می‌شوند (کاربرانِ بازیابی‌شده باید دوباره ورود کنند).
+ *  • اگر حذف والد‌ها داده‌ی فعلیِ بخش‌های حفاظت‌شده را تهدید کند و
+ *    force نباشد، BackupDataLossError پرتاب می‌شود (قبل از هر تغییری).
  */
 export async function importBackup(
-  payload: BackupPayload
+  payload: BackupPayload,
+  opts?: { force?: boolean }
 ): Promise<ImportSummary> {
+  // — بررسی پیش از هر تغییری: از دست رفتن داده‌ی فعلی بخش‌های حفاظت‌شده —
+  const losses = await checkProtectedDataLoss(payload);
+  if (losses.length > 0 && !opts?.force) {
+    throw new BackupDataLossError(losses);
+  }
+
   const restored: Partial<Record<BackupTableKey, number>> = {};
   const labels: Partial<Record<BackupTableKey, string>> = {};
 
+  // — فقط جدول‌های حاضر در فایل جایگزین می‌شوند (به ترتیب حذف معکوس) —
+  const restoreSet = new Set(
+    Object.keys(payload.tables) as BackupTableKey[]
+  );
+  const deleteOrder = DELETE_ORDER.filter(
+    (key) => key === "userSession" || key === "otpCode" || restoreSet.has(key as BackupTableKey)
+  );
+  const createOrder = CREATE_ORDER.filter((t) => restoreSet.has(t.key));
+
   await db.$transaction(
     async (tx) => {
-      // Older exports omit new tables. Avoid deleting data that cannot be restored.
-      for (const { key, label } of CREATE_ORDER) {
-        if (payload.tables[key] !== undefined) continue;
-        const model = modelOf(tx, key) as BatchModel & { count(): Promise<number> };
-        if (await model.count()) {
-          throw new Error(`بکاپ شامل «${label}» نیست و داده‌های فعلی این بخش قابل بازیابی نیستند.`);
-        }
-      }
-
-      // ۱) پاک‌سازی کامل (فرزند → والد) + نشست کاربران و کدهای یک‌بارمصرف
-      for (const key of DELETE_ORDER) {
+      // ۱) پاک‌سازی (فرزند → والد) + نشست کاربران و کدهای یک‌بارمصرف
+      for (const key of deleteOrder) {
         await modelOf(tx, key).deleteMany({});
       }
 
       // ۲) درج رکوردهای بکاپ (والد → فرزند)
-      for (const { key, label } of CREATE_ORDER) {
+      for (const { key, label } of createOrder) {
         const rows = payload.tables[key];
         if (!rows || rows.length === 0) continue;
         await modelOf(tx, key).createMany({ data: rows });

@@ -7,6 +7,7 @@ import {
   FileArchive,
   FileJson,
   FileUp,
+  FolderDown,
   HardDriveDownload,
   Loader2,
   RotateCcw,
@@ -52,6 +53,15 @@ interface ImportResult {
   exportedAt?: string;
 }
 
+/** یک مورد «از دست رفتن داده‌ی فعلی» در بازیابی بکاپ قدیمی */
+interface DataLossItem {
+  key: string;
+  label: string;
+  currentCount: number;
+  parentKeys: string[];
+  mode: "cascade" | "setnull";
+}
+
 /** برچسب فارسی جدول‌ها — برای آمار و پیام موفقیت */
 const TABLE_LABELS: Record<string, string> = {
   siteSettings: "تنظیمات سایت",
@@ -68,6 +78,12 @@ const TABLE_LABELS: Record<string, string> = {
   courseInstallment: "قالب اقساط",
   playlist: "لیست پخش",
   video: "ویدئو",
+  exam: "آزمون",
+  examQuestion: "سؤال آزمون",
+  examAttempt: "پاسخ آزمون",
+  sampleQuestionCategory: "دسته نمونه‌سؤال",
+  sampleQuestion: "نمونه‌سؤال",
+  certificate: "گواهی‌نامه",
   user: "کاربر",
   enrollment: "ثبت‌نام",
   installment: "قسط",
@@ -77,6 +93,7 @@ const TABLE_LABELS: Record<string, string> = {
   chatConversation: "گفتگو",
   chatMessage: "پیام چت",
   chatWelcomeLog: "لاگ خوش‌آمدگویی",
+  uploadedFile: "فایل گالری",
 };
 
 /** قالب بایت به رشته‌ی خوانا */
@@ -97,7 +114,27 @@ export function BackupModule() {
   const [file, setFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  /** فهرست «از دست رفتن داده‌ی فعلی» هنگام بازیابی بکاپ قدیمی */
+  const [losses, setLosses] = useState<DataLossItem[] | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  /* — در دسترس‌بودن فایل ZIP پروژه (public/Download/avid-latest.zip) —
+     در محیط توسعه/سندباکس موجود است؛ روی برخی استقرارها ممکن است نباشد — */
+  const [zipAvailable, setZipAvailable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/Download/avid-latest.zip", { method: "HEAD" })
+      .then((r) => {
+        if (!cancelled) setZipAvailable(r.ok);
+      })
+      .catch(() => {
+        if (!cancelled) setZipAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -120,28 +157,44 @@ export function BackupModule() {
     void load();
   }, [load]);
 
-  /** اجرای بازیابی پس از تأیید مدیر */
-  async function runImport() {
+  /** اجرای بازیابی — force=1 یعنی تأیید صریحِ از دست رفتن داده‌ی بخش‌های
+      غایب از فایل بکاپ قدیمی (آزمون‌ها/نمونه‌سؤال‌ها/گواهی‌نامه‌ها) */
+  async function runImport(force = false) {
     if (!file || importing) return;
     setImporting(true);
     try {
       // formData — بدون Content-Type دستی (مرزبند multipart خودکار)
       const form = new FormData();
       form.append("file", file);
+      if (force) form.append("force", "1");
       const res = await fetch("/api/admin/backup/import", {
         method: "POST",
         body: form,
       });
       const data = (await res.json().catch(() => ({}))) as {
-        error?: string } & Partial<ImportResult>;
+        error?: string;
+        code?: string;
+        losses?: DataLossItem[];
+      } & Partial<ImportResult>;
 
       if (!res.ok) {
         if (res.status === 401) {
           window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT));
         }
+        // بکاپ قدیمی فاقد بخش‌های حفاظت‌شده — تأیید صریح لازم است
+        if (
+          res.status === 409 &&
+          data.code === "data-loss" &&
+          Array.isArray(data.losses)
+        ) {
+          setImporting(false);
+          setLosses(data.losses);
+          return;
+        }
         throw new Error(data.error || "خطا در بازیابی بکاپ.");
       }
 
+      setLosses(null);
       const restored = data.restored ?? {};
       const parts = Object.entries(restored)
         .filter(([, count]) => count > 0)
@@ -207,6 +260,7 @@ export function BackupModule() {
             </h2>
             <p className="text-xs leading-6 text-muted-foreground">
               داده‌های دیتابیس (کاربران، ثبت‌نام‌ها، دوره‌ها، ویدئوها، اقساط،
+              آزمون‌ها و سؤال‌ها و پاسخ‌ها، نمونه‌سؤال‌ها، گواهی‌نامه‌ها،
               تنظیمات و…) و در حالت کامل، فایل‌های آپلودی (تصاویر، ویدئوها،
               فونت‌ها) هم داخل بسته‌ی ZIP قرار می‌گیرند.
             </p>
@@ -266,6 +320,42 @@ export function BackupModule() {
           ) : null}
         </div>
 
+        {/* — دانلود پروژه (سورس کامل) — ادغام‌شده از منوی پنل — */}
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-teal-600/30 bg-teal-500/[0.04] px-3.5 py-3 dark:border-teal-400/30 dark:bg-teal-400/[0.06]">
+          <span className="flex size-9 items-center justify-center rounded-xl bg-teal-500/10">
+            <FolderDown className="size-4.5 text-teal-600 dark:text-teal-300" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-black text-foreground">
+              دانلود پروژه (سورس کامل — ZIP)
+            </p>
+            <p className="text-[0.65rem] leading-5 text-muted-foreground">
+              آخرین نسخه‌ی کامل کدهای پروژه (آماده‌ی استقرار روی سرور) — به‌روز با
+              آخرین تغییرات و ترمیم‌ها.
+            </p>
+          </div>
+          {zipAvailable === null ? (
+            <span className="inline-flex h-9 items-center gap-2 rounded-xl border border-foreground/15 px-4 text-xs font-bold text-muted-foreground">
+              <Loader2 className="size-3.5 animate-spin" />
+              در حال بررسی…
+            </span>
+          ) : zipAvailable ? (
+            <a
+              href="/Download/avid-latest.zip"
+              download
+              className="inline-flex h-9 items-center gap-2 rounded-xl border border-teal-600/40 bg-teal-500/10 px-4 text-xs font-bold text-teal-700 transition-all hover:bg-teal-500/20 dark:border-teal-400/40 dark:bg-teal-400/10 dark:text-teal-300 dark:hover:bg-teal-400/20"
+            >
+              <FolderDown className="size-4" />
+              دانلود
+            </a>
+          ) : (
+            <span className="text-[0.65rem] leading-5 text-muted-foreground">
+              فایل ZIP پروژه روی این سرور قرار ندارد — از محیط توسعه/ریپو اصلی
+              قابل دریافت است.
+            </span>
+          )}
+        </div>
+
         <p className="rounded-xl bg-foreground/[0.03] px-3.5 py-3 text-[0.7rem] leading-6 text-muted-foreground">
           در فایل بکاپ، رمز عبور مدیر و نشست‌های ورود قرار نمی‌گیرد و بازیابی
           هیچ‌گاه شما را از پنل خارج نمی‌کند. نسخه‌ی ZIP برای انتقال کامل سایت
@@ -285,8 +375,11 @@ export function BackupModule() {
               بازیابی از بکاپ (ایمپورت)
             </h2>
             <p className="text-xs leading-6 text-muted-foreground">
-              فایل JSON یا ZIP بکاپ را بارگذاری کنید — همه‌ی داده‌های محتوایی
-              فعلی با محتوای فایل جایگزین می‌شود. حداکثر حجم ۵۱۲ مگابایت.
+              فایل JSON یا ZIP بکاپ را بارگذاری کنید — داده‌های جدول‌های
+              موجود در فایل با محتوای آن جایگزین می‌شود؛ بخش‌هایی که در فایل
+              بکاپ قدیمی نباشند (مثل آزمون‌ها/گواهی‌نامه‌ها) حفظ می‌شوند و
+              اگر بازیابی داده‌ی فعلی‌شان را تهدید کند، پیش از ادامه تأیید
+              می‌گیریم. حداکثر حجم ۵۱۲ مگابایت.
             </p>
           </div>
         </div>
@@ -340,11 +433,11 @@ export function BackupModule() {
                 بازیابی بکاپ و جایگزینی همه‌ی داده‌ها؟
               </AlertDialogTitle>
               <AlertDialogDescription>
-                همه‌ی داده‌های محتوایی فعلی (کاربران، ثبت‌نام‌ها، دوره‌ها،
-                ویدئوها، اقساط، تنظیمات و…) با محتوای فایل بکاپ جایگزین
-                می‌شود. این عمل قابل بازگشت نیست — پیش از ادامه، یک بکاپ
-                تازه دانلود کنید. حساب مدیر و نشست ورود شما دست‌نخورده
-                می‌ماند.
+                داده‌های محتواییِ جدول‌های موجود در فایل (کاربران،
+                ثبت‌نام‌ها، دوره‌ها، ویدئوها، اقساط، آزمون‌ها، گواهی‌نامه‌ها،
+                تنظیمات و…) با محتوای فایل بکاپ جایگزین می‌شود. این عمل
+                قابل بازگشت نیست — پیش از ادامه، یک بکاپ تازه دانلود کنید.
+                حساب مدیر و نشست ورود شما دست‌نخورده می‌ماند.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -355,6 +448,72 @@ export function BackupModule() {
                 }}
               >
                 بله، بازیابی کن
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* — تأیید صریحِ از دست رفتن داده‌ی فعلی (بکاپ قدیمی فاقد بخش‌های
+            آزمون‌ها/سؤال‌ها/پاسخ‌ها/نمونه‌سؤال‌ها/گواهی‌نامه‌ها) — */}
+        <AlertDialog
+          open={losses !== null}
+          onOpenChange={(open) => {
+            if (!open) setLosses(null);
+          }}
+        >
+          <AlertDialogContent dir="rtl" className="max-w-lg">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <ShieldAlert className="size-5 text-red-600 dark:text-red-400" />
+                این بکاپ قدیمی، داده‌های فعلی را پاک می‌کند
+              </AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-3 text-right">
+                  <p className="text-xs leading-6">
+                    این فایل بکاپ بخش‌های زیر را ندارد؛ با بازیابی آن،
+                    جایگزینی دوره‌ها/کاربران/آزمون‌ها داده‌ی فعلی این بخش‌ها
+                    را پاک (یا پیوندش را قطع) می‌کند:
+                  </p>
+                  <ul className="max-h-48 space-y-1.5 overflow-y-auto rounded-xl bg-foreground/[0.04] p-3 text-[0.7rem] leading-6">
+                    {(losses ?? []).map((loss) => (
+                      <li
+                        key={loss.key}
+                        className="flex items-center justify-between gap-2"
+                      >
+                        <span className="font-bold">
+                          {loss.label}
+                          <span className="mr-1 font-normal text-muted-foreground">
+                            {loss.mode === "cascade"
+                              ? "(پاک می‌شود)"
+                              : "(پیوندش قطع می‌شود)"}
+                          </span>
+                        </span>
+                        <span className="shrink-0 font-black text-red-600 dark:text-red-400">
+                          {faDigits(loss.currentCount)} رکورد
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[0.65rem] leading-5 text-muted-foreground">
+                    اگر نمی‌خواهید این داده‌ها از بین بروند، انصراف کنید و
+                    ابتدا از وضعیت فعلی بکاپ بگیرید. ادامه دادن یعنی تأیید
+                    صریح حذف این داده‌ها.
+                  </p>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setLosses(null)}>
+                انصراف — داده‌ها را نگه دار
+              </AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-red-600 text-white hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700"
+                onClick={() => {
+                  setLosses(null);
+                  void runImport(true);
+                }}
+              >
+                بله، ادامه بده و حذف را بپذیر
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

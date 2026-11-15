@@ -2,24 +2,29 @@
  * مهاجرتِ غیرمخرب دیتابیس «آوید» — اجرا در سرویس migrate (compose):
  *   bun scripts/migrate.ts
  *
- * سه حالت پشتیبانی می‌شود (حفظ داده در همه‌ی حالت‌ها):
+ * اصول این نسخه (prisma db push به‌کل از مسیر production حذف شده است):
  *
- *  ۱) نصب تازه — فایل دیتابیس نیست (یا جدولی ندارد):
- *       prisma migrate deploy → ساخت کامل اسکیمای + تاریخچه‌ی Prisma.
+ *  ۱) نصب تازه (فایل دیتابیس بدون جدول):
+ *       prisma migrate deploy → اجرای مرتبِ کل زنجیره‌ی migration ها.
  *
- *  ۲) دیتابیس با تاریخچه‌ی Prisma — مهاجرت‌های معلق اعمال می‌شوند.
+ *  ۲) دیتابیسِ موجود (هر وضعیتی): «آشتی‌سازی» (reconcile) —
+ *       بکاپ آنلاین (VACUUM INTO)
+ *       → شفا‌ی افزایشی ساختار: فقط «افزودنِ» جدول/ستون/ایندکس جاافتاده
+ *         (همان سازوکار بوتِ اپ؛ هرگز چیزی حذف/تغییر نمی‌دهد)
+ *       → بازپخشِ جمله‌به‌جمله‌ی مهاجرت‌هایِ «ثبت‌نشده» با تحملِ خطای
+ *         «هم‌اکنون موجود»: جمله‌ای که با «duplicate column/table/index»
+ *         رد شود یعنی اثرش از قبل در دیتابیس هست و بی‌خطر رد می‌شود
+ *         (ریشه‌ی خطای معروف «duplicate column zarinpalCode»: ساختار
+ *         دیتابیس‌های production گاهی جلوتر از تاریخچه‌ی Prisma بود)
+ *       → ثبت مهاجرت در تاریخچه (prisma migrate resolve --applied)
+ *       → تایید نهایی: «بعد از آشتی‌سازی» هیچ اختلاف ساختاری با schema
+ *         نباشد و شمارش سطرهای جدول‌های موجود تغییر نکرده باشد.
  *
- *  ۳) دیتابیسِ نسخه‌ی قبلی — جدول‌ها هست، جدول _prisma_migrations نه
- *     (دیتابیس‌های ساخته‌شده با db push در نسخه‌های پیشین):
- *       بکاپ (VACUUM INTO، بدون توقف اپ)
- *       → بررسی تطابق ساختار با schema فعلی (prisma migrate diff)
- *       → اعمال دستورهای غیرمخربِ اختلاف (CREATE TABLE / ADD COLUMN …)
- *       → ثبت migration اولیه در تاریخچه‌ی Prisma (migrate resolve --applied)
- *       → تایید حفظ داده (مقایسه‌ی شمارش سطرهای جدول‌ها).
- *
- *     اگر اختلاف شامل دستور مخرب باشد (حذف جدول/ستون/تغییر نام)، مهاجرت
- *     بدون کوچک‌ترین تغییری متوقف می‌شود و مسیر بکاپ اعلام می‌گردد.
- *     اگر در میانه‌ی کار خطایی رخ دهد، دیتابیس از بکاپ بازگردانده می‌شود.
+ *     هر خطای «غیر از هم‌اکنون‌موجود» → دیتابیس عیناً از بکاپ بازگردانده
+ *     می‌شود و مهاجرت با کد ۱ متوقف می‌شود (بدون تغییرِ نیمه‌کاره).
+ *     اگر در پایان اختلاف ساختاری باقی بماند، اسکریپتِ اختلاف چاپ و
+ *     دیتابیس بازگردانده می‌شود — یعنی باید migration جدیدی زنجیره را
+ *     کامل کند؛ هیچ تغییری خارج از فایل‌های migration اعمال نمی‌شود.
  */
 import { spawnSync } from "node:child_process";
 import { Database } from "bun:sqlite";
@@ -27,14 +32,12 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   rmSync,
-  writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { ensureSchema } from "./ensure-schema";
 
 const PROJECT_ROOT = join(import.meta.dir, "..");
 const SCHEMA_PATH = join(PROJECT_ROOT, "prisma", "schema.prisma");
@@ -90,46 +93,17 @@ function migrationNames(): string[] {
     .sort();
 }
 
-/** Older databases can retain their original contact-field defaults. */
-function legacyContactSchema(): string | null {
-  const db = new Database(DB_PATH, { readonly: true });
-  try {
-    const columns = db.query('PRAGMA table_info("SiteSettings")').all() as {
-      name: string;
-      dflt_value: string | null;
-    }[];
-    let schema = readFileSync(SCHEMA_PATH, "utf8");
-    let changed = false;
-    for (const field of ["contactPhone", "contactEmail", "address"]) {
-      const value = columns.find((column) => column.name === field)?.dflt_value;
-      if (!value || value === "''" || !/^'(?:[^']|'')*'$/.test(value)) continue;
-      const replacement = JSON.stringify(value.slice(1, -1).replace(/''/g, "'"));
-      const declaration = new RegExp(`(^\\s*${field}\\s+String\\s+@default\\()""(\\))`, "m");
-      schema = schema.replace(declaration, (_, start, end) => start + replacement + end);
-      changed = true;
-    }
-    return changed ? schema : null;
-  } finally {
-    db.close();
-  }
-}
-
-/** Compare with the release schema, allowing only historic contact defaults. */
+/** اسکریپتِ اختلاف «دیتابیس فعلی → schema هدف»؛ null یعنی بدون اختلاف */
 function driftScript(): string | null {
-  const compatibleSchema = legacyContactSchema();
-  const temporary = compatibleSchema ? mkdtempSync(join(tmpdir(), "avid-schema-")) : null;
-  const target = temporary ? join(temporary, "schema.prisma") : SCHEMA_PATH;
-  const res = (() => {
-    try {
-      if (compatibleSchema) writeFileSync(target, compatibleSchema, { mode: 0o600 });
-      return prisma([
-        "migrate", "diff", "--from-url", DB_URL,
-        "--to-schema-datamodel", target, "--script",
-      ]);
-    } finally {
-      if (temporary) rmSync(temporary, { recursive: true, force: true });
-    }
-  })();
+  const res = prisma([
+    "migrate",
+    "diff",
+    "--from-url",
+    DB_URL,
+    "--to-schema-datamodel",
+    SCHEMA_PATH,
+    "--script",
+  ]);
   if (res.status !== 0) {
     throw new Error(
       `prisma migrate diff ناموفق بود:\n${(res.stderr || res.stdout).trim()}`
@@ -167,6 +141,44 @@ function tableCounts(db: Database): Record<string, number> {
   return out;
 }
 
+/**
+ * مهاجرت‌های «با موفقیت ثبت‌شده» در تاریخچه‌ی Prisma —
+ * مهاجرتِ نشسته یا شکست‌خورده (بدون finished_at یا rollback‌شده) جزو
+ * «ثبت‌نشده» حساب می‌شود و بازپخش می‌شود.
+ */
+function doneMigrationNames(): Set<string> {
+  try {
+    const probe = new Database(DB_PATH, { readonly: true });
+    try {
+      const rows = probe
+        .query(
+          "SELECT migration_name FROM _prisma_migrations " +
+            "WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL"
+        )
+        .all() as Array<{ migration_name: string }>;
+      return new Set(rows.map((r) => r.migration_name));
+    } finally {
+      probe.close();
+    }
+  } catch {
+    return new Set<string>();
+  }
+}
+
+/** جدول تاریخچه‌ی Prisma را در صورت نبود می‌سازد (قبل از resolve) */
+function ensureHistoryTable(db: Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS "_prisma_migrations" (
+    "id" VARCHAR(36) PRIMARY KEY NOT NULL,
+    "checksum" VARCHAR(64) NOT NULL,
+    "finished_at" DATETIME,
+    "migration_name" VARCHAR(255),
+    "logs" TEXT,
+    "rolled_back_at" DATETIME,
+    "started_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "applied_steps_count" INTEGER NOT NULL DEFAULT 0
+)`);
+}
+
 /** بکاپ آنلاین و سازگار — VACUUM INTO (بدون توقف اپ) */
 function backupDb(dest: string): void {
   const db = new Database(DB_PATH, { readonly: true });
@@ -198,7 +210,7 @@ function stamp(): string {
     .replace(/(\d{8})(\d{6})/, "$1-$2");
 }
 
-/** گزینش جملات SQL از خروجی --script (خطوط کامنت/خالی حذف می‌شوند) */
+/** گزینش جملات SQL از فایل migration (خطوط کامنت/خالی حذف می‌شوند) */
 function parseStatements(sql: string): string[] {
   const stmts: string[] = [];
   let cur = "";
@@ -215,19 +227,16 @@ function parseStatements(sql: string): string[] {
   return stmts;
 }
 
-/** آیا جمله مخرب است؟ (حذف/تغییر نام — در مهاجرتِ غیرمخرب اجرا نمی‌شود) */
-function isDestructive(stmt: string): boolean {
-  const body = stmt
-    .split("\n")
-    .filter((l) => !l.trim().startsWith("--"))
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return (
-    /^DROP (TABLE|INDEX|VIEW|TRIGGER)\b/i.test(body) ||
-    /^ALTER TABLE .*\bDROP COLUMN\b/i.test(body) ||
-    /^ALTER TABLE .*\bRENAME\b/i.test(body)
-  );
+/**
+ * آیا خطای sqlite یعنی «اثر این جمله از قبل در دیتابیس هست»؟
+ *  • duplicate column name: X  → ستون X هم‌اکنون موجود است
+ *  • table X already exists    → جدول X هم‌اکنون موجود است
+ *  • index X already exists    → ایندکس X هم‌اکنون موجود است
+ * این جمله‌ها (و فقط همین‌ها) بی‌خطر رد می‌شوند؛ تایید نهاییِ ساختار در
+ * پایان آشتی‌سازی انجام می‌شود.
+ */
+function isAlreadyAppliedError(message: string): boolean {
+  return /duplicate column name|already exists/i.test(message);
 }
 
 function fail(msg: string): never {
@@ -235,15 +244,54 @@ function fail(msg: string): never {
   process.exit(1);
 }
 
+/** بازگردانی از بکاپ + خروج با کد ۱ (پیام یکدست برای همه مسیرهای شکست) */
+function abortWithRestore(
+  backup: string,
+  reason: string,
+  detail?: string
+): never {
+  console.error(`migrate: ${reason} — بازیابی از بکاپ …`);
+  if (detail) console.error(detail.split("\n").slice(-14).join("\n"));
+  try {
+    restoreBackup(backup);
+    console.error(`✔ دیتابیس عیناً از بکاپ بازگردانده شد (${backup}).`);
+  } catch (error) {
+    console.error(
+      `migrate: بازیابی از بکاپ ناموفق بود! فایل بکاپ: ${backup} — ${(error as Error).message}`
+    );
+  }
+  process.exit(1);
+}
+
 /* ------------------------------------------------------------------ */
-/*  حالت ۳: انتقال دیتابیس نسخه‌ی قبلی (بدون تاریخچه‌ی Prisma)           */
+/*  حالت ۱: نصب تازه — prisma migrate deploy                            */
 /* ------------------------------------------------------------------ */
-function legacyFlow(): void {
+function deployFlow(): void {
+  const res = prisma(["migrate", "deploy"]);
+  if (res.status !== 0) {
+    console.error("migrate: prisma migrate deploy ناموفق بود:");
+    console.error((res.stderr || res.stdout).trim());
+    console.error("راهنمایی: لاگ بالا را ببینید؛ دیتابیس تازه است و بکاپ لازم نیست.");
+    process.exit(1);
+  }
+  for (const l of (res.stdout || "")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(-5)) {
+    console.log(`prisma: ${l}`);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  حالت ۲: دیتابیس موجود — آشتی‌سازی مهاجرت‌ها (بدون db push)          */
+/* ------------------------------------------------------------------ */
+async function reconcileFlow(): Promise<void> {
   const bdir = backupDir();
   mkdirSync(bdir, { recursive: true });
   const backup = join(bdir, `avid-before-migrate-${stamp()}.db`);
 
-  console.log("— دیتابیس نسخه‌ی قبلی شناسایی شد (بدون تاریخچه‌ی Prisma).");
+  console.log("— دیتابیس موجود شناسایی شد.");
   console.log("— گام ۱: بکاپ پیش از هر تغییری …");
   backupDb(backup);
   console.log(`✔ بکاپ ساخته شد: ${backup}`);
@@ -257,77 +305,102 @@ function legacyFlow(): void {
     }
   })();
 
-  // — گام ۲: بررسی تطابق ساختار با schema فعلی —
-  const drift = driftScript();
-  if (drift !== null) {
-    const stmts = parseStatements(drift);
-    const destructive = stmts.filter(isDestructive);
-    const safe = stmts.filter((s) => !isDestructive(s));
-
-    if (destructive.length > 0) {
-      console.error(
-        "migrate: اختلاف ساختاری شامل دستورهای «مخرب» است؛ مهاجرت متوقف شد"
-      );
-      console.error("— بدون هیچ تغییری در دیتابیس. دستورهای مخرب:");
-      for (const s of destructive) {
-        console.error(`  ${s.split("\n")[0].slice(0, 120)}`);
-      }
-      console.error(
-        "این تغییرات باید به‌صورت دستی (با بکاپِ موجود) اعمال شود؛ با پشتیبانی هماهنگ کنید."
-      );
-      console.error(`بکاپ: ${backup}`);
-      process.exit(1);
-    }
-
-    if (safe.length > 0) {
+  // — گام ۲: شفا‌ی افزایشی ساختار (فقط افزودنِ جدول/ستون/ایندکس) —
+  // این گام تضمین می‌کند ارجاع‌های ستونیِ مهاجرت‌های قدیمی (مثل
+  // INSERT…SELECT بازسازی SiteSettings) روی دیتابیس‌های خیلی قدیمی هم
+  // معتبرند؛ همان سازوکار بوتِ اپ و هرگز مخرب نیست.
+  console.log("— گام ۲: شفا‌ی افزایشی ساختار (جدول/ستون/ایندکس جاافتاده) …");
+  try {
+    const heal = await ensureSchema(DB_PATH);
+    const made =
+      heal.createdTables.length +
+      heal.addedColumns.length +
+      heal.createdIndexes.length;
+    if (made > 0) {
       console.log(
-        `— گام ۲: اعمال ${safe.length} دستور غیرمخرب (جدول/ستون‌های تازه) …`
+        `✔ ${heal.createdTables.length} جدول، ${heal.addedColumns.length} ستون و ${heal.createdIndexes.length} ایندکس جاافتاده افزوده شد.`
       );
-      const db = new Database(DB_PATH);
-      try {
-        db.exec("PRAGMA busy_timeout = 5000");
-        const tx = db.transaction(() => {
-          for (const s of safe) db.exec(s);
-        });
-        tx();
-      } catch (error) {
-        db.close();
-        console.error("migrate: اعمال دستورها ناموفق بود — بازیابی از بکاپ …");
-        console.error(error);
-        restoreBackup(backup);
-        console.error(`✔ دیتابیس از بکاپ بازگردانده شد (${backup}).`);
-        process.exit(1);
+    } else {
+      console.log("— چیزی برای افزودن نبود (ساختار افزایشیِ کامل).");
+    }
+    if (heal.warnings.length > 0) {
+      console.warn(
+        `migrate: ${heal.warnings.length} هشدار در خودترمیمی — ${heal.warnings.slice(0, 3).join(" | ")}`
+      );
+    }
+  } catch (error) {
+    console.warn(
+      `migrate: خودترمیمی افزایشی رد شد — ${(error as Error | undefined)?.message ?? error}`
+    );
+  }
+
+  // — گام ۳: بازپخش مهاجرت‌های ثبت‌نشده با تحملِ «هم‌اکنون موجود» —
+  const done = doneMigrationNames();
+  const pending = migrationNames().filter((n) => !done.has(n));
+  if (pending.length === 0) {
+    console.log("— همه‌ی مهاجرت‌ها قبلاً در تاریخچه ثبت شده‌اند.");
+  } else {
+    console.log(
+      `— گام ۳: آشتی‌سازی ${pending.length} مهاجرتِ ثبت‌نشده (${pending.join("، ")}) …`
+    );
+    const db = new Database(DB_PATH);
+    try {
+      db.exec("PRAGMA busy_timeout = 5000");
+      ensureHistoryTable(db);
+
+      for (const name of pending) {
+        const sqlPath = join(MIGRATIONS_DIR, name, "migration.sql");
+        const statements = parseStatements(readFileSync(sqlPath, "utf8"));
+        let skipped = 0;
+        for (const stmt of statements) {
+          try {
+            db.exec(stmt);
+          } catch (error) {
+            const message = (error as Error | undefined)?.message ?? String(error);
+            if (isAlreadyAppliedError(message)) {
+              // اثر جمله از قبل در دیتابیس هست (مثل ستون zarinpalCode که
+              // ساختارش جلوتر از تاریخچه بوده) — بی‌خطر رد می‌شود
+              skipped += 1;
+              continue;
+            }
+            abortWithRestore(
+              backup,
+              `جمله‌ای از مهاجرت «${name}» با خطای واقعی رد شد`,
+              `جمله:\n${stmt.slice(0, 400)}\nخطا: ${message}`
+            );
+          }
+        }
+
+        // ثبت مهاجرت در تاریخچه‌ی Prisma (بدون اجرای دوباره توسط deploy)
+        const res = prisma(["migrate", "resolve", "--applied", name]);
+        if (res.status !== 0) {
+          abortWithRestore(
+            backup,
+            `ثبت «${name}» در تاریخچه ناموفق بود`,
+            (res.stderr || res.stdout).trim()
+          );
+        }
+        console.log(
+          `✔ تاریخچه‌ی Prisma: «${name}» به‌عنوان اعمال‌شده ثبت شد${skipped > 0 ? ` (${skipped} جمله‌ی هم‌اکنون‌موجود رد شد)` : ""}.`
+        );
       }
+    } finally {
       db.close();
     }
   }
 
-  // — گام ۳: تایید تطابق کامل ساختار —
-  const remaining = driftScript();
-  if (remaining !== null) {
-    console.error(
-      "migrate: پس از اعمال دستورهای غیرمخرب هنوز اختلاف ساختاری باقی است — بازیابی از بکاپ …"
+  // — گام ۴: تایید نهاییِ ساختار — هیچ اختلافی با schema نباید بماند —
+  const drift = driftScript();
+  if (drift !== null) {
+    abortWithRestore(
+      backup,
+      "پس از آشتی‌سازی هنوز اختلاف ساختاری با schema باقی است",
+      `اسکریپتِ اختلاف (برای написانِ migration جدید):\n${drift.slice(0, 2000)}`
     );
-    restoreBackup(backup);
-    console.error(`✔ دیتابیس از بکاپ بازگردانده شد (${backup}).`);
-    process.exit(1);
   }
+  console.log("✔ ساختار دیتابیس دقیقاً با schema مطابق است.");
 
-  // — گام ۴: ثبت migration اولیه در تاریخچه‌ی Prisma (بدون اجرای مجدد) —
-  const names = migrationNames();
-  for (const name of names) {
-    const res = prisma(["migrate", "resolve", "--applied", name]);
-    if (res.status !== 0) {
-      console.error(`migrate: ثبت «${name}» در تاریخچه ناموفق بود — بازیابی از بکاپ …`);
-      console.error((res.stderr || res.stdout).trim());
-      restoreBackup(backup);
-      console.error(`✔ دیتابیس از بکاپ بازگردانده شد (${backup}).`);
-      process.exit(1);
-    }
-    console.log(`✔ تاریخچه‌ی Prisma: «${name}» به‌عنوان اعمال‌شده ثبت شد.`);
-  }
-
-  // — گام ۵: تایید حفظ داده —
+  // — گام ۵: تایید حفظ داده — شمارش سطرهای جدول‌های موجود تغییر نکرده —
   const after = (() => {
     const db = new Database(DB_PATH, { readonly: true });
     try {
@@ -340,12 +413,10 @@ function legacyFlow(): void {
     (t) => after[t] !== undefined && after[t] !== before[t]
   );
   if (mismatch.length > 0) {
-    console.error(
-      `migrate: شمارش سطرهای این جدول‌ها تغییر کرده است: ${mismatch.join(", ")} — بازیابی از بکاپ …`
+    abortWithRestore(
+      backup,
+      `شمارش سطرهای این جدول‌ها تغییر کرده است: ${mismatch.join(", ")}`
     );
-    restoreBackup(backup);
-    console.error(`✔ دیتابیس از بکاپ بازگردانده شد (${backup}).`);
-    process.exit(1);
   }
   console.log(
     `✔ داده‌ها حفظ شدند — ${Object.keys(before).length} جدول موجود، سطرها بدون تغییر.`
@@ -355,7 +426,7 @@ function legacyFlow(): void {
 /* ------------------------------------------------------------------ */
 /*  انتخاب و اجرا                                                       */
 /* ------------------------------------------------------------------ */
-function main(): void {
+async function main(): Promise<void> {
   if (!existsSync(MIGRATIONS_DIR)) {
     fail("پوشه‌ی prisma/migrations پیدا نشد.");
   }
@@ -363,54 +434,57 @@ function main(): void {
     mkdirSync(dirname(DB_PATH), { recursive: true });
   }
 
+  // — نصب تازه از والی خالی: اگر فایل دیتابیس وجود ندارد، همین‌جا یک
+  // فایل SQLiteِ «خالی» ساخته می‌شود تا موتور مهاجرت Prisma (Schema
+  // engine) هرگز با «Schema engine error: unable to open database file»
+  // رد نشود — همین راه‌حل روی VPS با «ساخت فایل خالی» تأیید شده بود
+  // (مهاجرت دو بار با Schema engine error شکست خورد و با فایل خالی
+  // موفق شد)؛ این‌جا خودکار انجام می‌شود تا نصب تازه‌ی Docker بدون
+  // کار دستی بالا بیاید.
+  // — گارد دسترسیِ نوشتاری هم همین‌جا اجرا می‌شود: فایل/پوشه باید برای
+  // فرآیند فعلی (در Docker: کاربر bun) قابل نوشتن باشد؛ اگر والی
+  // مالکِ درستی ندارد، به‌جای خطای مبهم «Schema engine error» پیامِ
+  // روشن و راه‌حلِ دقیق چاپ می‌شود (چون هیچ‌چیز تغییر نکرده، امن است).
+  try {
+    if (!existsSync(DB_PATH)) {
+      console.log(
+        "migrate: فایل دیتابیس وجود ندارد — فایل SQLite خالی ساخته می‌شود …"
+      );
+      const db = new Database(DB_PATH);
+      db.close();
+    } else {
+      const probe = new Database(DB_PATH);
+      probe.close();
+    }
+  } catch (error) {
+    fail(
+      `فایل دیتابیس «${DB_PATH}» برای این فرآیند قابل بازکردنِ نوشتاری نیست ` +
+        `(مالکیت والی Docker؟ — ${(error as Error | undefined)?.message ?? error}).\n` +
+        `راه حل (اجرای یک‌باره به‌عنوان root برای اصلاح مالکیت والی‌ها):\n` +
+        `  docker compose run --rm --user 0 migrate sh -c "chown -R bun:bun /app/data /app/backups"\n` +
+        `سپس دوباره: docker compose up -d`
+    );
+  }
+
   console.log(`migrate: دیتابیس ${DB_PATH}`);
 
-  // — طبقه‌بندی وضعیت دیتابیس —
-  let kind: "fresh" | "history" | "legacy" = "fresh";
+  // — طبقه‌بندی: دیتابیس تازه (بدون جدول اپ) یا موجود —
+  let fresh = true;
   if (existsSync(DB_PATH)) {
     const probe = new Database(DB_PATH, { readonly: true });
     try {
-      const tables = appTables(probe);
-      const historyRows = (() => {
-        try {
-          return (
-            probe.query("SELECT COUNT(*) AS c FROM _prisma_migrations").get() as {
-              c: number;
-            }
-          ).c;
-        } catch {
-          return -1; // جدول تاریخچه وجود ندارد
-        }
-      })();
-      if (tables.length === 0) kind = "fresh";
-      else if (historyRows === -1 || historyRows === 0) kind = "legacy";
-      else kind = "history";
+      fresh = appTables(probe).length === 0;
     } finally {
       probe.close();
     }
   }
 
-  console.log(`migrate: حالت = ${kind}`);
+  console.log(`migrate: حالت = ${fresh ? "نصب تازه" : "آشتی‌سازی"}`);
 
-  if (kind === "fresh" || kind === "history") {
-    if (kind === "fresh" && !existsSync(DB_PATH)) {
-      // SQLite creates the empty file with the same user that runs migrations.
-      new Database(DB_PATH, { create: true }).close();
-    }
-    const res = prisma(["migrate", "deploy"]);
-    if (res.status !== 0) {
-      console.error("migrate: prisma migrate deploy ناموفق بود:");
-      console.error((res.stderr || res.stdout).trim());
-      console.error("راهنمایی: لاگ بالا را ببینید؛ بکاپِ قبلی دست‌نخورده است.");
-      process.exit(1);
-    }
-    const lines = (res.stdout || "")
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
-    for (const l of lines.slice(-5)) console.log(`prisma: ${l}`);
+  if (fresh) {
+    deployFlow();
   } else {
-    legacyFlow();
+    await reconcileFlow();
   }
 
   // — تایید نهایی: دیتابیس باید دقیقاً با schema مطابق باشد —
@@ -422,4 +496,4 @@ function main(): void {
   );
 }
 
-main();
+await main();

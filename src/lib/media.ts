@@ -86,7 +86,13 @@ export async function saveStreamedFile(
   file: File,
   targetPath: string
 ): Promise<number> {
-  const nodeStream = Readable.fromWeb(file.stream() as unknown as Parameters<typeof Readable.fromWeb>[0]);
+  // استریم وبِ File به استریم Node تبدیل می‌شود؛ نوع‌های DOM و node:stream/web
+  // در TypeScript دو تعریف موازی‌اند (ساختار یکسان، تعارض تعریفی) — حل این
+  // تعارض فقط سطح تایپ است و در اجرا (bun و node) کاملاً سازگارند.
+  const webStream = file.stream() as unknown as Parameters<
+    typeof Readable.fromWeb
+  >[0];
+  const nodeStream = Readable.fromWeb(webStream);
   await new Promise<void>((resolve, reject) => {
     const writer = createWriteStream(targetPath);
     nodeStream.pipe(writer);
@@ -120,7 +126,9 @@ export function mediaPathFromApiUrl(url: string): string | null {
   return join(VIDEOS_DIR, ...parts);
 }
 
-/** تبدیل استریم Node به Web Stream برای Response */
+/** تبدیل استریم Node به Web Stream برای Response
+ *  (مانند بالا: تعارض «ReadableStream»ی DOM با node:stream/web فقط سطح
+ *  تایپ است — در اجرا هر دو یک شیء واحدند) */
 export function toWebStream(nodeStream: Readable): ReadableStream<Uint8Array> {
   return Readable.toWeb(nodeStream) as unknown as ReadableStream<Uint8Array>;
 }

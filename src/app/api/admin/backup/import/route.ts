@@ -10,7 +10,9 @@ import { str } from "@/lib/api-helpers";
 import {
   importBackup,
   validateBackupPayload,
+  BackupDataLossError,
   type BackupPayload,
+  type DataLossItem,
 } from "@/lib/backup";
 
 /**
@@ -20,10 +22,14 @@ import {
  *  • فایل JSON خروجی «بکاپ داده‌ها» → بازیابی رکوردهای دیتابیس
  *  • فایل ZIP خروجی «بکاپ کامل» → بازیابی رکوردها + فایل‌های آپلودی
  *    (backup.json در ریشه‌ی ZIP و uploads/** کنار آن)
+ *  • فیلد اختیاری force ("1") — تأیید صریحِ از دست رفتن داده‌ی فعلیِ
+ *    بخش‌هایی که در فایل بکاپ قدیمی نیستند (پیش از هر تغییری بررسی
+ *    می‌شود؛ بدون تأیید، پاسخ ۴۰۹ با فهرست موارد قابل از دست رفتن)
  *
- * ⚠ جایگزینی: همه‌ی داده‌های محتوایی فعلی (کاربران، ثبت‌نام‌ها، دوره‌ها،
- * ویدئوها و…) با محتوای فایل جایگزین می‌شوند. حساب و نشست مدیرِ واردشده
- * دست‌نخورده می‌ماند؛ نشست کاربران و کدهای یک‌بارمصرف پاک می‌شوند.
+ * ⚠ جایگزینی: داده‌های محتواییِ جدول‌های «موجود در فایل» با محتوای فایل
+ * جایگزین می‌شوند (جدول‌های غایب از فایل دست‌نخورده می‌مانند). حساب و
+ * نشست مدیرِ واردشده دست‌نخورده می‌ماند؛ نشست کاربران و کدهای
+ * یک‌بارمصرف پاک می‌شوند.
  */
 
 export const runtime = "nodejs";
@@ -109,15 +115,31 @@ function invalid(message: string): NextResponse {
   return NextResponse.json({ error: message }, { status: 400 });
 }
 
+/** پاسخ «بازیابی نیازمند تأیید» — بدون تغییر در دیتابیس */
+function dataLossResponse(losses: DataLossItem[]): NextResponse {
+  return NextResponse.json(
+    {
+      error:
+        "بازیابی این بکاپ قدیمی، داده‌های فعلی برخی بخش‌ها را پاک می‌کند — برای ادامه باید صریحاً تأیید کنید.",
+      code: "data-loss",
+      losses,
+    },
+    { status: 409 }
+  );
+}
+
 export async function POST(req: NextRequest) {
   const { denial } = await requireAdmin(req);
   if (denial) return denial;
 
   let file: File | null = null;
+  let force = false;
   try {
     const form = await req.formData();
     const candidate = form.get("file");
     if (candidate instanceof File) file = candidate;
+    const forceRaw = form.get("force");
+    force = forceRaw === "1" || forceRaw === "true";
   } catch (error) {
     console.error("backup import form error:", error);
     return NextResponse.json(
@@ -204,7 +226,9 @@ export async function POST(req: NextRequest) {
         }
 
         // ۴) جایگزینی رکوردهای دیتابیس داخل تراکنش واحد
-        const { restored } = await importBackup(payload);
+        //    (بدون force: بکاپ قدیمی‌ای که حذف والد‌هایش داده‌ی فعلیِ
+        //    آزمون‌ها/نمونه‌سؤال‌ها/گواهی‌نامه‌ها را پاک می‌کرد، رد می‌شود)
+        const { restored } = await importBackup(payload, { force });
 
         return NextResponse.json({
           ok: true,
@@ -229,10 +253,15 @@ export async function POST(req: NextRequest) {
       return invalid("فایل JSON بکاپ قابل خواندن نیست.");
     }
     const payload = validateBackupPayload(parsed);
-    const { restored } = await importBackup(payload);
+    const { restored } = await importBackup(payload, { force });
 
     return NextResponse.json({ ok: true, restored, filesRestored: 0 });
   } catch (error) {
+    // بازیابیِ نیازمند تأیید صریح (از دست رفتن داده‌ی فعلی بخش‌های غایب
+    // از فایل قدیمی) — بدون هیچ تغییری در دیتابیس
+    if (error instanceof BackupDataLossError) {
+      return dataLossResponse(error.losses);
+    }
     const message =
       error instanceof Error ? error.message : "خطای ناشناخته در بازیابی.";
     console.error("backup import error:", error);

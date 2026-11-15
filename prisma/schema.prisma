@@ -18,10 +18,12 @@ model SiteSettings {
   studentsCount         Int      @default(270)
   completedCoursesCount Int      @default(13)
   rating                Float    @default(4.9)
+  // — اطلاعات تماس: پیش‌فرض خالی — داده‌ی نمونه‌ی ساختگی در نصب تازه تزریق
+  // نمی‌شود؛ مدیر از ماژول «تنظیمات سایت» مقادیر واقعی را وارد می‌کند.
   contactPhone          String   @default("")
   contactEmail          String   @default("")
   address               String   @default("")
-  supportHours          String   @default("شنبه تا جمعه، ۹ صبح تا ۱۸")
+  supportHours          String   @default("")
   instagramUrl          String   @default("")
   telegramUrl           String   @default("")
   youtubeUrl            String   @default("")
@@ -299,6 +301,11 @@ model Enrollment {
   paymentStatus  String    @default("pending") // pending | paid | failed
   paymentGateway String? // zarinpal | payping | test
   paymentRefId   String? // کد پیگیری درگاه (authority / refId)
+  // — کد یکتای «تلاش پرداخت» (نسخه‌ی ۳ چرخه‌ی پرداخت): در آغاز هر تلاش
+  // تولید و روی ثبت‌نام ذخیره می‌شود و کال‌بک درگاه فقط برای همان تلاش
+  // دقیق (تطبیق کد + مبلغ) پرداخت را ثبت می‌کند. برای پی‌پینگ همان مقدار
+  // به‌عنوان clientRefId به درگاه ارسال می‌شود؛ ستون اختیاری است تا
+  // پرداخت‌های قدیمی (نسخه‌های پیشین) بدون کد هم معتبر بمانند.
   paymentAttemptCode String?
   paymentCardPan String? // شماره کارت ماسک‌شده
   paidAt         DateTime?

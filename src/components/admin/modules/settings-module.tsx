@@ -10,6 +10,7 @@ import {
   Phone,
   Save,
   Share2,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -26,6 +27,12 @@ import { ModuleHeader } from "@/components/admin/shared/module-header";
 import { btnGradient } from "@/components/admin/shared/styles";
 import { LogoMark } from "@/components/admin/shared/logo-mark";
 import type { SiteSettings } from "@/components/admin/types";
+import { TrustSeal } from "@/components/site/trust-seal";
+import {
+  buildZarinpalCode,
+  zarinpalCodeFromInput,
+  zarinpalDisplayValue,
+} from "@/lib/trust-seals";
 import { faDigits } from "@/lib/fa";
 
 /** همه‌ی فیلدهای فرم به‌صورت رشته نگه داشته می‌شوند و هنگام ذخیره تبدیل می‌شوند */
@@ -48,6 +55,10 @@ interface SettingsDraft {
   youtubeUrl: string;
   linkedinUrl: string;
   footerDescription: string;
+  /** کد رسمی نماد اعتماد الکترونیکی (اینماد) — عیناً از پنل enamad.ir */
+  enamadCode: string;
+  /** دامنه‌ی سایت یا کد خام نماد زرین‌پال — در ذخیره به کد رسمی تبدیل می‌شود */
+  zarinpal: string;
   /** فعال/غیرفعال‌سازی ویرایشگر ظاهری مدادی (تنها فیلد بولی فرم) */
   pencilEditorEnabled: boolean;
 }
@@ -72,6 +83,8 @@ function toDraft(s: SiteSettings): SettingsDraft {
     youtubeUrl: s.youtubeUrl,
     linkedinUrl: s.linkedinUrl,
     footerDescription: s.footerDescription,
+    enamadCode: s.enamadCode ?? "",
+    zarinpal: zarinpalDisplayValue(s.zarinpalCode),
     pencilEditorEnabled: s.pencilEditorEnabled,
   };
 }
@@ -172,6 +185,23 @@ export function SettingsModule() {
       toast.error("نام سایت باید حداقل ۲ نویسه باشد.");
       return;
     }
+
+    // — اعتبارسنجی نمادهای اعتماد (آینه‌ی همان قواعد سمت سرور) —
+    const enamadCode = draft.enamadCode.trim();
+    if (enamadCode && !/enamad\.ir/i.test(enamadCode)) {
+      toast.error(
+        "کد اینماد معتبر نیست — باید کد رسمی از پنل enamad.ir باشد (به trustseal.enamad.ir اشاره می‌کند)."
+      );
+      return;
+    }
+    const zarinpalCode = zarinpalCodeFromInput(draft.zarinpal);
+    if (zarinpalCode === null) {
+      toast.error(
+        "نماد زرین‌پال معتبر نیست — دامنه‌ی سایت (مثل example.ir) یا کد رسمی زرین‌پال را وارد کنید."
+      );
+      return;
+    }
+
     setSaving(true);
     try {
       const studentsCount = Math.max(
@@ -206,6 +236,8 @@ export function SettingsModule() {
           linkedinUrl: draft.linkedinUrl,
           footerDescription: draft.footerDescription,
           pencilEditorEnabled: draft.pencilEditorEnabled,
+          enamadCode,
+          zarinpalCode,
         }),
       });
       const next = toDraft(updated);
@@ -417,7 +449,7 @@ export function SettingsModule() {
               className="text-left"
               value={draft.contactPhone}
               onChange={(e) => set("contactPhone", e.target.value)}
-              placeholder="شماره تماس"
+              placeholder="021-9100-4400"
             />
           </Field>
           <Field label="ایمیل" htmlFor="set-contactEmail">
@@ -506,6 +538,91 @@ export function SettingsModule() {
             className="min-h-24"
           />
         </Field>
+      </SettingsSection>
+
+      {/* ۷ — نمادهای اعتماد (اینماد و زرین‌پال) */}
+      <SettingsSection icon={ShieldCheck} title="نمادهای اعتماد (اینماد و زرین‌پال)">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-2">
+            <Field
+              label="کد نماد اعتماد الکترونیکی (اینماد)"
+              htmlFor="set-enamadCode"
+              hint="کد رسمی را عیناً و بدون هیچ تغییری از پنل enamad.ir (دریافت کد نماد) کپی کنید — سمت چپ فوتر سایت رندر می‌شود."
+            >
+              <Textarea
+                id="set-enamadCode"
+                dir="ltr"
+                value={draft.enamadCode}
+                onChange={(e) => set("enamadCode", e.target.value)}
+                placeholder='<a referrerpolicy="origin" target="_blank" href="https://trustseal.enamad.ir/?id=...&code=..."><img referrerpolicy="origin" src="https://trustseal.enamad.ir/logo.aspx?id=...&code=..." alt="" style="cursor:pointer"></a>'
+                className="min-h-28 text-left font-mono text-[0.7rem] leading-5"
+              />
+            </Field>
+          </div>
+          <div className="space-y-2">
+            <Field
+              label="نماد زرین‌پال (لوگو تایید درگاه پرداخت)"
+              htmlFor="set-zarinpal"
+              hint="دامنه‌ی سایت خود را وارد کنید (مثلاً example.ir) — کد رسمی طبق مستندات زرین‌پال ساخته و سمت راست اینماد در فوتر رندر می‌شود؛ یا کد رسمی خام را بچسبانید. خالی = حذف لوگو."
+            >
+              <Input
+                id="set-zarinpal"
+                dir="ltr"
+                className="text-left"
+                value={draft.zarinpal}
+                onChange={(e) => set("zarinpal", e.target.value)}
+                placeholder="example.ir"
+              />
+            </Field>
+          </div>
+        </div>
+
+        {/* پیش‌نمایش زنده نمادها — همان رندر فوتر سایت */}
+        <div className="flex flex-wrap items-center justify-center gap-8 rounded-xl border border-dashed border-border bg-foreground/[0.02] px-4 py-6">
+          {draft.enamadCode.trim() ? (
+            <TrustSeal
+              html={draft.enamadCode.trim()}
+              tone="teal"
+              provider="اینماد"
+              fallbackLabel="نماد اعتماد الکترونیکی"
+              showNote
+            />
+          ) : (
+            <span className="flex size-16 items-center justify-center rounded-xl border border-dashed border-border text-[0.62rem] font-bold text-muted-foreground">
+              بدون اینماد
+            </span>
+          )}
+          {(() => {
+            const raw = draft.zarinpal.trim();
+            if (!raw) {
+              return (
+                <span className="flex size-16 items-center justify-center rounded-xl border border-dashed border-border text-[0.62rem] font-bold text-muted-foreground">
+                  بدون زرین‌پال
+                </span>
+              );
+            }
+            const code = /<[a-z!/]/i.test(raw) ? raw : buildZarinpalCode(raw);
+            return code ? (
+              <TrustSeal
+                html={code}
+                tone="amber"
+                provider="زرین‌پال"
+                fallbackLabel="دروازه پرداخت معتبر"
+                showNote
+              />
+            ) : (
+              <span className="flex size-16 items-center justify-center rounded-xl border border-dashed border-red-500/40 bg-red-500/[0.05] text-[0.62rem] font-bold text-red-600 dark:text-red-300">
+                نامعتبر
+              </span>
+            );
+          })()}
+        </div>
+        <p className="text-[0.7rem] leading-5 text-muted-foreground">
+          در محیط پیش‌نمایش، اگر تصویر لوگو از سرورهای اینماد/زرین‌پال دریافت
+          نشود، نشان جایگزین نمایش داده می‌شود — کد عیناً ذخیره می‌شود و روی
+          سایت اصلی با اینترنت عادی لوگوی رسمی دیده می‌شود. همین نمادها از
+          ماژول «ویرایش هدر و فوتر» هم قابل ویرایش‌اند و هر دو سمت همگام‌اند.
+        </p>
       </SettingsSection>
 
       {/* نوار ذخیره چسبان */}

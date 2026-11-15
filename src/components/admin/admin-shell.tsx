@@ -3,7 +3,6 @@
 import { useState } from "react";
 import {
   CalendarClock,
-  Download,
   ExternalLink,
   LogOut,
   Menu,
@@ -119,18 +118,8 @@ function SidebarContent({
         ))}
       </nav>
 
-      {/* دانلود پروژه + خروج */}
+      {/* خروج — دانلود پروژه به ماژول «بکاپ و بازیابی» منتقل شد */}
       <div className="space-y-1 border-t border-border pt-2">
-        {/* آخرین نسخه‌ی پروژه — همیشه در پوشه‌ی Download به‌روز می‌شود */}
-        <a
-          href="/Download/avid-latest.zip"
-          download
-          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold text-muted-foreground transition-all hover:bg-primary/10 hover:text-accent-foreground"
-          title="آخرین نسخه‌ی کامل پروژه (ZIP)"
-        >
-          <Download className="size-4.5 text-teal-600 dark:text-teal-300" />
-          دانلود پروژه (ZIP)
-        </a>
         <button
           type="button"
           onClick={onLogout}

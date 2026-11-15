@@ -44,6 +44,10 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { apiFetch, toastApiError } from "@/components/admin/api";
+import {
+  buildZarinpalCode,
+  zarinpalDisplayValue,
+} from "@/lib/trust-seals";
 import { ConfirmDelete } from "@/components/admin/shared/confirm-delete";
 import { EmptyState } from "@/components/admin/shared/empty-state";
 import { FontPicker } from "@/components/admin/shared/font-picker";
@@ -460,43 +464,6 @@ function Field({
 }
 
 /* — ماژول اصلی — */
-
-/**
- * دامنه‌ی صفحه‌ی تأیید زرین‌پال را از کد ذخیره‌شده برمی‌دارد؛ اگر کد
- * الگوی رسمی ما نباشد (کد سفارشی)، عیناً برگردانده می‌شود.
- */
-function zarinpalDisplayValue(stored: string | null | undefined): string {
-  const code = (stored ?? "").trim();
-  if (!code) return "";
-  const m = /zarinpal\.com\/trustPage\/([^"'\s<>]+)/i.exec(code);
-  if (m && /badges\/trustLogo/i.test(code)) return m[1];
-  return code;
-}
-
-/**
- * کد رسمی «لوگو تایید درگاه پرداخت» زرین‌پال را از دامنه می‌سازد (طبق
- * مستندات رسمی زرین‌پال — docs → لوگوی تایید):
- *   تصویر:  https://www.zarinpal.com/badges/trustLogo/1.svg
- *   تأیید:  https://www.zarinpal.com/trustPage/{دامنه‌ی سایت}
- * نامعتبر → null؛ خالی → "" (حذف لوگو).
- */
-function buildZarinpalCode(input: string): string | null {
-  const d = input
-    .trim()
-    .replace(/^[a-z]+:\/\//i, "")
-    .replace(/\/.*$/, "")
-    .trim();
-  if (!d) return "";
-  if (
-    !/^[a-z0-9\u0600-\u06FF]([a-z0-9\u0600-\u06FF.-]*[a-z0-9\u0600-\u06FF])?$/i.test(
-      d
-    ) ||
-    !d.includes(".")
-  ) {
-    return null;
-  }
-  return `<a href="https://www.zarinpal.com/trustPage/${d}" target="_blank" title="دروازه پرداخت معتبر"><img src="https://www.zarinpal.com/badges/trustLogo/1.svg" border="0" alt="دروازه پرداخت معتبر"></a>`;
-}
 
 /**
  * ماژول «ویرایش هدر و فوتر» — مدیریت لینک‌ها و دکمه‌های هدر و فوتر سایت

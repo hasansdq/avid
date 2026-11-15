@@ -269,8 +269,8 @@ function GatewayCard({
                 className="h-11 rounded-xl bg-foreground/[0.03] text-left dark:bg-white/[0.04]"
               />
               <p className="text-[0.6rem] leading-5 text-muted-foreground">
-                پی‌پینگ v2 — مبالغ به تومان ارسال می‌شوند و شناسه‌ی ثبت‌نام
-                (clientRefId) برای تطبیق دقیق تراکنش ارسال می‌شود.
+                پی‌پینگ v3 — مبالغ به تومان ارسال می‌شوند و «کد تلاش پرداخت»
+                (clientRefId) برای تطبیق دقیق تراکنش به درگاه ارسال می‌شود.
               </p>
             </div>
           )}

@@ -1,5 +1,5 @@
-import type { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
+import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
 import {
   getPaymentSettings,
@@ -15,7 +15,7 @@ import {
 import { forwardedOrigin } from "@/lib/http";
 
 /**
- * POST /api/payment/start — آغاز پرداخت پیش‌ثبت‌نام.
+ * POST /api/payment/start — آغاز پرداخت پیش‌ثبت‌نام (چرخه‌ی پرداخت نسخه‌ی ۳).
  *
  * body: { enrollmentId: string, method?: "cash" | "installment" }
  *
@@ -23,7 +23,17 @@ import { forwardedOrigin } from "@/lib/http";
  * تخفیف ثبت‌شده‌ی ثبت‌نام (در صورت وجود) کسر و مبلغ نهایی ذخیره
  * می‌شود و آدرس درگاه برای ریدایرکت کاربر برگردانده می‌شود.
  * اگر مبلغ پس از تخفیف صفر شود، ثبت‌نام بدون درگاه تسویه می‌شود.
+ *
+ * برای هر تلاش پرداخت یک «کد تلاش» (paymentAttemptCode) یکتا تولید و
+ * روی ثبت‌نام ذخیره می‌شود؛ برای پی‌پینگ همین کد به‌عنوان clientRefId
+ * به درگاه ارسال می‌شود تا کال‌بک فقط برای «همان تلاشِ دقیق» — با
+ * تطبیق کد تلاش و مبلغ — پرداخت را ثبت کند.
  */
+
+/** تولید کد یکتای تلاش پرداخت — «ATT-» + ۱۶ نویسه‌ی تصادفی hex */
+function newPaymentAttemptCode(): string {
+  return `ATT-${randomBytes(8).toString("hex").toUpperCase()}`;
+}
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => null);
@@ -52,25 +62,6 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-
-    const saveAttempt = async (data: Prisma.EnrollmentUpdateManyMutationInput) => {
-      const { count } = await db.enrollment.updateMany({
-        where: {
-          id: enrollment.id,
-          paymentStatus: enrollment.paymentStatus,
-          paymentGateway: enrollment.paymentGateway,
-          paymentRefId: enrollment.paymentRefId,
-          paymentAttemptCode: enrollment.paymentAttemptCode,
-        },
-        data,
-      });
-      return count === 1;
-    };
-    const staleAttempt = () =>
-      NextResponse.json(
-        { error: "وضعیت این ثبت‌نام تغییر کرده است. لطفاً دوباره بررسی کنید." },
-        { status: 409 }
-      );
 
     const settings = await getPaymentSettings();
     if (!isPaymentEnabled(settings)) {
@@ -174,16 +165,16 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
-      const saved = await saveAttempt({
-        paymentMethod: method,
-        paymentAmount: 0,
-        paymentGateway: settings.gateway,
-        paymentStatus: "paid",
-        paidAt: new Date(),
-        paymentAttemptCode: null,
-        paymentRefId: null,
+      await db.enrollment.update({
+        where: { id: enrollment.id },
+        data: {
+          paymentMethod: method,
+          paymentAmount: 0,
+          paymentGateway: settings.gateway,
+          paymentStatus: "paid",
+          paidAt: new Date(),
+        },
       });
-      if (!saved) return staleAttempt();
       return NextResponse.json({
         redirectUrl: `${origin}/register?payment=success`,
         free: true,
@@ -193,23 +184,28 @@ export async function POST(req: NextRequest) {
 
     // — حالت آزمایشی: بدون تماس با درگاه، به کال‌بک شبیه‌سازی می‌رویم —
     if (settings.gateway === "test") {
+      const attemptCode = newPaymentAttemptCode();
       const simRef = `TEST-${Date.now()}-${Math.random()
         .toString(36)
         .slice(2, 8)
         .toUpperCase()}`;
-      const saved = await saveAttempt({
-        paymentMethod: method,
-        paymentAmount: amount,
-        paymentGateway: "test",
-        paymentRefId: simRef,
-        paymentAttemptCode: simRef,
-        paymentStatus: "pending",
+      await db.enrollment.update({
+        where: { id: enrollment.id },
+        data: {
+          paymentMethod: method,
+          paymentAmount: amount,
+          paymentGateway: "test",
+          paymentRefId: simRef,
+          paymentAttemptCode: attemptCode,
+          paymentStatus: "pending",
+        },
       });
-      if (!saved) return staleAttempt();
       return NextResponse.json({
         redirectUrl: `${callbackUrl}?gateway=test&ref=${encodeURIComponent(
           simRef
-        )}&enrollmentId=${enrollment.id}`,
+        )}&enrollmentId=${enrollment.id}&attempt=${encodeURIComponent(
+          attemptCode
+        )}`,
       });
     }
 
@@ -223,37 +219,45 @@ export async function POST(req: NextRequest) {
         mobile: enrollment.phone,
         orderId: enrollment.id,
       });
-      const saved = await saveAttempt({
-        paymentMethod: method,
-        paymentAmount: amount,
-        paymentGateway: "zarinpal",
-        paymentRefId: authority,
-        paymentAttemptCode: authority,
-        paymentStatus: "pending",
+      await db.enrollment.update({
+        where: { id: enrollment.id },
+        data: {
+          paymentMethod: method,
+          paymentAmount: amount,
+          paymentGateway: "zarinpal",
+          paymentRefId: authority,
+          paymentAttemptCode: newPaymentAttemptCode(),
+          paymentStatus: "pending",
+        },
       });
-      if (!saved) return staleAttempt();
       return NextResponse.json({ redirectUrl });
     }
 
-    // کد پرداخت پی‌پینگ همراه شناسه ثبت‌نام برای تأیید callback ذخیره می‌شود.
+    // — پی‌پینگ (نسخه‌ی ۳) — clientRefId = «کد تلاش پرداخت»؛ در بازگشت
+    // درگاه داخل data(JSON) فرمِ POST برمی‌گردد و تراکنش فقط برای
+    // همان تلاشِ دقیق (تطبیق کد تلاش + کد پرداخت + مبلغ) تایید می‌شود.
+    // کد پرداخت (paymentCode) هم مثل authority زرین‌پال در سفارش ثبت
+    // می‌شود تا «تراکنشِ آغازشده برای همین سفارش» در تأیید v3
+    // (paymentCode الزامی) و ردیابی پشتیبانی قابل استفاده باشد.
+    const attemptCode = newPaymentAttemptCode();
     const { redirectUrl, code } = await requestPaypingPayment({
       settings,
       amountToman: amount,
       callbackUrl,
       description,
-      clientRefId: enrollment.id,
-      payerIdentity: enrollment.phone,
-      payerName: enrollment.name,
+      clientRefId: attemptCode,
     });
-    const saved = await saveAttempt({
-      paymentMethod: method,
-      paymentAmount: amount,
-      paymentGateway: "payping",
-      paymentRefId: code,
-      paymentAttemptCode: code,
-      paymentStatus: "pending",
+    await db.enrollment.update({
+      where: { id: enrollment.id },
+      data: {
+        paymentMethod: method,
+        paymentAmount: amount,
+        paymentGateway: "payping",
+        paymentRefId: code,
+        paymentAttemptCode: attemptCode,
+        paymentStatus: "pending",
+      },
     });
-    if (!saved) return staleAttempt();
     return NextResponse.json({ redirectUrl });
   } catch (error) {
     console.error("payment start error:", error);

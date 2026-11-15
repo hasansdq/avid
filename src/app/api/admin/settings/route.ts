@@ -9,7 +9,14 @@ export async function GET(req: NextRequest) {
   if (denial) return denial;
 
   try {
-    const settings = await db.siteSettings.findUnique({ where: { id: "main" } });
+    // خودترمیمی: اگر رکورد یگانه به هر دلیل (نصب تازه روی VPS، بازیابی
+    // ناقص) موجود نباشد، با پیش‌فرض‌های اسکیما ساخته می‌شود — پاسخ هرگز
+    // «null» نیست و ماژول‌های پنل (تنظیمات، هدر/فوتر، فونت‌ها) سالم می‌مانند.
+    const settings = await db.siteSettings.upsert({
+      where: { id: "main" },
+      create: {},
+      update: {},
+    });
     return NextResponse.json(settings);
   } catch (error) {
     console.error("settings GET error:", error);
@@ -115,9 +122,10 @@ export async function PUT(req: NextRequest) {
     const data = parseSettings(body, validFontKeys);
     if (typeof data === "string") return bad(data);
 
-    const settings = await db.siteSettings.update({
+    const settings = await db.siteSettings.upsert({
       where: { id: "main" },
-      data,
+      create: data,
+      update: data,
     });
 
     // آینه‌سازی متن‌های هیرو برای ویرایشگر مدادی سایت

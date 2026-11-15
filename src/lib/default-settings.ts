@@ -12,21 +12,23 @@ export const DEFAULT_SETTINGS: SiteSettings = {
   studentsCount: 270,
   completedCoursesCount: 13,
   rating: 4.9,
+  // — اطلاعات تماس عمداً خالی: داده‌ی نمونه‌ی ساختگی در پیش‌فرض‌ها نیست؛
+  // مدیر از ماژول «تنظیمات سایت» مقادیر واقعی را وارد می‌کند.
   contactPhone: "",
   contactEmail: "",
   address: "",
-  supportHours: "شنبه تا جمعه، ۹ صبح تا ۱۸",
+  supportHours: "",
   instagramUrl: "",
   telegramUrl: "",
   youtubeUrl: "",
   linkedinUrl: "",
   footerDescription:
     "یادگیری هر مهارتی، سرمایه‌ی شما در آینده است. ما با دوره‌های پروژه‌محور و مربیان متخصص، همراه شما در این مسیر هستیم.",
+  enamadCode: "",
+  zarinpalCode: "",
   sloganFont: "vazirmatn",
   headerFont: "vazirmatn",
   footerFont: "vazirmatn",
-  enamadCode: "",
-  zarinpalCode: "",
   pencilEditorEnabled: true,
   updatedAt: new Date(),
 };

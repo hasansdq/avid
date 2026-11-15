@@ -160,7 +160,7 @@ export function EnrollForm({
   const [payConfig, setPayConfig] = React.useState<PaymentConfig | null>(null);
   const [payMethod, setPayMethod] = React.useState<PayMethod>("cash");
   const [payResult, setPayResult] = React.useState<
-    "success" | "failed" | null
+    "success" | "failed" | "pending" | null
   >(null);
 
   // — کد تخفیف —
@@ -224,11 +224,11 @@ export function EnrollForm({
     return () => clearTimeout(t);
   }, [resendIn]);
 
-  // نتیجه‌ی بازگشت از درگاه (?payment=success|failed)
+  // نتیجه‌ی بازگشت از درگاه (?payment=success|failed|pending)
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const p = params.get("payment");
-    if (p === "success" || p === "failed") {
+    if (p === "success" || p === "failed" || p === "pending") {
       setPayResult(p);
       // پاک‌سازی آدرس بدون رفرش
       window.history.replaceState(
@@ -648,19 +648,25 @@ export function EnrollForm({
             "mb-5 flex items-center gap-3 rounded-2xl border p-4 text-sm font-bold",
             payResult === "success"
               ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-300"
-              : "border-red-500/30 bg-red-500/10 text-red-700 dark:border-red-400/25 dark:bg-red-400/10 dark:text-red-300"
+              : payResult === "pending"
+                ? "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300"
+                : "border-red-500/30 bg-red-500/10 text-red-700 dark:border-red-400/25 dark:bg-red-400/10 dark:text-red-300"
           )}
           role="status"
         >
           {payResult === "success" ? (
             <CheckCircle2 className="size-5 shrink-0" />
+          ) : payResult === "pending" ? (
+            <Clock3 className="size-5 shrink-0" />
           ) : (
             <XCircle className="size-5 shrink-0" />
           )}
           <p className="leading-6">
             {payResult === "success"
               ? "پرداخت شما با موفقیت انجام شد؛ ثبت‌نام شما تکمیل گردید. کارشناسان ما برای شروع دوره با شما تماس می‌گیرند."
-              : "پرداخت ناموفق بود یا لغو شد. ثبت‌نام شما حفظ شده است؛ می‌توانید دوباره تلاش کنید یا منتظر تماس کارشناسان بمانید."}
+              : payResult === "pending"
+                ? "تأیید پرداخت در حال انجام است. تا مشخص شدن نتیجه، پرداخت را دوباره انجام ندهید."
+                : "پرداخت ناموفق بود یا لغو شد. ثبت‌نام شما حفظ شده است؛ می‌توانید دوباره تلاش کنید یا منتظر تماس کارشناسان بمانید."}
           </p>
         </div>
       )}

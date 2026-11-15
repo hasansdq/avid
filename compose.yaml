@@ -28,12 +28,16 @@ services:
       - avid_db:/app/data
       - avid_backups:/app/backups
       - avid_uploads:/app/uploads:ro
-    # migrate.ts: نصب تازه (migrate deploy) یا انتقال دیتابیس قبلی
-    # (بکاپ → بررسی تطابق ساختار → ثبت migration اولیه در تاریخچه — بدون
-    # از دست رفتن داده)؛ سپس bootstrap مدیر.
+    # migrate.ts: نصب تازه (در نبود فایل دیتابیس، یک فایل SQLite خالی
+    # ساخته می‌شود تا موتور مهاجرت با «Schema engine error» رد نشود —
+    # همان راه‌حل تأییدشده روی VPS؛ سپس migrate deploy) یا دیتابیس
+    # موجود — «آشتی‌سازی» مهاجرت‌ها (بکاپ → شفا‌ی افزایشی → بازپخش
+    # مهاجرت‌های ثبت‌نشده با تحملِ «هم‌اکنون موجود» → ثبت تاریخچه —
+    # بدون prisma db push و بدون از دست رفتن داده)؛ سپس bootstrap مدیر.
     command: sh -c "bun scripts/migrate.ts && bun scripts/bootstrap.ts"
 
   # — اپ Next.js (standalone) — پورت میزبان فقط لوکال
+  # (وب روی 127.0.0.1:3900 → 3000 کانتینر؛ پروکسی دایرکت‌ادمین به همین پورت)
   web:
     build:
       context: .

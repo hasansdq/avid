@@ -61,6 +61,10 @@ COPY --from=build /app/public ./public
 RUN mkdir -p /app/data /app/public/uploads \
  && chown -R bun:bun /app
 COPY --from=build /app/scripts/healthcheck.ts /app/scripts/healthcheck.ts
+# خودترمیمیِ زمان اجرا (src/instrumentation.ts → src/lib/ensure-schema.ts):
+# DDL کامل اسکیمای جاری — ستون/جدول‌های جاافتاده‌ی دیتابیس‌های قدیمیِ VPS
+# در بوتِ سرور به‌صورت افزایشی افزوده می‌شود (هرگز چیزی حذف نمی‌شود).
+COPY --from=build /app/prisma/baseline.sql /app/prisma/baseline.sql
 USER bun
 EXPOSE 3000
 CMD ["bun", "server.js"]

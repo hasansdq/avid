@@ -352,6 +352,23 @@ httpServer.listen(PORT, () => {
   console.log(`[chat-service] db: ${DB_PATH ?? "غیرقابل دسترس (رد عضویت‌ها)"}`);
 });
 
+// ناظر وبِ سندباکس: سرور توسعه‌ی Next (پورت 3000) را زنده نگه می‌دارد —
+// فقط در محیط توسعه (غیر production) و «بارگذاری پوی» بارگذاری می‌شود:
+// فایل web-dev-supervisor.ts عمداً در ایمیج Docker کپی نمی‌شود و نبودِ آن
+// در production خطا نیست (پیش از این import ایستا باعث کرشِ کانتینر چت
+// می‌شد — فایل در ایمیج نبود). با بارگذاری پوی، production هرگز به دنبال
+// آن نمی‌رود و توسعه (bun --hot) همچنان از آن استفاده می‌کند.
+if (process.env.NODE_ENV !== "production") {
+  try {
+    const { startWebDevSupervisor } = await import("./web-dev-supervisor");
+    // در سطح ماژول (نه داخل callback شنیدن) فراخوانی می‌شود تا با
+    // بارگذاری مجدد (bun --hot) همیشه نسخه‌ی تازه‌ی ناظر فعال شود.
+    startWebDevSupervisor();
+  } catch {
+    // نبودِ فایل ناظر در این محیط — سرویس چت بدون آن سالم بالا می‌آید
+  }
+}
+
 // Graceful shutdown
 process.on("SIGTERM", () => {
   console.log("[chat-service] SIGTERM received, shutting down...");
@@ -362,3 +379,4 @@ process.on("SIGINT", () => {
   console.log("[chat-service] SIGINT received, shutting down...");
   httpServer.close(() => process.exit(0));
 });
+// reload-probe 1794511442

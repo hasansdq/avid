@@ -32,13 +32,10 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # env files (can opt-in for committing if needed)
+# نکته: .env.example عمداً مستثناست — نمونه‌ی متغیرهای استقرار باید همراه
+# ریپو باشد و از گیر افتادن (حذف‌های تصادفی پوشه‌ی کاری) محفوظ بماند.
 .env*
 !.env.example
-
-# Local SQLite databases and transfer snapshots
-*.db
-*.db-*
-/.db-transfer/
 
 # vercel
 .vercel
@@ -61,7 +58,6 @@ server.log
 /skills/tool-results/
 tool-results/
 
-# Runtime uploads are stored in the persistent Docker volume.
-public/uploads/????????-????????.*
-public/uploads/videos/
-public/uploads/fonts/
+# بکاپ‌های زمان اجرای مهاجرت دیتابیس (migrate.ts) — اقلام زمان اجرا، نه بخشی از ریپو
+db/backups/
+db/backups

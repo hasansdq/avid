@@ -1,4 +1,3 @@
-import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getPaymentSettings } from "@/lib/payment";
 
@@ -16,7 +15,7 @@ import { getPaymentSettings } from "@/lib/payment";
  *  • اقساط ۲ تا N-۱ = تقسیم پایه‌ی باقیمانده (floor)
  *  • قسط آخر = جبران باقیمانده تا جمع کل دقیقاً برابر مبلغ کل شود
  *
- * ثبت اولین قسط همراه با پرداخت و در همان تراکنش انجام می‌شود.
+ * هر دو تابع throw-safe هستند؛ خطاها فقط ثبت می‌شوند.
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -119,12 +118,20 @@ export async function ensureInstallmentPlan(
  * «پرداخت‌شده» می‌خورد. اگر قسطی باقی نمانده باشد کاری نمی‌کند.
  */
 export async function markFirstInstallmentPaid(
-  tx: Prisma.TransactionClient,
-  enrollmentId: string,
-  paidAt: Date
+  enrollmentId: string
 ): Promise<void> {
-  await tx.installment.updateMany({
-    where: { enrollmentId, index: 1, status: { not: "paid" } },
-    data: { status: "paid", paidAt },
-  });
+  try {
+    const installment = await db.installment.findFirst({
+      where: { enrollmentId, status: { not: "paid" } },
+      orderBy: { index: "asc" },
+    });
+    if (!installment) return;
+
+    await db.installment.update({
+      where: { id: installment.id },
+      data: { status: "paid", paidAt: new Date() },
+    });
+  } catch (error) {
+    console.error("markFirstInstallmentPaid error:", error);
+  }
 }

@@ -6,7 +6,19 @@ import { computeDiscountAmount, type DiscountValueType } from "@/lib/discount";
  * لایه‌ی یکپارچه‌سازی درگاه‌های پرداخت — زرین‌پال (PG v4) و پی‌پینگ (v3)
  *
  * همه‌ی مبالغ در سراسر سیستم به «تومان» ذخیره می‌شوند؛
- * زرین‌پال ریال می‌پذیرد (×۱۰) و پی‌پینگ تومان.
+ * زرین‌پال ریال می‌پذیرد (×۱۰) و پی‌پینگ تومان (طبق مستند رسمی v3:
+ * «واحد پول در تمام سرویس‌ها تومان می‌باشد»).
+ *
+ * پی‌پینگ v3 (بر پایه‌ی مستند رسمی api.payping.ir — OpenAPI):
+ *   • احراز هویت: هدر Authorization: Bearer TOKEN (مثل v2)
+ *   • ساخت پرداخت: POST /v3/pay → PaymentDto { paymentCode, url, … }
+ *     — کاربر به «url» (یا /v3/pay/start/{paymentCode}) هدایت می‌شود
+ *   • بازگشت نتیجه: POST x-www-form-urlencoded به returnUrl با
+ *     status / errorCode / data(JSON) — «نه» رشته‌ی کوئری GET مثل v2
+ *     (مسیر POST در src/app/api/payment/callback/route.ts)
+ *   • تأیید: POST /v3/pay/verify با { paymentRefId, paymentCode, amount }
+ *     — هر سه الزامی؛ 202/502 یعنی «در حال پردازش، دوباره تلاش کنید»؛
+ *     409 + metaData.code=110 یعنی «قبلاً تأیید شده» (کال‌بک تکراری)
  *
  * gateway = "test" حالت آزمایشی است و بدون تماس با درگاه واقعی،
  * کل چرخه‌ی پرداخت را شبیه‌سازی می‌کند تا بتوان بدون پذیرنده‌ی واقعی
@@ -240,20 +252,51 @@ export async function verifyZarinpalPayment(opts: {
 /* ------------------------------------------------------------------ */
 
 const PAYPING_BASE = "https://api.payping.ir/v3";
-const PAYPING_START = `${PAYPING_BASE}/pay/start/`;
 
-/** ایجاد تراکنش پی‌پینگ برای یک ثبت‌نام مشخص. */
+/** پاسخ ساخت پرداخت v3 — PaymentDto */
+interface PaypingPayResponse {
+  paymentCode?: string;
+  url?: string;
+  amount?: number;
+  isError?: boolean;
+  message?: string;
+  detail?: string;
+  metaData?: {
+    code?: number;
+    errors?: Array<{ message?: string }>;
+  };
+}
+
+/** برخی پاسخ‌های غیررسمی/ناهمگام فقط «code» می‌فرستند (مثل v2) */
+interface PaypingPayResponseCompat extends PaypingPayResponse {
+  code?: string;
+}
+
+/** استخراج پیام خطای خوانا از PaymentProblemDetails پی‌پینگ v3 */
+function paypingErrorMessage(json: PaypingPayResponse): string {
+  const list = json.metaData?.errors?.map((e) => e.message).filter(Boolean);
+  if (list && list.length > 0) return list.join(" — ");
+  return json.message ?? json.detail ?? "";
+}
+
+/** درخواست پرداخت پی‌پینگ v3 → آدرس شروع پرداخت
+ * (clientRefId = «کد تلاش پرداخت» یکتا — در بازگشت درگاه داخل data(JSON)
+ * برمی‌گردد و برای یافتن دقیق «همان تلاش» به‌همراه مبلغ تطبیق می‌شود) */
 export async function requestPaypingPayment(opts: {
   settings: PaymentSettings;
   amountToman: number;
   callbackUrl: string;
   description: string;
-  clientRefId: string;
-  payerIdentity: string;
-  payerName: string;
+  clientRefId?: string;
+  payerIdentity?: string;
 }): Promise<{ redirectUrl: string; code: string }> {
   const {
-    settings, amountToman, callbackUrl, description, clientRefId, payerIdentity, payerName,
+    settings,
+    amountToman,
+    callbackUrl,
+    description,
+    clientRefId,
+    payerIdentity,
   } = opts;
 
   if (!settings.paypingApiKey) {
@@ -264,61 +307,264 @@ export async function requestPaypingPayment(opts: {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Accept: "application/json",
       Authorization: `Bearer ${settings.paypingApiKey}`,
     },
     body: JSON.stringify({
-      Amount: amountToman,
-      ReturnUrl: callbackUrl,
-      Description: description,
-      ClientRefId: clientRefId,
-      PayerIdentity: payerIdentity,
-      PayerName: payerName,
-      NationalCode: "",
+      // طبق مستند v3 مبالغ «در تمام سرویس‌ها» به تومان هستند
+      amount: amountToman,
+      returnUrl: callbackUrl,
+      description,
+      ...(clientRefId ? { clientRefId } : {}),
+      ...(payerIdentity ? { payerIdentity } : {}),
     }),
     signal: AbortSignal.timeout(15_000),
   });
 
-  const result = (await res.json().catch(() => null)) as { paymentCode?: unknown } | null;
-  if (res.status !== 200 || typeof result?.paymentCode !== "string" || !result.paymentCode) {
-    throw new Error("پی‌پینگ درخواست پرداخت را نپذیرفت.");
+  const json = (await res.json().catch(() => ({}))) as PaypingPayResponseCompat;
+  if (!res.ok) {
+    const why = paypingErrorMessage(json);
+    throw new Error(
+      `پی‌پینگ درخواست را نپذیرفت${why ? `: ${why}` : ` (HTTP ${res.status})`}`
+    );
   }
 
-  return {
-    redirectUrl: `${PAYPING_START}${encodeURIComponent(result.paymentCode)}`,
-    code: result.paymentCode,
+  const code = json.paymentCode ?? json.code;
+  if (!code) {
+    throw new Error("پی‌پینگ کد پرداخت (paymentCode) را برنگرداند.");
+  }
+
+  // آدرس شروع پرداخت: مستند v3 خودِ «url» پاسخ را معتبر می‌داند؛
+  // نبودش (پاسخ‌های ناهمگام) با مسیر رسمی «انتقال به درگاه» جایگزین می‌شود
+  const redirectUrl =
+    json.url && /^https?:\/\//i.test(json.url)
+      ? json.url
+      : `${PAYPING_BASE}/pay/start/${code}`;
+  return { redirectUrl, code };
+}
+
+/** پاسخ تأیید v3 — VerifyDto (۲۰۰) */
+interface PaypingVerifyDto {
+  amount?: number;
+  cardNumber?: string;
+  clientRefId?: string;
+  paymentRefId?: number;
+  code?: string;
+  isError?: boolean;
+}
+
+/** نتیجه‌ی تأیید پی‌پینگ v3 — وضعیت‌های معنی‌دار جدا از هم */
+export interface PaypingVerifyResult {
+  ok: boolean;
+  /** 202/502 — تأیید هنوز در حال پردازش است؛ دوباره فراخوانی شود */
+  processing?: boolean;
+  /** 409 + metaData.code=110 — تراکنش قبلاً در درگاه تأیید شده است */
+  alreadyVerified?: boolean;
+  /** مبلغ تأییدشده‌ی درگاه (تومان — «مبلغ دستور پرداخت») */
+  amount?: number;
+  /** شناسه‌ی ارجاع برگشتی (کد تلاش) — برای تطبیق دوباره */
+  clientRefId?: string;
+  /** شماره کارت پرداخت‌کننده (اگر درگاه فرستاده باشد) */
+  cardNumber?: string;
+}
+
+/** بدنه‌ی 409 — metaData.message با کلیدهای PascalCase */
+interface PaypingConflictBody {
+  metaData?: {
+    code?: number;
+    message?: Record<string, unknown>;
   };
 }
 
-/** تطبیق کد تراکنش و مبلغ با پاسخ تأیید درگاه. */
+/** جست‌وجوی کلید در رکورد با نام‌های حساس/غیرحساس به حروف */
+function pickKey(
+  obj: Record<string, unknown> | null | undefined,
+  ...names: string[]
+): unknown {
+  if (!obj) return undefined;
+  for (const n of names) {
+    if (obj[n] !== undefined) return obj[n];
+  }
+  const lower = new Map<string, unknown>();
+  for (const [k, v] of Object.entries(obj)) lower.set(k.toLowerCase(), v);
+  for (const n of names) {
+    const v = lower.get(n.toLowerCase());
+    if (v !== undefined) return v;
+  }
+  return undefined;
+}
+
+/** آیا مبلغ برگشتیِ درگاه با «مبلغ دستور پرداخت» منطبق است؟
+ * (مستند: واحد همه‌ی سرویس‌ها تومان است؛ معادل ریالی ×۱۰ هم تحمل
+ * می‌شود تا اگر پذیرنده‌ای پاسخ ریالی گرفت، تراکنشِ درست رد نشود) */
+function matchesCommandAmount(returned: number, expectedToman: number): boolean {
+  return returned === expectedToman || returned === expectedToman * 10;
+}
+
+/** تأیید پرداخت پی‌پینگ v3 — POST /v3/pay/verify
+ *  { paymentRefId (الزامی), paymentCode (الزامی), amount (الزامی) }
+ *  • مبلغ سفارشِ ثبت‌شده ارسال می‌شود؛ درگاه فقط در صورت تطابق کامل تأیید می‌کند.
+ *  • مبلغ و clientRefId پاسخ هم باید دقیقاً منطبق باشند (توصیه‌ی مستند رسمی).
+ *  • 202/502 → «در حال پردازش» — چند بار با فاصله تلاش، سپس processing برمی‌گردد
+ *    (پرداخت هنوز ناموفق نیست؛ نباید failed ثبت شود).
+ *  • 409 + metaData.code=110 → «قبلاً تأیید شده» — کال‌بک تکراریِ سمت درگاه؛
+ *    با مبلغ/کدِ همان پیام تطبیق می‌شود (تضمینِ idempotentِ کامل در سمت ما). */
 export async function verifyPaypingPayment(opts: {
   settings: PaymentSettings;
   amountToman: number;
-  refId: string;
+  /** کد رهگیری پرداخت — paymentRefId در بدنه‌ی فرم کال‌بک v3 */
+  paymentRefId: number | string;
+  /** کد پرداخت — همان paymentCode ذخیره‌شده روی ثبت‌نام در آغاز پرداخت */
   paymentCode: string;
-}): Promise<{ ok: boolean }> {
-  const { settings, amountToman, refId, paymentCode } = opts;
-  if (!settings.paypingApiKey) return { ok: false };
+  /** دفعات تلاش مجدد برای 202/502 (پیش‌فرض ۳ با فاصله‌ی ۲ ثانیه) */
+  processingRetries?: number;
+}): Promise<PaypingVerifyResult> {
+  const { settings, amountToman, paymentRefId, paymentCode } = opts;
+  const retries = Math.max(1, opts.processingRetries ?? 3);
+  const refIdNum = Number(paymentRefId);
 
-  const res = await fetch(`${PAYPING_BASE}/pay/verify`, {
+  const call = async (): Promise<Response> =>
+    fetch(`${PAYPING_BASE}/pay/verify`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${settings.paypingApiKey}`,
+      },
+      body: JSON.stringify({
+        paymentRefId: Number.isFinite(refIdNum) ? refIdNum : paymentRefId,
+        paymentCode,
+        amount: amountToman,
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+
+  for (let attempt = 0; attempt < retries; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 2000));
+
+    let res: Response;
+    try {
+      res = await call();
+    } catch {
+      // خطای شبکه/مهلت — یک تلاش دیگر (اگر آخرین تلاش بود: ناموفق)
+      if (attempt === retries - 1) return { ok: false };
+      continue;
+    }
+
+    // 202/502 — تأیید هنوز در حال پردازش است؛ طبق مستند نباید پرداخت
+    // مجدد آغاز شود و Verify دوباره فراخوانی می‌شود
+    if (res.status === 202 || res.status === 502) {
+      if (attempt === retries - 1) return { ok: false, processing: true };
+      continue;
+    }
+
+    // ۲۰۰ — VerifyDto: مبلغ و شناسه‌ی ارجاع باید منطبق باشند
+    if (res.ok) {
+      const dto = (await res.json().catch(() => null)) as
+        | PaypingVerifyDto
+        | null;
+      const amount = dto?.amount;
+      if (
+        !dto ||
+        typeof amount !== "number" ||
+        !matchesCommandAmount(amount, amountToman) ||
+        dto.isError === true
+      ) {
+        return { ok: false };
+      }
+      return {
+        ok: true,
+        amount,
+        clientRefId:
+          typeof dto.clientRefId === "string" ? dto.clientRefId : undefined,
+        cardNumber:
+          typeof dto.cardNumber === "string" ? dto.cardNumber : undefined,
+      };
+    }
+
+    // 409 + metaData.code=110 — قبلاً تأیید شده (کال‌بک تکراری سمت درگاه)
+    if (res.status === 409) {
+      const body = (await res.json().catch(() => null)) as
+        | PaypingConflictBody
+        | null;
+      if (body?.metaData?.code === 110) {
+        const msg = (body.metaData.message ?? {}) as Record<string, unknown>;
+        const amount = pickKey(msg, "Amount", "amount");
+        const clientRefId = pickKey(msg, "ClientRefId", "clientRefId");
+        const cardNumber = pickKey(msg, "CardNumber", "cardNumber");
+        if (
+          typeof amount !== "number" ||
+          !matchesCommandAmount(amount, amountToman)
+        ) {
+          // مبلغِ «قبلاً تأییدشده» با مبلغ سفارش ما یکی نیست — رد می‌شود
+          return { ok: false };
+        }
+        return {
+          ok: true,
+          alreadyVerified: true,
+          amount,
+          clientRefId:
+            typeof clientRefId === "string" ? clientRefId : undefined,
+          cardNumber:
+            typeof cardNumber === "string" ? cardNumber : undefined,
+        };
+      }
+      return { ok: false };
+    }
+
+    // هر وضعیت دیگر (400 اعتبارسنجی، 401 توکن، 500…) — ناموفق قطعی این تلاش
+    return { ok: false };
+  }
+  return { ok: false };
+}
+
+/* ------------------------------------------------------------------ */
+/*        پی‌پینگ v2 — فقط برای تراکنش‌های آغازشده پیش از ارتقای v3       */
+/* ------------------------------------------------------------------ */
+
+const PAYPING_V2_BASE = "https://api.payping.ir/v2";
+
+interface PaypingV2VerifyResponse {
+  amount?: number;
+  isError?: boolean;
+}
+
+/** تأیید «پرداخت‌های قدیمی v2» — پرداخت‌های آغازشده پیش از ارتقا که هنوز
+ * در جریان‌اند (کال‌بک GET با refid/clientrefid). پرداخت‌های تازه همه با
+ * v3 آغاز می‌شوند (requestPaypingPayment) و با POST برمی‌گردند.
+ * «تطبیق مبلغ» دو سویه:
+ *  ۱) مبلغِ سفارشِ ثبت‌شده (amountToman) در درخواست verify ارسال می‌شود؛
+ *     درگاه فقط وقتی تراکنش را تأیید می‌کند که با مبلغِ واقعیِ تراکنش یکی باشد.
+ *  ۲) مبلغِ برگشتیِ پاسخ هم باید دقیقاً همان مبلغ سفارش باشد — پی‌پینگ مبلغ را
+ *     به تومان (یا معادل ریالی ×۱۰) برمی‌گرداند؛ هر دو پذیرفته می‌شود. */
+export async function verifyPaypingLegacyV2Payment(opts: {
+  settings: PaymentSettings;
+  amountToman: number;
+  refId: string;
+}): Promise<{ ok: boolean; amount?: number }> {
+  const { settings, amountToman, refId } = opts;
+
+  const res = await fetch(`${PAYPING_V2_BASE}/pay/verify`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Accept: "application/json",
       Authorization: `Bearer ${settings.paypingApiKey}`,
     },
     body: JSON.stringify({
-      PaymentRefId: refId,
-      PaymentCode: paymentCode,
-      Amount: amountToman,
+      refId: Number(refId) || refId,
+      amount: amountToman,
     }),
     signal: AbortSignal.timeout(15_000),
   });
 
-  if (res.status !== 200) return { ok: false };
-  const result = (await res.json().catch(() => null)) as {
-    code?: unknown;
-    amount?: unknown;
-  } | null;
-  return { ok: result?.code === paymentCode && result.amount === amountToman };
+  if (!res.ok) return { ok: false };
+
+  const json = (await res.json().catch(() => null)) as
+    | PaypingV2VerifyResponse
+    | null;
+  const amount = json?.amount;
+  const ok =
+    !!json &&
+    !json.isError &&
+    typeof amount === "number" &&
+    (amount === amountToman || amount === amountToman * 10);
+  return { ok, amount: typeof amount === "number" ? amount : undefined };
 }

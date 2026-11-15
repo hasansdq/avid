@@ -35,6 +35,22 @@ async function main() {
     console.warn("bootstrap: WAL در دسترس نیست — با journal پیش‌فرض ادامه می‌دهیم");
   }
 
+  // — رکوردهای یگانه‌ی تنظیمات — در نصب تازه ساخته می‌شوند تا ماژول‌های
+  // پنل (تنظیمات سایت، هدر/فوتر، فونت‌ها…) هرگز به رکورد خالی بربخورند —
+  const singletons = [
+    ["SiteSettings", () => prisma.siteSettings.upsert({ where: { id: "main" }, create: {}, update: {} })],
+    ["PaymentSettings", () => prisma.paymentSettings.upsert({ where: { id: "main" }, create: {}, update: {} })],
+    ["SmsSettings", () => prisma.smsSettings.upsert({ where: { id: "main" }, create: {}, update: {} })],
+    ["ChatSettings", () => prisma.chatSettings.upsert({ where: { id: "main" }, create: {}, update: {} })],
+  ] as const;
+  for (const [name, run] of singletons) {
+    try {
+      await run();
+    } catch {
+      console.warn(`bootstrap: ساخت رکورد ${name} ممکن نشد — در اولین فراخوانی API خودش ساخته می‌شود`);
+    }
+  }
+
   const username = (process.env.ADMIN_USERNAME || "admin").trim();
   const password = process.env.ADMIN_INITIAL_PASSWORD?.trim() || "";
   const forceReset = process.env.ADMIN_FORCE_RESET === "1";

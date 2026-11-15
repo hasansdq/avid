@@ -77,10 +77,15 @@ for CRITICAL in \
   "src/app/api/payment/callback/route.ts" \
   "src/app/api/payment/start/route.ts" \
   "src/lib/payment.ts" \
+  "src/lib/payment-finalize.ts" \
+  "src/lib/media.ts" \
+  "src/lib/default-settings.ts" \
   "src/app/api/health/route.ts" \
   "src/app/api/user/otp/request/route.ts" \
   "src/app/api/panel/otp/request/route.ts" \
   "src/lib/sms.ts" \
+  "src/lib/trust-seals.ts" \
+  "src/components/site/trust-seal.tsx" \
   "src/app/api/admin/sms-settings/route.ts" \
   "src/app/api/admin/sms-test/route.ts" \
   "src/app/api/admin/sms-send/route.ts" \
@@ -91,21 +96,35 @@ for CRITICAL in \
   "src/app/api/admin/backup/import/route.ts" \
   "src/components/admin/modules/backup-module.tsx" \
   "src/components/site/enroll-form.tsx" \
+  "src/components/site/hero.tsx" \
+  "src/instrumentation.ts" \
+  "src/lib/ensure-schema.ts" \
   "scripts/migrate.ts" \
+  "scripts/ensure-schema.ts" \
   "scripts/bootstrap.ts" \
   "scripts/backup.ts" \
   "scripts/restore.ts" \
   "scripts/healthcheck.ts" \
   "prisma/migrations/0_init/migration.sql" \
+  "prisma/migrations/1_add_zarinpal_code/migration.sql" \
+  "prisma/migrations/2_complete_schema/migration.sql" \
+  "prisma/migrations/3_v8_payment_attempt_and_clean_defaults/migration.sql" \
+  "prisma/baseline.sql" \
   "mini-services/chat-service/index.ts" \
   "mini-services/chat-service/web-dev-supervisor.ts" \
+  "mini-services/chat-service/Dockerfile" \
+  "mini-services/chat-service/tsconfig.json" \
+  "mini-services/chat-service/package.json" \
+  "mini-services/chat-service/bun.lock" \
   "compose.yaml" \
   "Dockerfile" \
+  "tsconfig.json" \
   "deploy/update.sh" \
   "deploy/backup.sh" \
   "deploy/restore.sh" \
   "deploy/directadmin-quickstart.md" \
   "deploy/apache/vhost-include.conf" \
+  "deploy/nginx/vhost-proxy.conf" \
   "DEPLOY.md" \
   "TEST-RESULTS.md" \
   ".env.example" \

@@ -12,7 +12,7 @@
 مرورگر ──HTTPS──▶ Apache (DirectAdmin، دامنه + گواهی TLS)
                     │
                     ├─ /socket.io/  ──▶ 127.0.0.1:3004  (کانتینر chat — Socket.IO)
-                    └─ / (بقیه)     ──▶ 127.0.0.1:3900  (کانتینر web — Next.js standalone)
+                    └─ / (بقیه)     ──▶ 127.0.0.1:3900  (کانتینر web — Next.js standalone؛ ۳۹۰۰ میزبان → ۳۰۰۰ کانتینر)
 
 والی‌های دائمی:
   avid_db       ← SQLite (فایل custom.db)
@@ -76,23 +76,34 @@ docker compose up -d --build
 
 سرویس `migrate` (`scripts/migrate.ts`) وضعیت دیتابیس را تشخیص می‌دهد:
 
+> **متن‌های ویرایش‌شده با «ویرایشگر ظاهری مدادی»** (متن/رنگ/فونت/اندازه/
+> مخفی‌بودن هر جایگاه، از جمله عددهای کارت‌های «رشد آکادمی در یک نگاه»)
+> در جدول `SiteText` دیتابیس ذخیره می‌شوند و عددهای شمارنده نیز در
+> `SiteSettings` آینه می‌گردند. چون دیتابیس روی والی دائمی `avid_db`
+> قرار دارد، پس از `docker compose up -d --build` یا
+> `bash deploy/update.sh` (بازسازی کانتینر/ایمیج) **همه‌ی این تغییرات
+> حفظ می‌شوند** و به متن‌های اولیه برنمی‌گردند. بکاپ‌های ماژول «بکاپ و
+> بازیابی» و `deploy/backup.sh` نیز شامل همین جدول‌اند. تنها حالتِ از
+> دست رفتن، پاک‌کردن والی دیتابیس است (`docker compose down -v`) — که
+> جزء نصب تازه است، نه به‌روزرسانی.
+
 | وضعیت دیتابیس | رفتار |
 |---|---|
-| نصب تازه (جدولی نیست) | `prisma migrate deploy` — ساخت کامل + تاریخچه |
-| تاریخچه‌ی Prisma دارد | `prisma migrate deploy` — فقط مهاجرت‌های معلق |
-| نسخه‌ی قبلی (بدون `_prisma_migrations` — ساخته‌شده با db push) | ۱) **بکاپ** (VACUUM INTO، بدون توقف) ۲) بررسی **تطابق ساختار** با schema ۳) اعمال دستورهای **غیرمخرب** اختلاف (جدول/ستون تازه) ۴) **ثبت migration اولیه در تاریخچه‌ی Prisma** ۵) تایید **حفظ داده** (مقایسه‌ی شمارش سطرها) |
+| نصب تازه (فایل/جدولی نیست) | ابتدا یک **فایل SQLite خالی** ساخته می‌شود (تا موتور مهاجرت با «Schema engine error / unable to open database file» رد نشود — همان راه‌حل تأییدشده روی VPS)؛ سپس `prisma migrate deploy` — ساخت کامل + تاریخچه |
+| دیتابیس موجود (هر وضعیتی از تاریخچه/ساختار — حتی ساختارِ «جلوتر از تاریخچه») | **آشتی‌سازی**: ۱) **بکاپ** (VACUUM INTO) ۲) شفا‌ی افزایشی ساختار (فقط افزودن جدول/ستون/ایندکس) ۳) **بازپخش مهاجرت‌های ثبت‌نشده** با تحملِ «هم‌اکنون موجود» (جمله‌ای که اثرش هست — مثل ستونِ تکراری `zarinpalCode` — رد می‌شود و خطا نمی‌دهد) ۴) **ثبت در تاریخچه‌ی Prisma** ۵) تایید **عدمِ اختلاف ساختار** و **حفظ داده** (مقایسه‌ی شمارش سطرها) |
 
-اگر اختلاف ساختاری «مخرب» باشد (حذف جدول/ستون/تغییر نام)، مهاجرت **بدون
-هیچ تغییری** متوقف می‌شود و مسیر بکاپ اعلام می‌گردد (`docker compose logs
-migrate`). اگر در میانه‌ی کار خطایی رخ دهد، دیتابیس از بکاپِ همان لحظه
-بازگردانده می‌شود. برای انتقال دیتابیس نسخه‌ی قبلی:
+**`prisma db push` هیچ‌جا در مسیر production استفاده نمی‌شود.** اگر جمله‌ای از
+مهاجرت با خطای «واقعی» (غیر از هم‌اکنون‌موجود) رد شود یا در پایان اختلاف
+ساختاری بماند، دیتابیس **عیناً از بکاپ بازگردانده** می‌شود و مهاجرت با کد ۱
+متوقف می‌گردد (`docker compose logs migrate`). برای انتقال دیتابیس نسخه‌ی
+قبلی:
 
 ```bash
 cd avid
 docker compose build migrate          # ایمیج ابزارها (یک‌بار)
 
-# — ۱) بکاپ سازگار با WAL از دیتابیس قبلی (با ابزار sqlite3) —
-sqlite3 /مسیر/نسخه-قبلی/db/custom.db ".backup './old-custom.db'"
+# — ۱) بکاپ از فایل قبلی روی میزبان (پیش از هر کاری) —
+cp /مسیر/نسخه-قبلی/db/custom.db ./old-custom.db
 
 # — ۲) جای‌گذاری فایل با دسترسی صحیح در والی (مسیر /app/data/custom.db) —
 #      سرویس migrate با کاربر bun (uid 1000) اجرا می‌شود؛ خودِ او کپی را
@@ -100,8 +111,7 @@ sqlite3 /مسیر/نسخه-قبلی/db/custom.db ".backup './old-custom.db'"
 mkdir -p .db-transfer
 cp ./old-custom.db .db-transfer/custom.db
 docker compose run --rm --volume "$(pwd)/.db-transfer:/transfer:ro" migrate \
-  sh -c 'test ! -e /app/data/custom.db && cp /transfer/custom.db /app/data/custom.db && chmod 644 /app/data/custom.db && ls -l /app/data/custom.db'
-# این کپی فقط برای ولوم مقصد خالی است.
+  sh -c 'cp /transfer/custom.db /app/data/custom.db && chmod 644 /app/data/custom.db && ls -l /app/data/custom.db'
 # خروجی ls باید: -rw-r--r-- ... bun bun ... /app/data/custom.db
 
 # — ۳) مهاجرت غیرمخرب (نخستین گامِ خودش: بکاپ VACUUM INTO) + bootstrap مدیر —
@@ -126,11 +136,6 @@ rm -rf .db-transfer ./old-custom.db
 
 ## ۳) تنظیم آپاچی در DirectAdmin
 
-در نصب تازه، اطلاعات تماس را در بخش تنظیمات پنل مدیر وارد کنید.
-
-اگر از نصب قبلی استفاده می‌کنید، `WEB_PORT=3900` را در `.env`
-موجود وارد کنید و مقصد پراکسی وب دامنه را هم روی `127.0.0.1:3900` بگذارید.
-
 1. **فعال‌سازی ماژول‌ها** (CustomBuild):
    ```bash
    cd /usr/local/directadmin/custombuild
@@ -141,7 +146,7 @@ rm -rf .db-transfer ./old-custom.db
 2. **تنظیم VirtualHost دامنه** — Admin Level → **Custom HTTPD
    Configurations** → دامنه را انتخاب کنید → محتوای
    `deploy/apache/vhost-include.conf` را در بخش VirtualHost وارد کنید
-   (تنظیمات `/socket.io/` با WebSocket و polling + پروکسی `/` به ۳۹۰۰).
+   (تنظیمات `/socket.io/` با WebSocket و polling + پروکسی `/` به ۳۰۰۰).
 
 3. **گواهی TLS**: از DirectAdmin گواهی رایگان Let's Encrypt برای دامنه بگیرید
    و ریدایرکت HTTP→HTTPS را فعال کنید (کوکی‌های ورود با پروکسی HTTPS خودکار
@@ -162,8 +167,6 @@ rm -rf .db-transfer ./old-custom.db
    کد تایید **در production هرگز در پاسخ API برگردانده نمی‌شود**؛ یعنی
    ورود/ثبت‌نام پیامکی پس از پیکربندی واقعی پنل امکان‌پذیر است.
 3. **درگاه پرداخت** (زرین‌پال/پی‌پینگ) و کدهای تخفیف را تنظیم کنید.
-   پی‌پینگ از API نسخه ۳ استفاده می‌کند. برای پرداخت‌های معلقِ نسخه ۲،
-   پس از تعیین تکلیف تراکنش در پنل پی‌پینگ، پرداخت جدید ایجاد کنید.
    حالت «آزمایشی» فقط از پنل مدیریت (سمت سرور) فعال می‌شود؛ پارامتر
    `gateway=test` در URL به‌تنهایی هیچ پرداختی را موفق ثبت نمی‌کند و تراکنش
    واقعی فقط پس از تأییدِ درگاه ثبت می‌شود.
@@ -176,7 +179,7 @@ rm -rf .db-transfer ./old-custom.db
 | کار | دستور (از داخل `avid/`) |
 |---|---|
 | بکاپ آنلاین (DB + uploads) | `bash deploy/backup.sh` |
-| به‌روزرسانی غیرمخرب | `bash deploy/update.sh` (بکاپ → build → migrate → up) |
+| به‌روزرسانی غیرمخرب | `bash deploy/update.sh` (ثبت ایمیج قبلی با :rollback → build → توقف وب/چت → بکاپ سازگار → migrate → up → تایید سلامت؛ در شکستِ بکاپ/مهاجرت، سرویس‌ها با همان ایمیج‌های قبلی برمی‌گردند) |
 | بازیابی دیتابیس | `bash deploy/restore.sh avid-YYYYMMDD-HHMMSS.db` |
 | لاگ‌ها | `docker compose logs -f web` / `logs -f chat` / `logs migrate` |
 | ورود به کانتینر | `docker compose exec web sh` |
