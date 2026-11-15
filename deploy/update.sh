@@ -18,26 +18,11 @@
 #   ۶) انتظار برای «سالم شدن» وب و چت — موفقیت فقط وقتی اعلام می‌شود که
 #      migrate با کد ۰ تمام شده و هر دو سرویس healthy باشند.
 #
-# بازگشت به نسخه‌ی قبلی (واقعی، نه صرفاً up مجدد):
-#   اگر «بکاپ» یا «مهاجرت» شکست بخورد، دیتابیس یا دست‌نخورده است یا
-#   عیناً از بکاپِ داخل migrate.ts بازگردانده شده — پس باید سرویس‌ها با
-#   «همان ایمیج‌های نسخه‌ی قبلی» بالا بیایند، نه با ایمیج‌های نو که
-#   از قبل ساخته شده‌اند. اسکریپت نامِ پیش‌فرض compose (مثل avid-web)
-#   را دوباره به همان ایمیجِ قبلی (برچسب :rollback) تگ می‌زند و فقط
-#   وب و چت را با همان ایمیج‌ها بالا می‌آورد (بدون rebuild و بدون
-#   وابستگی‌ها) — نسخه‌ی قبلی عملاً همان‌طور که قبل از به‌روزرسانی
-#   می‌رفت، ادامه می‌دهد.
-#   ایمیج‌های نو «نگه داشته می‌شوند» (حذف نمی‌شوند؛ docker image prune
-#   عمداً در این اسکریپت نیست) تا بعد از رفع علتِ شکست، همین اسکریپت
-#   با بیلد تازه دوباره قابل اجرا باشد.
-#
-#   اگر پس از مهاجرتِ موفق، وب/چت سالم نشد: دیتابیس به «ساختارِ تازه»
-#   مهاجرت کرده و بازگشتِ خودکار ممکن است علت را پنهان کند — سرویس‌ها
-#   روشن می‌مانند تا لاگ‌ها بررسی شود (docker compose logs) و تصمیمِ
-#   بازگشت با مدیر است؛ برچسب‌های :rollback همین لحظه هم در دسترس‌اند:
-#     docker tag avid-web:rollback avid-web:latest && \
-#     docker tag avid-chat:rollback avid-chat:latest && \
-#     docker compose up -d --no-deps --no-build web chat
+# اگر بکاپ یا مهاجرت شکست بخورد، همان کانتینرهای متوقف‌شده را شروع
+# می‌کنیم. تا قبل از موفقیت مهاجرت، وب و چت بازسازی نمی‌شوند.
+# تگ‌های rollback فقط برای بازگشت دستی پس از ساخت کانتینرهای جدیدند.
+# اگر Docker ایمیج قدیمی را پیدا نکند، تا زمانی که کانتینر قبلی موجود
+# است، ثبت نشدن تگ مانع ادامه‌ی آپدیت نمی‌شود.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -74,36 +59,37 @@ wait_healthy() {
 }
 
 declare -a previous_services=()
-declare -a previous_repositories=()
+declare -a previous_containers=()
+rollback_images=0
 
 save_previous_image() {
   local service="$1" cid image_id reference repository
   cid="$(docker compose ps -q "$service")"
   [ -n "$cid" ] || return 0
+  previous_services+=("$service")
+  previous_containers+=("$cid")
   image_id="$(docker inspect --format '{{.Image}}' "$cid")"
   reference="$(docker inspect --format '{{.Config.Image}}' "$cid")"
   repository="${reference%@*}"
   if [[ "${repository##*/}" == *:* ]]; then
     repository="${repository%:*}"
   fi
-  # .Image is the immutable ID used by the running container.
-  docker tag "$image_id" "$repository:rollback"
-  previous_services+=("$service")
-  previous_repositories+=("$repository")
+  if docker tag "$image_id" "$repository:rollback"; then
+    rollback_images=$((rollback_images + 1))
+  else
+    echo "⚠ تگ بازگشت برای «$service» ثبت نشد. در صورت شکست بکاپ یا مهاجرت، همان کانتینر قبلی دوباره شروع می‌شود." >&2
+  fi
 }
 
 rollback_previous() {
-  local repository service
-  if [ "${#previous_services[@]}" -eq 0 ]; then
-    echo "⚠ کانتینر قبلی برای بازگشت وجود ندارد."
+  local service
+  if [ "${#previous_containers[@]}" -eq 0 ]; then
+    echo "ℹ کانتینر در حال اجرایی برای بازیابی وجود نداشت."
     return 0
   fi
 
-  echo "— بازگشت به ایمیج‌های نسخه‌ی قبل …"
-  for repository in "${previous_repositories[@]}"; do
-    docker tag "$repository:rollback" "$repository:latest"
-  done
-  docker compose up -d --no-deps --no-build "${previous_services[@]}"
+  echo "— راه‌اندازی دوباره‌ی کانتینرهای قبلی …"
+  docker container start "${previous_containers[@]}"
   for service in "${previous_services[@]}"; do
     wait_healthy "$service" 240
   done
@@ -116,7 +102,11 @@ save_previous_image chat
 docker compose build
 
 echo "— ۲/۶ توقف وب و چت برای بکاپِ سازگار و اجرای مهاجرت …"
-docker compose stop web chat
+if ! docker compose stop web chat; then
+  echo "✖ توقف سرویس‌ها کامل نشد. کانتینرهای قبلی دوباره شروع می‌شوند." >&2
+  rollback_previous
+  exit 1
+fi
 
 echo "— ۳/۶ پشتیبان‌گیری کامل (دیتابیس + آپلودها) …"
 if ! bash deploy/backup.sh; then
@@ -127,7 +117,7 @@ fi
 
 echo "— ۴/۶ مهاجرت غیرمخرب دیتابیس (migrate.ts — بدون prisma db push) …"
 if ! docker compose run --rm migrate; then
-  echo "✖ مهاجرت ناموفق (لاگ بالا) — دیتابیس توسط migrate.ts از بکاپ بازگردانده یا دست‌نخورده است."
+  echo "✖ مهاجرت ناموفق بود. وضعیت دیتابیس و بکاپ را در لاگ بالا بررسی کنید."
   echo "  نسخه‌ی قبلی با همان ایمیج‌های قبلی بالا می‌آید؛ پس از رفع علت، اسکریپت را دوباره اجرا کنید."
   rollback_previous
   exit 1
@@ -142,8 +132,11 @@ if ! wait_healthy web 240 || ! wait_healthy chat 90; then
   docker compose ps || true
   echo "بررسی لاگ‌ها: docker compose logs --tail=100 web chat"
   echo "ℹ مهاجرت با موفقیت انجام شده؛ سرویس‌ها روشن مانده‌اند تا علت بررسی شود."
-  echo "  بازگشت دستی به ایمیج‌های قبلی (در صورت نیاز):"
-  echo "    docker tag avid-web:rollback avid-web:latest && docker tag avid-chat:rollback avid-chat:latest && docker compose up -d --no-deps --no-build web chat"
+  if [ "$rollback_images" -eq 2 ]; then
+    echo "  ایمیج‌های قبلی با تگ :rollback ثبت شده‌اند. قبل از بازگشت، سازگاری دیتابیس را بررسی کنید."
+  else
+    echo "  تگ :rollback برای هر دو سرویس ثبت نشده است. بکاپ و لاگ‌های به‌روزرسانی را بررسی کنید."
+  fi
   exit 1
 fi
 
