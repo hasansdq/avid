@@ -37,6 +37,7 @@ import {
   rmSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { sqliteRows } from "./sqlite-query";
 import { ensureSchema } from "./ensure-schema";
 import { SITE_TEXT_KEY_ALIASES } from "./site-text-registry";
 
@@ -119,9 +120,9 @@ function driftScript(): string | null {
 
 /** جدول‌های اپ (بدون جدول‌های داخلی sqlite و تاریخچه‌ی Prisma) */
 function appTables(db: Database): string[] {
-  const rows = db
-    .query("SELECT name FROM sqlite_master WHERE type='table'")
-    .all() as Array<{ name: string }>;
+  const rows = sqliteRows<{ name: string }>(
+    db, "SELECT name FROM sqlite_master WHERE type='table'"
+  );
   return rows
     .map((r) => r.name)
     .filter((n) => !n.startsWith("sqlite_") && n !== "_prisma_migrations");
@@ -132,9 +133,9 @@ function tableCounts(db: Database): Record<string, number> {
   const out: Record<string, number> = {};
   for (const t of appTables(db)) {
     try {
-      out[t] = (
-        db.query(`SELECT COUNT(*) AS c FROM "${t}"`).get() as { c: number }
-      ).c;
+      out[t] = sqliteRows<{ c: number }>(
+        db, `SELECT COUNT(*) AS c FROM "${t}"`
+      )[0].c;
     } catch {
       out[t] = -1;
     }
@@ -151,22 +152,21 @@ function doneMigrationNames(): Set<string> {
   try {
     const probe = new Database(DB_PATH, { readonly: true });
     try {
-      const rows = probe
-        .query(
-          "SELECT migration_name FROM _prisma_migrations " +
-            "WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL"
-        )
-        .all() as Array<{ migration_name: string }>;
+      const rows = sqliteRows<{ migration_name: string }>(
+        probe,
+        "SELECT migration_name FROM _prisma_migrations " +
+          "WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL"
+      );
       return new Set(rows.map((r) => r.migration_name));
     } finally {
-      probe.close();
+      probe.close(true);
     }
   } catch {
     return new Set<string>();
   }
 }
 
-/** جدول تاریخچه‌ی Prisma را در صورت نبود می‌سازد (قبل از resolve) */
+/** جدول تاریخچه‌ی Prisma را در صورت نبود می‌سازد (پیش از ثبت نتیجه) */
 function ensureHistoryTable(db: Database): void {
   db.exec(`CREATE TABLE IF NOT EXISTS "_prisma_migrations" (
     "id" VARCHAR(36) PRIMARY KEY NOT NULL,
@@ -187,7 +187,7 @@ function backupDb(dest: string): void {
     db.exec("PRAGMA busy_timeout = 5000");
     db.exec(`VACUUM INTO '${dest.replace(/'/g, "''")}'`);
   } finally {
-    db.close();
+    db.close(true);
   }
 }
 
@@ -289,14 +289,13 @@ function siteTextSnapshot(dbPath: string): SiteTextRawRow[] {
   try {
     const db = new Database(dbPath, { readonly: true });
     try {
-      return db
-        .query(
-          "SELECT key, text, color, fontKey, fontSize, hidden, updatedAt " +
-            "FROM SiteText ORDER BY key"
-        )
-        .all() as SiteTextRawRow[];
+      return sqliteRows<SiteTextRawRow>(
+        db,
+        "SELECT key, text, color, fontKey, fontSize, hidden, updatedAt " +
+          "FROM SiteText ORDER BY key"
+      );
     } finally {
-      db.close();
+      db.close(true);
     }
   } catch {
     // جدول SiteText هنوز وجود ندارد — تصویری خالی
@@ -356,16 +355,16 @@ function applySiteTextKeyAliases(dbPath: string): {
     db.exec("BEGIN");
     for (const [oldKey, newKey] of aliases) {
       if (oldKey === newKey) continue;
-      const oldRow = db
-        .query(
-          "SELECT key, text, color, fontKey, fontSize, hidden, updatedAt " +
-            "FROM SiteText WHERE key = ?"
-        )
-        .get(oldKey) as SiteTextRawRow | null;
+      const oldRow = sqliteRows<SiteTextRawRow>(
+        db,
+        "SELECT key, text, color, fontKey, fontSize, hidden, updatedAt " +
+          "FROM SiteText WHERE key = ?",
+        oldKey
+      )[0];
       if (!oldRow) continue;
-      const newRow = db
-        .query("SELECT key, updatedAt FROM SiteText WHERE key = ?")
-        .get(newKey) as { key: string; updatedAt: number } | null;
+      const newRow = sqliteRows<{ key: string; updatedAt: number }>(
+        db, "SELECT key, updatedAt FROM SiteText WHERE key = ?", newKey
+      )[0];
       if (!newRow) {
         // فقط رکورد قدیمی موجود است → انتقال ساده به کلید جاری
         db.run("UPDATE SiteText SET key = ? WHERE key = ?", [newKey, oldKey]);
@@ -405,7 +404,7 @@ function applySiteTextKeyAliases(dbPath: string): {
     }
     throw error;
   } finally {
-    db.close();
+    db.close(true);
   }
   return result;
 }
@@ -448,7 +447,7 @@ async function reconcileFlow(): Promise<void> {
     try {
       return tableCounts(db);
     } finally {
-      db.close();
+      db.close(true);
     }
   })();
 
@@ -514,7 +513,7 @@ async function reconcileFlow(): Promise<void> {
             }
           }
         } finally {
-          // Release SQLite locks before Prisma opens its own writing connection.
+          // All prepared statements are finalized before Prisma opens a writer.
           db.close(true);
         }
       } catch (error) {
@@ -597,7 +596,7 @@ async function reconcileFlow(): Promise<void> {
     try {
       return tableCounts(db);
     } finally {
-      db.close();
+      db.close(true);
     }
   })();
   const mismatch = Object.keys(before).filter(
@@ -680,10 +679,10 @@ async function main(): Promise<void> {
         "migrate: فایل دیتابیس وجود ندارد — فایل SQLite خالی ساخته می‌شود …"
       );
       const db = new Database(DB_PATH);
-      db.close();
+      db.close(true);
     } else {
       const probe = new Database(DB_PATH);
-      probe.close();
+      probe.close(true);
     }
   } catch (error) {
     fail(
@@ -704,7 +703,7 @@ async function main(): Promise<void> {
     try {
       fresh = appTables(probe).length === 0;
     } finally {
-      probe.close();
+      probe.close(true);
     }
   }
 

@@ -1,3 +1,4 @@
+import { sqliteRows } from "./sqlite-query";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Database as BunSqliteDatabase } from "bun:sqlite";
@@ -216,25 +217,23 @@ export async function ensureSchema(
     const tableNames = () =>
       new Set(
         (
-          db
-            .query("SELECT name FROM sqlite_master WHERE type='table'")
-            .all() as Array<{ name: string }>
+          sqliteRows<{ name: string }>(
+            db, "SELECT name FROM sqlite_master WHERE type='table'"
+          )
         ).map((r) => r.name)
       );
     const indexNames = () =>
       new Set(
         (
-          db
-            .query("SELECT name FROM sqlite_master WHERE type='index'")
-            .all() as Array<{ name: string }>
+          sqliteRows<{ name: string }>(
+            db, "SELECT name FROM sqlite_master WHERE type='index'"
+          )
         ).map((r) => r.name)
       );
     const columnsOf = (table: string) =>
       new Set(
         (
-          db.query(`PRAGMA table_info("${table}")`).all() as Array<{
-            name: string;
-          }>
+          sqliteRows<{ name: string }>(db, `PRAGMA table_info("${table}")`)
         ).map((r) => r.name)
       );
     const execSafe = (sql: string): boolean => {
@@ -310,7 +309,7 @@ export async function ensureSchema(
       }
     }
   } finally {
-    db.close();
+    db.close(true);
   }
 
   return report;
