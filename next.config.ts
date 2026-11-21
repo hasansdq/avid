@@ -13,6 +13,9 @@ const nextConfig: NextConfig = {
   reactStrictMode: false,
   // نشانگر شناور ابزار توسعه (دکمه‌ی بنفش < /> ) در پیش‌نمایش حذف می‌شود
   devIndicators: false,
+  // exceljs (خروجی اکسل حضور استریم) فقط سمت سرور لازم است و باید از باندل
+  // استاندالون کنار بیرون بماند (CJS سنگین + فایل‌های اختیاری)
+  serverExternalPackages: ["exceljs"],
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "**" },

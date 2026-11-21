@@ -62,7 +62,9 @@ CREATE TABLE "Course" (
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "published" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "updatedAt" DATETIME NOT NULL,
+    "teacherId" TEXT,
+    CONSTRAINT "Course_teacherId_fkey" FOREIGN KEY ("teacherId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 
 -- CreateTable
@@ -253,9 +255,46 @@ CREATE TABLE "User" (
     "phone" TEXT NOT NULL,
     "nationalId" TEXT,
     "status" TEXT NOT NULL DEFAULT 'active',
+    "role" TEXT NOT NULL DEFAULT 'student',
     "note" TEXT,
+    "shabaNumber" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL
+);
+
+-- CreateTable
+CREATE TABLE "TeacherPayout" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "teacherId" TEXT NOT NULL,
+    "amount" INTEGER NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'paid',
+    "note" TEXT,
+    "paidAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "TeacherPayout_teacherId_fkey" FOREIGN KEY ("teacherId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "ClassRoom" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "title" TEXT NOT NULL,
+    "description" TEXT NOT NULL DEFAULT '',
+    "inviteSlug" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    "teacherId" TEXT,
+    CONSTRAINT "ClassRoom_teacherId_fkey" FOREIGN KEY ("teacherId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "ClassMembership" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "userId" TEXT NOT NULL,
+    "classId" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "ClassMembership_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "ClassMembership_classId_fkey" FOREIGN KEY ("classId") REFERENCES "ClassRoom" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateTable
@@ -282,13 +321,18 @@ CREATE TABLE "Exam" (
     "description" TEXT NOT NULL DEFAULT '',
     "accessType" TEXT NOT NULL DEFAULT 'open',
     "courseId" TEXT,
+    "classId" TEXT,
     "password" TEXT NOT NULL DEFAULT '',
     "durationMinutes" INTEGER NOT NULL DEFAULT 0,
+    "allowBack" BOOLEAN NOT NULL DEFAULT true,
     "published" BOOLEAN NOT NULL DEFAULT true,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
+    "isBankCopy" BOOLEAN NOT NULL DEFAULT false,
+    "bankOriginId" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
-    CONSTRAINT "Exam_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES "Course" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    CONSTRAINT "Exam_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES "Course" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "Exam_classId_fkey" FOREIGN KEY ("classId") REFERENCES "ClassRoom" ("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 
 -- CreateTable
@@ -312,7 +356,9 @@ CREATE TABLE "ExamAttempt" (
     "examId" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
     "answers" TEXT NOT NULL DEFAULT '{}',
+    "grades" TEXT NOT NULL DEFAULT '{}',
     "score" REAL,
+    "scoreManual" BOOLEAN NOT NULL DEFAULT false,
     "autoScore" REAL NOT NULL DEFAULT 0,
     "totalPoints" REAL NOT NULL DEFAULT 0,
     "hasEssay" BOOLEAN NOT NULL DEFAULT false,
@@ -330,6 +376,7 @@ CREATE TABLE "UserSession" (
     "userId" TEXT NOT NULL,
     "expiresAt" DATETIME NOT NULL,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "lastSeenAt" DATETIME,
     CONSTRAINT "UserSession_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
@@ -346,6 +393,23 @@ CREATE TABLE "Installment" (
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
     CONSTRAINT "Installment_enrollmentId_fkey" FOREIGN KEY ("enrollmentId") REFERENCES "Enrollment" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "InstallmentPayment" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "enrollmentId" TEXT NOT NULL,
+    "installmentIds" TEXT NOT NULL DEFAULT '[]',
+    "amount" INTEGER NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "gateway" TEXT NOT NULL DEFAULT '',
+    "refId" TEXT,
+    "attemptCode" TEXT NOT NULL,
+    "cardPan" TEXT,
+    "paidAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "InstallmentPayment_enrollmentId_fkey" FOREIGN KEY ("enrollmentId") REFERENCES "Enrollment" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateTable
@@ -384,6 +448,39 @@ CREATE TABLE "OtpCode" (
     "expiresAt" DATETIME NOT NULL,
     "consumedAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- CreateTable
+CREATE TABLE "PendingRegistration" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "phone" TEXT NOT NULL,
+    "token" TEXT NOT NULL,
+    "expiresAt" DATETIME NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- CreateTable
+CREATE TABLE "StatsDaily" (
+    "day" TEXT NOT NULL PRIMARY KEY,
+    "visits" INTEGER NOT NULL DEFAULT 0,
+    "uniqueVisitors" INTEGER NOT NULL DEFAULT 0,
+    "signups" INTEGER NOT NULL DEFAULT 0,
+    "logins" INTEGER NOT NULL DEFAULT 0
+);
+
+-- CreateTable
+CREATE TABLE "VisitVisitorDay" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "day" TEXT NOT NULL,
+    "visitorId" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- CreateTable
+CREATE TABLE "PresencePulse" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "userId" TEXT NOT NULL,
+    "at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- CreateTable
@@ -432,6 +529,8 @@ CREATE TABLE "AdminUser" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "username" TEXT NOT NULL,
     "passwordHash" TEXT NOT NULL,
+    "phone" TEXT NOT NULL DEFAULT '',
+    "twoFactorEnabled" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -487,6 +586,69 @@ CREATE TABLE "ChatMessage" (
     CONSTRAINT "ChatMessage_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "ChatConversation" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
+-- CreateTable
+CREATE TABLE "LiveStream" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "title" TEXT NOT NULL,
+    "description" TEXT NOT NULL DEFAULT '',
+    "status" TEXT NOT NULL DEFAULT 'scheduled',
+    "inviteSlug" TEXT,
+    "startedAt" DATETIME,
+    "endedAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    "hostId" TEXT,
+    CONSTRAINT "LiveStream_hostId_fkey" FOREIGN KEY ("hostId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "StreamInvitation" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "streamId" TEXT NOT NULL,
+    "courseId" TEXT,
+    "courseTitle" TEXT NOT NULL DEFAULT '',
+    "classId" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "StreamInvitation_streamId_fkey" FOREIGN KEY ("streamId") REFERENCES "LiveStream" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "StreamInvitation_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES "Course" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "StreamInvitation_classId_fkey" FOREIGN KEY ("classId") REFERENCES "ClassRoom" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "StreamParticipant" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "streamId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "joinedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "leftAt" DATETIME,
+    "kicked" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "StreamParticipant_streamId_fkey" FOREIGN KEY ("streamId") REFERENCES "LiveStream" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "StreamParticipant_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "HomepageSection" (
+    "key" TEXT NOT NULL PRIMARY KEY,
+    "mobile" BOOLEAN NOT NULL DEFAULT true,
+    "tablet" BOOLEAN NOT NULL DEFAULT true,
+    "desktop" BOOLEAN NOT NULL DEFAULT true,
+    "updatedAt" DATETIME NOT NULL
+);
+
+-- CreateTable
+CREATE TABLE "HeroAnimation" (
+    "key" TEXT NOT NULL PRIMARY KEY,
+    "mobile" BOOLEAN NOT NULL DEFAULT true,
+    "tablet" BOOLEAN NOT NULL DEFAULT true,
+    "desktop" BOOLEAN NOT NULL DEFAULT true,
+    "updatedAt" DATETIME NOT NULL
+);
+
+-- CreateIndex
+CREATE INDEX "Course_teacherId_idx" ON "Course"("teacherId");
+
 -- CreateIndex
 CREATE INDEX "CourseGroup_courseId_idx" ON "CourseGroup"("courseId");
 
@@ -530,6 +692,21 @@ CREATE UNIQUE INDEX "User_phone_key" ON "User"("phone");
 CREATE UNIQUE INDEX "User_nationalId_key" ON "User"("nationalId");
 
 -- CreateIndex
+CREATE INDEX "TeacherPayout_teacherId_idx" ON "TeacherPayout"("teacherId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ClassRoom_inviteSlug_key" ON "ClassRoom"("inviteSlug");
+
+-- CreateIndex
+CREATE INDEX "ClassRoom_teacherId_idx" ON "ClassRoom"("teacherId");
+
+-- CreateIndex
+CREATE INDEX "ClassMembership_classId_idx" ON "ClassMembership"("classId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ClassMembership_userId_classId_key" ON "ClassMembership"("userId", "classId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Certificate_code_key" ON "Certificate"("code");
 
 -- CreateIndex
@@ -540,6 +717,12 @@ CREATE INDEX "Certificate_courseId_idx" ON "Certificate"("courseId");
 
 -- CreateIndex
 CREATE INDEX "Exam_courseId_idx" ON "Exam"("courseId");
+
+-- CreateIndex
+CREATE INDEX "Exam_classId_idx" ON "Exam"("classId");
+
+-- CreateIndex
+CREATE INDEX "Exam_isBankCopy_idx" ON "Exam"("isBankCopy");
 
 -- CreateIndex
 CREATE INDEX "ExamQuestion_examId_idx" ON "ExamQuestion"("examId");
@@ -560,6 +743,18 @@ CREATE INDEX "Installment_enrollmentId_idx" ON "Installment"("enrollmentId");
 CREATE INDEX "Installment_status_dueDate_idx" ON "Installment"("status", "dueDate");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "InstallmentPayment_attemptCode_key" ON "InstallmentPayment"("attemptCode");
+
+-- CreateIndex
+CREATE INDEX "InstallmentPayment_enrollmentId_idx" ON "InstallmentPayment"("enrollmentId");
+
+-- CreateIndex
+CREATE INDEX "InstallmentPayment_status_idx" ON "InstallmentPayment"("status");
+
+-- CreateIndex
+CREATE INDEX "InstallmentPayment_attemptCode_idx" ON "InstallmentPayment"("attemptCode");
+
+-- CreateIndex
 CREATE INDEX "SmsLog_createdAt_idx" ON "SmsLog"("createdAt");
 
 -- CreateIndex
@@ -567,6 +762,21 @@ CREATE INDEX "SmsLog_phone_idx" ON "SmsLog"("phone");
 
 -- CreateIndex
 CREATE INDEX "OtpCode_phone_createdAt_idx" ON "OtpCode"("phone", "createdAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PendingRegistration_phone_key" ON "PendingRegistration"("phone");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PendingRegistration_token_key" ON "PendingRegistration"("token");
+
+-- CreateIndex
+CREATE INDEX "VisitVisitorDay_day_idx" ON "VisitVisitorDay"("day");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "VisitVisitorDay_day_visitorId_key" ON "VisitVisitorDay"("day", "visitorId");
+
+-- CreateIndex
+CREATE INDEX "PresencePulse_at_idx" ON "PresencePulse"("at");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "UploadedFile_url_key" ON "UploadedFile"("url");
@@ -597,3 +807,18 @@ CREATE UNIQUE INDEX "ChatConversation_visitorToken_key" ON "ChatConversation"("v
 
 -- CreateIndex
 CREATE INDEX "ChatMessage_conversationId_createdAt_idx" ON "ChatMessage"("conversationId", "createdAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "LiveStream_inviteSlug_key" ON "LiveStream"("inviteSlug");
+
+-- CreateIndex
+CREATE INDEX "LiveStream_hostId_idx" ON "LiveStream"("hostId");
+
+-- CreateIndex
+CREATE INDEX "StreamInvitation_streamId_idx" ON "StreamInvitation"("streamId");
+
+-- CreateIndex
+CREATE INDEX "StreamParticipant_streamId_idx" ON "StreamParticipant"("streamId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "StreamParticipant_streamId_userId_key" ON "StreamParticipant"("streamId", "userId");

@@ -55,6 +55,7 @@ import { ConfirmDelete } from "@/components/admin/shared/confirm-delete";
 import { EmptyState } from "@/components/admin/shared/empty-state";
 import { InstallmentsDialog } from "@/components/admin/shared/installments-dialog";
 import { UserPaymentsDialog } from "@/components/admin/shared/user-payments-dialog";
+import { TeacherPaymentsDialog } from "@/components/admin/shared/teacher-payments-dialog";
 import { ModuleHeader } from "@/components/admin/shared/module-header";
 import {
   InstallmentsOverviewStats,
@@ -66,11 +67,19 @@ import { StatusBadge } from "@/components/admin/shared/status-badge";
 import { TableSkeleton } from "@/components/admin/shared/table-skeleton";
 import { btnGradient, tileGradient } from "@/components/admin/shared/styles";
 import type {
+  ClassMembership,
   CourseWithUsage,
   EnrollmentWithInstallments,
+  TeacherWithStats,
   User,
   UserWithStats,
 } from "@/components/admin/types";
+import {
+  AddTeacherDialog,
+  RoleChip,
+  TeachersTab,
+} from "@/components/admin/modules/users-teachers-tab";
+import type { TeachersListResponse } from "@/components/admin/modules/users-teachers-tab";
 import { isEnrollmentStatus } from "@/lib/course-theme";
 import { faDate, faDigits } from "@/lib/fa";
 import {
@@ -132,6 +141,10 @@ interface UsersListResponse {
 interface UserDetailResponse {
   user: User;
   enrollments: EnrollmentWithInstallments[];
+  /** کلاس‌هایی که کاربر عضو آنهاست (عضویت + عنوان کلاس) */
+  classes: (ClassMembership & {
+    classRoom: { id: string; title: string };
+  })[];
 }
 
 /** نام نمایشی کاربر (یا شماره‌ی او اگر نامی نداشت) */
@@ -619,7 +632,7 @@ function EnrollUserDialog({
   onOpenChange,
   onSaved,
 }: {
-  user: UserWithStats | null;
+  user: User | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
@@ -832,7 +845,7 @@ function LoginAsUserDialog({
   open,
   onOpenChange,
 }: {
-  user: UserWithStats | null;
+  user: User | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -932,7 +945,7 @@ function UserDetailDialog({
   onEdit,
   onManageInstallments,
 }: {
-  user: UserWithStats | null;
+  user: User | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onEdit: (user: User) => void;
@@ -974,7 +987,7 @@ function UserDetailDialog({
         <DialogHeader className="text-right sm:text-right">
           <DialogTitle className="text-base">پرونده‌ی کاربر</DialogTitle>
           <DialogDescription className="leading-6">
-            اطلاعات حساب، وضعیت و ثبت‌نام‌های دوره‌های این کاربر.
+            اطلاعات حساب، وضعیت، کلاس‌ها و ثبت‌نام‌های دوره‌های این کاربر.
           </DialogDescription>
         </DialogHeader>
 
@@ -1048,6 +1061,35 @@ function UserDetailDialog({
                   یادداشت مدیر: {profile.note}
                 </p>
               ) : null}
+            </section>
+
+            {/* — کلاس‌های کاربر (فقط مدیر می‌بیند؛ پنل کاربر نمایش نمی‌دهد) — */}
+            <section className="space-y-3">
+              <h3 className="flex items-center gap-2 text-sm font-black text-foreground">
+                <GraduationCap className="size-4 text-rose-600 dark:text-rose-300" />
+                کلاس‌های کاربر
+                <span className="rounded-full bg-rose-500/10 px-2 py-0.5 text-[0.6rem] font-bold text-rose-700 dark:bg-rose-400/10 dark:text-rose-300">
+                  {faDigits(detail?.classes.length ?? 0)}
+                </span>
+              </h3>
+
+              {!detail || detail.classes.length === 0 ? (
+                <p className="glass rounded-2xl px-5 py-6 text-center text-sm text-muted-foreground">
+                  این کاربر عضو هیچ کلاسی نیست.
+                </p>
+              ) : (
+                <div className="glass flex flex-wrap items-center gap-2 rounded-2xl p-4">
+                  {detail.classes.map((m) => (
+                    <span
+                      key={m.id}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-700 dark:border-rose-400/30 dark:bg-rose-400/10 dark:text-rose-300"
+                    >
+                      <Users className="size-3.5" />
+                      {m.classRoom.title}
+                    </span>
+                  ))}
+                </div>
+              )}
             </section>
 
             {/* — ثبت‌نام‌های کاربر — */}
@@ -1171,19 +1213,29 @@ export function UsersModule() {
 
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  /* — دیالوگ‌ها — */
-  const [detailUser, setDetailUser] = useState<UserWithStats | null>(null);
-  const [paymentsUser, setPaymentsUser] = useState<UserWithStats | null>(null);
+  /* — دیالوگ‌های کاربر/استاد مشترک — */
+  const [detailUser, setDetailUser] = useState<User | null>(null);
+  const [paymentsUser, setPaymentsUser] = useState<User | null>(null);
+  /* — دیالوگ دوتابی «پرداختی‌ها و اقساط» استاد — تب درآمد/شبا/واریزی مخصوص اساتید — */
+  const [teacherPaymentsUser, setTeacherPaymentsUser] = useState<User | null>(null);
   const [editUser, setEditUser] = useState<User | null>(null);
   const [installmentsTarget, setInstallmentsTarget] = useState<{
     id: string;
     title: string;
   } | null>(null);
 
-  /* — افزودن کاربر / افزودن به دوره / ورود به عنوان کاربر — */
+  /* — فهرست اساتید — تب «اساتید» + شمارنده‌ی کنار عنوان تب — */
+  const [teachers, setTeachers] = useState<TeacherWithStats[] | null>(null);
+  const [teachersTotal, setTeachersTotal] = useState<number | undefined>(
+    undefined
+  );
+  const [teachersLoading, setTeachersLoading] = useState(true);
+
+  /* — افزودن کاربر / افزودن استاد / افزودن به دوره / ورود به عنوان کاربر — */
   const [addOpen, setAddOpen] = useState(false);
-  const [enrollTarget, setEnrollTarget] = useState<UserWithStats | null>(null);
-  const [loginTarget, setLoginTarget] = useState<UserWithStats | null>(null);
+  const [addTeacherOpen, setAddTeacherOpen] = useState(false);
+  const [enrollTarget, setEnrollTarget] = useState<User | null>(null);
+  const [loginTarget, setLoginTarget] = useState<User | null>(null);
 
   /* — جست‌وجو با تأخیر — */
   useEffect(() => {
@@ -1221,14 +1273,32 @@ export function UsersModule() {
     load();
   }, [load]);
 
+  /** دریافت فهرست اساتید با آمار — برای تب «اساتید» و شمارنده‌ی آن */
+  const loadTeachers = useCallback(async () => {
+    try {
+      setTeachersLoading(true);
+      const data = await apiFetch<TeachersListResponse>("/api/admin/teachers");
+      setTeachers(data.teachers);
+      setTeachersTotal(data.total);
+    } catch (error) {
+      toastApiError(error);
+    } finally {
+      setTeachersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTeachers();
+  }, [loadTeachers]);
+
   /** تغییر فیلتر وضعیت → بازگشت به صفحه‌ی اول */
   function changeStatusFilter(next: StatusFilter) {
     setStatus(next);
     setPage(1);
   }
 
-  /** مسدودسازی / رفع مسدودی سریع */
-  async function toggleBlock(user: UserWithStats) {
+  /** مسدودسازی / رفع مسدودی سریع (کاربر و استاد) */
+  async function toggleBlock(user: User) {
     const next = user.status === "blocked" ? "active" : "blocked";
     setBusyId(user.id);
     try {
@@ -1241,7 +1311,8 @@ export function UsersModule() {
           ? `کاربر «${displayName(user)}» مسدود شد`
           : `کاربر «${displayName(user)}» فعال شد`
       );
-      await load();
+      // وضعیت در هر دو فهرست (کاربران و اساتید) بازتاب می‌شود
+      await Promise.all([load(), loadTeachers()]);
     } catch (error) {
       toastApiError(error);
     } finally {
@@ -1249,15 +1320,35 @@ export function UsersModule() {
     }
   }
 
-  /** حذف کاربر — ثبت‌نام‌ها باقی می‌مانند */
-  async function handleDelete(user: UserWithStats) {
+  /** حذف کاربر (از تب کاربران یا اساتید) — ثبت‌نام‌ها باقی می‌مانند */
+  async function handleDelete(user: User) {
     try {
       await apiFetch(`/api/admin/users/${user.id}`, { method: "DELETE" });
       toast.success(`کاربر «${displayName(user)}» حذف شد`);
-      await load();
+      // دارایی‌های استاد (دوره/کلاس/استریم) باقی می‌مانند ولی بدون مالک می‌شوند
+      await Promise.all([load(), loadTeachers()]);
     } catch (error) {
       toastApiError(error);
       throw error;
+    }
+  }
+
+  /** سلب نقش استاد → کاربر عادی؛ دوره‌ها/کلاس‌ها/استریم‌هایش دست‌نخورده می‌مانند */
+  async function demoteTeacher(teacher: TeacherWithStats) {
+    setBusyId(teacher.id);
+    try {
+      await apiFetch(`/api/admin/users/${teacher.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ role: "student" }),
+      });
+      toast.success(
+        `نقش استاد از «${displayName(teacher)}» گرفته شد؛ دوره‌ها و کلاس‌هایش دست‌نخورده می‌ماند.`
+      );
+      await Promise.all([load(), loadTeachers()]);
+    } catch (error) {
+      toastApiError(error);
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -1396,7 +1487,7 @@ export function UsersModule() {
     <div className="space-y-6">
       <ModuleHeader
         title="مدیریت کاربران"
-        description="کاربران ثبت‌نام‌شده‌ی سایت، وضعیت حساب و اقساط آنها"
+        description="کاربران ثبت‌نام‌شده‌ی سایت، وضعیت حساب و اقساط آنها، اساتید آکادمی"
       >
         <Badge
           variant="outline"
@@ -1414,7 +1505,7 @@ export function UsersModule() {
         onRefresh={() => overview.reload(true)}
       />
 
-      {/* — تب‌های ماژول: اقساط پرداخت‌شده‌ی اخیر / اقساط باقیمانده / لیست کاربران — */}
+      {/* — تب‌های ماژول: اقساط پرداخت‌شده‌ی اخیر / اقساط باقیمانده / لیست کاربران / اساتید — */}
       <Tabs defaultValue="recent-paid" dir="rtl" className="gap-5">
         <TabsList className="glass h-auto w-full flex-wrap justify-start gap-1 rounded-2xl p-1.5 sm:w-auto">
           <TabsTrigger
@@ -1440,6 +1531,14 @@ export function UsersModule() {
             <Users className="size-4 shrink-0 text-violet-600 dark:text-violet-300" />
             لیست کاربران
             <TabPill count={total} tone="violet" />
+          </TabsTrigger>
+          <TabsTrigger
+            value="teachers"
+            className="flex-none gap-2 rounded-xl px-3.5 py-2 text-xs font-bold"
+          >
+            <GraduationCap className="size-4 shrink-0 text-teal-600 dark:text-teal-300" />
+            اساتید
+            <TabPill count={teachersTotal} tone="emerald" />
           </TabsTrigger>
         </TabsList>
 
@@ -1580,9 +1679,12 @@ export function UsersModule() {
                                   {displayName(u).charAt(0)}
                                 </span>
                                 <div className="min-w-0">
-                                  <p className="truncate text-sm font-bold text-foreground">
-                                    {displayName(u)}
-                                  </p>
+                                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                                    <p className="truncate text-sm font-bold text-foreground">
+                                      {displayName(u)}
+                                    </p>
+                                    <RoleChip u={u} />
+                                  </div>
                                   <a
                                     href={`tel:${u.phone}`}
                                     dir="ltr"
@@ -1685,9 +1787,12 @@ export function UsersModule() {
                         </span>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-2">
-                            <p className="truncate text-sm font-black text-foreground">
-                              {displayName(u)}
-                            </p>
+                            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                              <p className="truncate text-sm font-black text-foreground">
+                                {displayName(u)}
+                              </p>
+                              <RoleChip u={u} />
+                            </div>
                             <span
                               className={cn(
                                 "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[0.6rem] font-bold",
@@ -1783,9 +1888,34 @@ export function UsersModule() {
             </>
           ) : null}
         </TabsContent>
+
+        {/* — تب «اساتید»: فهرست اساتید با آمار و عملیات کامل (دیالوگ‌های همان کاربران) — */}
+        <TabsContent value="teachers" className="space-y-5">
+          <TeachersTab
+            teachers={teachers}
+            loading={teachersLoading}
+            busyId={busyId}
+            onRefresh={() => {
+              void loadTeachers();
+            }}
+            onAdd={() => setAddTeacherOpen(true)}
+            onEdit={(u) => setEditUser(u)}
+            onDetail={(u) => setDetailUser(u)}
+            onEnroll={(u) => setEnrollTarget(u)}
+            onLogin={(u) => setLoginTarget(u)}
+            onPayments={(u) => setTeacherPaymentsUser(u)}
+            onToggleBlock={(u) => {
+              void toggleBlock(u);
+            }}
+            onDemote={(t) => {
+              void demoteTeacher(t);
+            }}
+            onDelete={handleDelete}
+          />
+        </TabsContent>
       </Tabs>
 
-      {/* — دیالوگ پرداختی‌ها و اقساط کاربر — */}
+      {/* — دیالوگ پرداختی‌ها و اقساط کاربر (تب کاربران) — */}
       <UserPaymentsDialog
         user={paymentsUser}
         open={!!paymentsUser}
@@ -1795,6 +1925,22 @@ export function UsersModule() {
         onManageInstallments={manageInstallments}
         onChanged={() => {
           void load();
+          overview.reload(true);
+        }}
+      />
+
+      {/* — دیالوگ دوتابی پرداختی‌ها و اقساط استاد (تب اساتید):
+          تب ۱ پرداختی‌ها/اقساط + تب ۲ درآمد استاد و شبا و واریزها — */}
+      <TeacherPaymentsDialog
+        teacher={teacherPaymentsUser}
+        open={!!teacherPaymentsUser}
+        onOpenChange={(o) => {
+          if (!o) setTeacherPaymentsUser(null);
+        }}
+        onManageInstallments={manageInstallments}
+        onChanged={() => {
+          void load();
+          void loadTeachers();
           overview.reload(true);
         }}
       />
@@ -1813,14 +1959,17 @@ export function UsersModule() {
         onManageInstallments={manageInstallments}
       />
 
-      {/* — دیالوگ ویرایش کاربر — */}
+      {/* — دیالوگ ویرایش کاربر (و استاد) — */}
       <EditUserDialog
         user={editUser}
         open={!!editUser}
         onOpenChange={(o) => {
           if (!o) setEditUser(null);
         }}
-        onSaved={load}
+        onSaved={() => {
+          void load();
+          void loadTeachers();
+        }}
       />
 
       {/* — دیالوگ افزودن کاربر جدید — */}
@@ -1830,6 +1979,16 @@ export function UsersModule() {
         onSaved={() => {
           void load();
           overview.reload(true);
+        }}
+      />
+
+      {/* — دیالوگ افزودن استاد (کاربر جدید یا تبدیل کاربر موجود) — */}
+      <AddTeacherDialog
+        open={addTeacherOpen}
+        onOpenChange={setAddTeacherOpen}
+        onSaved={() => {
+          void load();
+          void loadTeachers();
         }}
       />
 

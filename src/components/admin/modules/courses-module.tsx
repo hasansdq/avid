@@ -88,7 +88,7 @@ interface CourseForm {
   instructor: string;
   hours: string;
   sessions: string;
-  price: string;
+  // «قیمت (تومان)» از فرم حذف شده — ستون price پایگاه‌ داده با شهریه‌ی نقدی هم‌گام نگه داشته می‌شود
   cashTuition: string;
   installmentTuition: string;
   capacity: string;
@@ -129,7 +129,7 @@ interface ColumnDef {
 const COURSE_COLUMNS: ColumnDef[] = [
   { key: "type", label: "نوع", defaultVisible: true },
   { key: "level", label: "سطح", defaultVisible: true },
-  { key: "price", label: "قیمت", defaultVisible: true },
+  { key: "price", label: "شهریه", defaultVisible: true },
   { key: "sessions", label: "جلسات", defaultVisible: false },
   { key: "capacity", label: "ظرفیت", defaultVisible: false },
   { key: "sortOrder", label: "ترتیب", defaultVisible: true },
@@ -302,7 +302,6 @@ export function CoursesModule() {
       instructor: "",
       hours: "0",
       sessions: "0",
-      price: "0",
       cashTuition: "10000000",
       installmentTuition: "12000000",
       capacity: DEFAULT_CAPACITY.online,
@@ -332,7 +331,6 @@ export function CoursesModule() {
       instructor: course.instructor,
       hours: String(course.hours),
       sessions: String(course.sessions),
-      price: String(course.price),
       cashTuition: String(course.cashTuition),
       installmentTuition: String(course.installmentTuition),
       capacity: String(course.capacity),
@@ -586,7 +584,8 @@ export function CoursesModule() {
       sessions: toInt(form.sessions),
       // «کارآموزان» از فرم حذف شده — عدد نمایشی فعلی حفظ می‌شود (ایجاد = ۰)
       students: editing ? editing.students : 0,
-      price: toInt(form.price),
+      // «قیمت» از فرم حذف شده — برای سازگاری، ستون price همان شهریه‌ی نقدی را دنبال می‌کند
+      price: toInt(form.cashTuition),
       cashTuition: toInt(form.cashTuition),
       installmentTuition: toInt(form.installmentTuition),
       capacity:
@@ -803,7 +802,7 @@ export function CoursesModule() {
                     <TableHead>دوره</TableHead>
                     {visibleCols.type ? <TableHead>نوع</TableHead> : null}
                     {visibleCols.level ? <TableHead>سطح</TableHead> : null}
-                    {visibleCols.price ? <TableHead>قیمت</TableHead> : null}
+                    {visibleCols.price ? <TableHead>شهریه</TableHead> : null}
                     {visibleCols.sessions ? <TableHead>جلسات</TableHead> : null}
                     {visibleCols.capacity ? <TableHead>ظرفیت</TableHead> : null}
                     {visibleCols.sortOrder ? <TableHead>ترتیب</TableHead> : null}
@@ -883,13 +882,13 @@ export function CoursesModule() {
                         {visibleCols.price ? (
                           <TableCell>
                             <div className="space-y-0.5">
-                              {course.price === 0 ? (
+                              {course.cashTuition === 0 ? (
                                 <Badge className="rounded-full border-0 bg-emerald-500/15 px-2.5 py-1 text-[0.65rem] font-black text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300">
                                   رایگان
                                 </Badge>
                               ) : (
                                 <span className="whitespace-nowrap text-sm font-bold text-emerald-700 dark:text-emerald-300">
-                                  {faAmount(course.price)}{" "}
+                                  {faAmount(course.cashTuition)}{" "}
                                   <span className="text-[0.6rem] font-medium text-muted-foreground">
                                     تومان
                                   </span>
@@ -903,7 +902,7 @@ export function CoursesModule() {
                                 {course.cashTuition > 0 ||
                                 course.installmentTuition > 0 ? (
                                   <>
-                                    شهریه: نقدی {faAmount(course.cashTuition)}
+                                    نقدی {faAmount(course.cashTuition)}
                                     {course.installmentTuition > 0
                                       ? ` · اقساطی ${faAmount(
                                           course.installmentTuition
@@ -1128,13 +1127,13 @@ export function CoursesModule() {
                           </Badge>
                         ) : null}
                         {visibleCols.price ? (
-                          course.price === 0 ? (
+                          course.cashTuition === 0 ? (
                             <Badge className="rounded-full border-0 bg-emerald-500/15 px-2.5 py-1 text-[0.6rem] font-black text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300">
                               رایگان
                             </Badge>
                           ) : (
                             <span className="whitespace-nowrap text-xs font-bold text-emerald-700 dark:text-emerald-300">
-                              {faAmount(course.price)}
+                              {faAmount(course.cashTuition)}
                               <span className="text-[0.6rem] font-medium text-muted-foreground">
                                 {" "}
                                 تومان
@@ -1483,16 +1482,6 @@ export function CoursesModule() {
                     min={0}
                     value={form.sessions}
                     onChange={(e) => set("sessions", e.target.value)}
-                  />
-                </Field>
-                <Field label="قیمت (تومان)" htmlFor="course-price">
-                  <Input
-                    id="course-price"
-                    type="number"
-                    min={0}
-                    value={form.price}
-                    onChange={(e) => set("price", e.target.value)}
-                    placeholder="۰ = رایگان"
                   />
                 </Field>
                 <Field

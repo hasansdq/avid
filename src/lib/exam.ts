@@ -57,13 +57,14 @@ export const isQuestionType = (v: unknown): v is QuestionType =>
   typeof v === "string" && (QUESTION_TYPES as readonly string[]).includes(v);
 
 /** انواع دسترسی آزمون */
-export const ACCESS_TYPES = ["course", "open", "password"] as const;
+export const ACCESS_TYPES = ["course", "open", "password", "class"] as const;
 export type ExamAccessType = (typeof ACCESS_TYPES)[number];
 
 export const ACCESS_TYPE_LABELS: Record<ExamAccessType, string> = {
   course: "آزمون دوره",
   open: "آزمون آزاد",
   password: "آزمون رمزدار",
+  class: "آزمون کلاس",
 };
 
 export const isExamAccessType = (v: unknown): v is ExamAccessType =>

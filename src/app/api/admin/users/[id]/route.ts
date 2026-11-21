@@ -10,8 +10,8 @@ import {
 /**
  * GET/PUT/DELETE /api/admin/users/[id] — مدیریت یک کاربر.
  *
- * GET    → { user, enrollments } (ثبت‌نام‌ها همراه اقساط)
- * PUT    → { firstName?, lastName?, phone?, status?, note? }
+ * GET    → { user, enrollments, classes } (ثبت‌نام‌ها همراه اقساط + کلاس‌های کاربر)
+ * PUT    → { firstName?, lastName?, phone?, status?, note?, role? }
  *          مسدودسازی → نشست‌های کاربر بلافاصله باطل می‌شوند
  * DELETE → حذف کاربر (نشست‌ها خودکار حذف؛ ثبت‌نام‌ها باقی می‌مانند)
  */
@@ -19,6 +19,9 @@ import {
 type Params = { params: Promise<{ id: string }> };
 
 const USER_STATUSES = new Set(["active", "blocked"]);
+
+/** نقش‌های مجاز حساب کاربر — student | teacher */
+const USER_ROLES = new Set(["student", "teacher"]);
 
 export async function GET(req: NextRequest, { params }: Params) {
   const { denial } = await requireAdmin(req);
@@ -35,7 +38,14 @@ export async function GET(req: NextRequest, { params }: Params) {
       include: { installments: { orderBy: { index: "asc" } } },
     });
 
-    return NextResponse.json({ user, enrollments });
+    // کلاس‌هایی که کاربر عضو آنهاست (فقط مدیر می‌بیند؛ پنل کاربر نمایش نمی‌دهد)
+    const classes = await db.classMembership.findMany({
+      where: { userId: id },
+      orderBy: { createdAt: "desc" },
+      include: { classRoom: { select: { id: true, title: true } } },
+    });
+
+    return NextResponse.json({ user, enrollments, classes });
   } catch (error) {
     console.error("admin user GET error:", error);
     return NextResponse.json(
@@ -64,6 +74,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
       nationalId?: string | null;
       status?: string;
       note?: string | null;
+      role?: string;
     } = {};
 
     // — نام و نام خانوادگی (۲ تا ۴۰ نویسه) —
@@ -132,6 +143,18 @@ export async function PUT(req: NextRequest, { params }: Params) {
       }
       data.status = status;
       blocking = status === "blocked" && user.status !== "blocked";
+    }
+
+    // — نقش حساب (student | teacher) —
+    // سلب نقش استاد (teacher → student) هیچ دارایی‌ای را حذف نمی‌کند:
+    // دوره‌ها، کلاس‌ها و استریم‌های ساخته‌شده‌ی او روی نامش می‌مانند و فقط
+    // امکاناتِ استادِ او (پنل استاد، میزبانی استریم و…) تا ارتقای مجدد بسته می‌شود.
+    if ("role" in body) {
+      const role = str(body.role);
+      if (!USER_ROLES.has(role)) {
+        return bad("نقش نامعتبر است.");
+      }
+      data.role = role;
     }
 
     // — یادداشت مدیر (حداکثر ۵۰۰ نویسه؛ رشته‌ی خالی = حذف یادداشت) —

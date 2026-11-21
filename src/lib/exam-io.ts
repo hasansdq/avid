@@ -19,8 +19,10 @@ export interface ExamInput {
   description: string;
   accessType: string;
   courseId: string | null;
+  classId: string | null;
   password: string;
   durationMinutes: number;
+  allowBack: boolean;
   published: boolean;
 }
 
@@ -34,12 +36,19 @@ export function parseExamInput(body: unknown): ExamInput | string {
 
   const accessType = str(b.accessType) || "open";
   if (!isExamAccessType(accessType))
-    return "نوع دسترسی آزمون معتبر نیست (دوره / آزاد / رمزدار).";
+    return "نوع دسترسی آزمون معتبر نیست (دوره / کلاس / آزاد / رمزدار).";
 
   let courseId: string | null = null;
   if (accessType === "course") {
     courseId = str(b.courseId) || null;
     if (!courseId) return "آزمون دوره باید به یک دوره متصل باشد.";
+  }
+
+  // آزمون کلاس — فقط اعضای همان کلاس آن را می‌بینند و می‌توانند باز کنند
+  let classId: string | null = null;
+  if (accessType === "class") {
+    classId = str(b.classId) || null;
+    if (!classId) return "آزمون کلاس باید به یک کلاس متصل باشد.";
   }
 
   let password = str(b.password);
@@ -53,8 +62,10 @@ export function parseExamInput(body: unknown): ExamInput | string {
     description: str(b.description),
     accessType,
     courseId,
+    classId,
     password: accessType === "password" ? password : "",
     durationMinutes,
+    allowBack: bool(b.allowBack, true),
     published: bool(b.published, true),
   };
 }

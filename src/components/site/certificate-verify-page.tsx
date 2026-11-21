@@ -481,8 +481,8 @@ export function CertificateVerifyPage({
         </div>
       </main>
 
-      {/* فوتر باریک چسبیده به پایین */}
-      <footer className="mt-auto border-t border-foreground/[0.06] py-5 text-center text-xs font-bold text-muted-foreground dark:border-white/[0.06]">
+      {/* فوتر باریک چسبیده به پایین — با فاصله‌ی امن تا منوی موبایلیِ پایین صفحه */}
+      <footer className="mt-auto border-t border-foreground/[0.06] py-5 text-center text-xs font-bold text-muted-foreground md:mb-0 dark:border-white/[0.06] max-md:mb-[calc(env(safe-area-inset-bottom,0px)+5.5rem)]">
         © {faDigits(1404)} آکادمی {settings.siteName} — استعلام رسمی گواهی‌نامه‌ها
         با کد ملی
       </footer>

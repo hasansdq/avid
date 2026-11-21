@@ -18,8 +18,8 @@ if [ -z "$FILE" ]; then
   exit 1
 fi
 
-echo "— توقف سرویس‌ها (وب و چت) …"
-docker compose stop web chat
+echo "— توقف سرویس‌ها (وب و چت و استریم) …"
+docker compose stop web chat stream
 
 echo "— بازیابی $FILE …"
 docker compose run --rm -e RESTORE_DB="/app/backups/$FILE" migrate bun scripts/restore.ts

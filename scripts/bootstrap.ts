@@ -2,7 +2,7 @@
  * بوت‌استرپ مدیر — اجرا در ابتدای استقرار (سرویس migrate در compose):
  *
  *  ۱) اگر هیچ مدیری وجود ندارد: ساخت مدیر با ADMIN_USERNAME و
- *     ADMIN_INITIAL_PASSWORD (یا رمز تصادفی + چاپ یک‌باره در لاگ).
+ *     ADMIN_INITIAL_PASSWORD — پیش‌فرض admin/admin123 (درخواست مالک سایت).
  *  ۲) ADMIN_FORCE_RESET=1: بازنشانی رمز مدیر به ADMIN_INITIAL_PASSWORD
  *     و ابطال همه‌ی نشست‌ها (بازیابی دسترسی مدیر فراموش‌شده).
  *  ۳) فعال‌سازی WAL برای همزمانی بهتر خواندن/نوشتن (وب + سرویس چت).
@@ -52,7 +52,10 @@ async function main() {
   }
 
   const username = (process.env.ADMIN_USERNAME || "admin").trim();
-  const password = process.env.ADMIN_INITIAL_PASSWORD?.trim() || "";
+  // — درخواست کاربر: پیش‌فرضِ سازنده‌ی نصب تازه = admin/admin123 —
+  // (قابل بازنویسی با ADMIN_INITIAL_PASSWORD؛ حداقل ۸ نویسه)
+  const password =
+    process.env.ADMIN_INITIAL_PASSWORD?.trim() || "admin123";
   const forceReset = process.env.ADMIN_FORCE_RESET === "1";
 
   const existing = await prisma.adminUser.findFirst({
@@ -73,7 +76,7 @@ async function main() {
     console.log(`✔ مدیر «${created.username}» ساخته شد.`);
     if (generated) {
       console.warn(
-        "⚠ ADMIN_INITIAL_PASSWORD تنظیم نشده/کوتاه بود؛ این رمز تصادفی را ذخیره کنید:"
+        "⚠ ADMIN_INITIAL_PASSWORD کوتاه بود؛ این رمز تصادفی را ذخیره کنید:"
       );
       console.warn(`  ${chosen}`);
       console.warn("  و بعد از ورود، آن را از ماژول «حساب و امنیت» عوض کنید.");

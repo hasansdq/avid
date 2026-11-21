@@ -5,11 +5,17 @@ import { fontStack, resolveFontFamilies } from "@/lib/fonts";
 import { getPublishedLinks } from "@/lib/nav-links";
 import { buildSiteTextDefaults } from "@/lib/site-texts";
 import { SESSION_COOKIE } from "@/lib/auth";
+import {
+  resolveSectionVisibility,
+  sectionVisibilityClass,
+} from "@/lib/homepage-sections";
+import { resolveHeroAnimations } from "@/lib/hero-animations";
 import type { SiteSettings } from "@prisma/client";
 import { ParallaxProvider, ParallaxBackground } from "@/components/parallax";
 import { Navbar } from "@/components/site/navbar";
 import { Hero } from "@/components/site/hero";
 import { Courses } from "@/components/site/courses";
+import { Samples } from "@/components/site/samples";
 import { ActionCards } from "@/components/site/action-cards";
 import { Counters } from "@/components/site/counters";
 import { Register } from "@/components/site/register";
@@ -31,7 +37,7 @@ export default async function Home() {
   const cookieStore = await cookies();
   const adminToken = cookieStore.get(SESSION_COOKIE)?.value;
 
-  const [settings, courses, videos, playlists, testimonials, headerLinks, footerLinks, fonts, siteTextRows, adminSession] =
+  const [settings, courses, videos, playlists, testimonials, headerLinks, footerLinks, fonts, siteTextRows, adminSession, sampleCategories, homepageSectionRows, heroAnimationRows] =
     await Promise.all([
       db.siteSettings.findUnique({ where: { id: "main" } }),
       db.course.findMany({
@@ -59,10 +65,38 @@ export default async function Home() {
       adminToken
         ? db.adminSession.findUnique({ where: { token: adminToken } })
         : Promise.resolve(null),
+      // — نمونه سوالات: دسته‌های منتشرشده با آیتم‌های خودشان —
+      db.sampleQuestionCategory.findMany({
+        where: { published: true },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        include: {
+          items: {
+            where: { published: true },
+            orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+          },
+        },
+      }),
+      // — مدیریت صفحه‌ی اول: override های نمایش/مخفی‌سازی سکشن‌ها —
+      db.homepageSection.findMany(),
+      // — «انیمیشن‌های هیرو»: override های روشن/خاموش انیمیشن‌ها —
+      db.heroAnimation.findMany(),
     ]);
 
   const siteSettings = settings ?? FALLBACK_SETTINGS;
   const fontFamilies = resolveFontFamilies(fonts, siteSettings);
+
+  // — فایل‌های گالری «نمونه سوالات» فقط وقتی لازم‌اند که هیچ رکورد دسته/آیتمی
+  // نباشد — مسیر جایگزین برای مدیر (آپلود از گالری با بخش نمونه سوالات)
+  const sampleFiles =
+    sampleCategories.length === 0
+      ? await db.uploadedFile
+          .findMany({
+            where: { section: "sampleQuestions" },
+            orderBy: { createdAt: "desc" },
+            take: 24,
+          })
+          .catch(() => [])
+      : [];
 
   // — وضعیت ویرایشگر مدادی —
   const isAdmin =
@@ -120,6 +154,13 @@ export default async function Home() {
     }
   }
 
+  // — مدیریت صفحه‌ی اول: نمایش/مخفی‌سازی هر سکشن به تفکیک موبایل/تبلت/دسکتاپ —
+  // (لفافِ block دور هر سکشن؛ سکشن داخلی display خودش را حفظ می‌کند)
+  const sectionVisibility = resolveSectionVisibility(homepageSectionRows);
+
+  // — «انیمیشن‌های هیرو»: روشن/خاموش هر انیمیشن به تفکیک موبایل/تبلت/دسکتاپ —
+  const heroAnimations = resolveHeroAnimations(heroAnimationRows);
+
   return (
     <ParallaxProvider>
       <div className="relative flex min-h-screen flex-col">
@@ -138,13 +179,34 @@ export default async function Home() {
           />
 
           <main className="flex-1">
-            <Hero settings={viewSettings} fontFamily={fontFamilies.slogan} />
-            <Courses courses={courses} />
-            <ActionCards />
-            <Counters settings={siteSettings} />
-            <Register courses={courses} settings={siteSettings} />
-            <Videos videos={videos} playlists={playlists} />
-            <Testimonials testimonials={testimonials} />
+            <div className={sectionVisibilityClass(sectionVisibility.hero)}>
+              <Hero
+                settings={viewSettings}
+                fontFamily={fontFamilies.slogan}
+                animations={heroAnimations}
+              />
+            </div>
+            <div className={sectionVisibilityClass(sectionVisibility.courses)}>
+              <Courses courses={courses} />
+            </div>
+            <div className={sectionVisibilityClass(sectionVisibility.actionCards)}>
+              <ActionCards />
+            </div>
+            <div className={sectionVisibilityClass(sectionVisibility.counters)}>
+              <Counters settings={siteSettings} />
+            </div>
+            <div className={sectionVisibilityClass(sectionVisibility.register)}>
+              <Register courses={courses} settings={siteSettings} />
+            </div>
+            <div className={sectionVisibilityClass(sectionVisibility.videos)}>
+              <Videos videos={videos} playlists={playlists} />
+            </div>
+            <div className={sectionVisibilityClass(sectionVisibility.samples)}>
+              <Samples categories={sampleCategories} files={sampleFiles} />
+            </div>
+            <div className={sectionVisibilityClass(sectionVisibility.testimonials)}>
+              <Testimonials testimonials={testimonials} />
+            </div>
           </main>
 
           <Footer

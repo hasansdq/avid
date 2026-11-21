@@ -1,7 +1,7 @@
 /**
  * بازیابی دیتابیس از پشتیبان — بعد از توقف سرویس‌ها اجرا می‌شود:
  *
- *   docker compose stop web chat
+ *   docker compose stop web chat stream
  *   docker compose run --rm -e RESTORE_DB=/app/backups/avid-....db migrate bun scripts/restore.ts
  *   docker compose up -d
  *

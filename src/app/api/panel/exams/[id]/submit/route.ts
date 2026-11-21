@@ -93,15 +93,22 @@ export async function POST(req: NextRequest, { params }: Params) {
     const grade = gradeAttempt(gradingQuestions, answers);
     const finishedAt = new Date();
 
+    // نمره‌ی کسب‌شده‌ی هر سوال ذخیره می‌شود تا مدیر بتواند آن را ویرایش کند؛
+    // نمره‌ی نهایی خودکار از جمع همین مقادیر به دست می‌آید (scoreManual=false).
+    const initialGrades: Record<string, number> = {};
+    for (const g of grade.perQuestion) initialGrades[g.questionId] = g.earned;
+
     const updated = await db.examAttempt.update({
       where: { id: attempt.id },
       data: {
         answers: JSON.stringify(answers),
+        grades: JSON.stringify(initialGrades),
         autoScore: grade.autoScore,
         totalPoints: grade.totalPoints,
         hasEssay: grade.hasEssay,
         finishedAt,
         score: grade.hasEssay ? null : grade.autoScore,
+        scoreManual: false,
       },
     });
 

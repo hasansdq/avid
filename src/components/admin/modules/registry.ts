@@ -1,17 +1,26 @@
 import {
   Award,
+  BarChart3,
   Bot,
+  BookUser,
   ClipboardCheck,
   ClipboardList,
   CreditCard,
   DatabaseBackup,
+  FileQuestion,
+  FolderOpen,
   GraduationCap,
   Images,
   LayoutDashboard,
+  LayoutPanelTop,
+  LayoutTemplate,
   MessageSquare,
   MessagesSquare,
   MonitorPlay,
   PanelTop,
+  PlugZap,
+  Radio,
+  School,
   Settings,
   ShieldCheck,
   Type,
@@ -21,15 +30,19 @@ import {
 import type { ComponentType } from "react";
 import type { ModuleKey, ModuleProps } from "../types";
 import { DashboardModule } from "./dashboard-module";
+import { StatsModule } from "./stats-module";
+import { HomepageSectionsModule } from "./homepage-module";
 import { SettingsModule } from "./settings-module";
 import { CoursesModule } from "./courses-module";
 import { VideosModule } from "./videos-module";
 import { ExamsModule } from "./exams-module";
 import { CertificatesModule } from "./certificates-module";
+import { SamplesModule } from "./samples-module";
 import { TestimonialsModule } from "./testimonials-module";
 import { EnrollmentsModule } from "./enrollments-module";
 import { PaymentModule } from "./payment-module";
 import { UsersModule } from "./users-module";
+import { ClassesModule } from "./classes-module";
 import { SmsModule } from "./sms-module";
 import { ChatModule } from "./chat-module";
 import { FontsModule } from "./fonts-module";
@@ -37,6 +50,7 @@ import { HeaderFooterModule } from "./header-footer-module";
 import { AccountModule } from "./account-module";
 import { BackupModule } from "./backup-module";
 import { GalleryModule } from "./gallery-module";
+import { StreamsModule } from "./streams-module";
 
 /**
  * رجیستری ماژول‌های CMS — قلب معماری ماژولار پنل.
@@ -57,6 +71,21 @@ export const MODULES: AdminModule[] = [
     description: "نمای کلی آمار سایت و آخرین ثبت‌نام‌ها",
     icon: LayoutDashboard,
     component: DashboardModule,
+  },
+  {
+    key: "stats",
+    label: "آمار و نمودارها",
+    description: "کاربران آنلاین، بازدید سایت، ثبت‌نام و ورود — نمودارهای روزانه و ساعتی",
+    icon: BarChart3,
+    component: StatsModule,
+  },
+  {
+    key: "homepageSections",
+    label: "مدیریت صفحه اول",
+    description:
+      "نمایش/مخفی‌سازی ۸ سکشن صفحه‌ی اصلی در موبایل، تبلت و دسکتاپ + زیرمجموعه‌ی «انیمیشن‌ها»ی هیرو",
+    icon: LayoutTemplate,
+    component: HomepageSectionsModule,
   },
   {
     key: "courses",
@@ -85,6 +114,13 @@ export const MODULES: AdminModule[] = [
     description: "صدور گواهینامه‌ی دوره برای کاربران — آپلود فایل PDF یا تصویر و تخصیص به کاربر و دوره",
     icon: Award,
     component: CertificatesModule,
+  },
+  {
+    key: "samples",
+    label: "نمونه سوالات",
+    description: "مدیریت دسته‌بندی‌ها و بارگذاری نمونه سوالات (تصویر، PDF، ویدئو)",
+    icon: FileQuestion,
+    component: SamplesModule,
   },
   {
     key: "headerFooter",
@@ -120,6 +156,20 @@ export const MODULES: AdminModule[] = [
     description: "کاربران سایت، وضعیت حساب و اقساط آنها",
     icon: Users,
     component: UsersModule,
+  },
+  {
+    key: "classes",
+    label: "کلاس‌ها",
+    description: "تعریف کلاس‌ها و لینک دعوت یکتا — عضویت کاربران از طریق لینک دعوت",
+    icon: School,
+    component: ClassesModule,
+  },
+  {
+    key: "streams",
+    label: "مدیریت استریم",
+    description: "برگزاری کلاس ویدئویی زنده برای دوره‌ها/کلاس‌ها — دعوت کاربران، چت، اخراج و گزارش اکسل حضور",
+    icon: Radio,
+    component: StreamsModule,
   },
   {
     key: "sms",
@@ -169,5 +219,44 @@ export const MODULES: AdminModule[] = [
     description: "تغییر رمز عبور مدیر و ابطال نشست‌های ورود",
     icon: ShieldCheck,
     component: AccountModule,
+  },
+];
+
+/**
+ * دسته‌های ناوبری سایدبار — آکاردئون تک‌باز: با کلیک روی عنوان دسته،
+ * زیرمجموعه‌ها باز می‌شوند و دسته‌ی بازِ قبلی بسته می‌شود.
+ * ماژول‌های خارج از دسته‌ها به‌صورت آیتم مستقل باقی می‌مانند.
+ */
+export interface NavCategory {
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  items: ModuleKey[];
+}
+
+export const NAV_CATEGORIES: NavCategory[] = [
+  {
+    key: "post-types",
+    label: "پست تایپ‌ها",
+    icon: FolderOpen,
+    items: ["courses", "videos", "exams", "samples", "certificates"],
+  },
+  {
+    key: "users-signup",
+    label: "کاربران و ثبت‌نام",
+    icon: BookUser,
+    items: ["users", "classes", "enrollments"],
+  },
+  {
+    key: "connections",
+    label: "اتصالات",
+    icon: PlugZap,
+    items: ["sms", "payment"],
+  },
+  {
+    key: "pages",
+    label: "مدیریت صفحات",
+    icon: LayoutPanelTop,
+    items: ["homepageSections", "headerFooter", "testimonials"],
   },
 ];

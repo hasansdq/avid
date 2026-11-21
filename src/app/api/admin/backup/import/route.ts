@@ -8,10 +8,13 @@ import type { Entry, ZipFile } from "yauzl";
 import { requireAdmin } from "@/lib/auth";
 import { str } from "@/lib/api-helpers";
 import {
+  BACKUP_SECTION_KEYS,
   importBackup,
   validateBackupPayload,
   BackupDataLossError,
+  BackupForeignKeyError,
   type BackupPayload,
+  type BackupSectionKey,
   type DataLossItem,
 } from "@/lib/backup";
 
@@ -25,6 +28,9 @@ import {
  *  • فیلد اختیاری force ("1") — تأیید صریحِ از دست رفتن داده‌ی فعلیِ
  *    بخش‌هایی که در فایل بکاپ قدیمی نیستند (پیش از هر تغییری بررسی
  *    می‌شود؛ بدون تأیید، پاسخ ۴۰۹ با فهرست موارد قابل از دست رفتن)
+ *  • فیلد اختیاری section/only (کلید بخش) — بازیابی «فقط همان بخش» از
+ *    فایل؛ مثلاً از یک بکاپ کامل فقط ویدئوها. غیبت = همه‌ی بخش‌های
+ *    موجود در فایل (رفتار پیشین)
  *
  * ⚠ جایگزینی: داده‌های محتواییِ جدول‌های «موجود در فایل» با محتوای فایل
  * جایگزین می‌شوند (جدول‌های غایب از فایل دست‌نخورده می‌مانند). حساب و
@@ -134,12 +140,21 @@ export async function POST(req: NextRequest) {
 
   let file: File | null = null;
   let force = false;
+  let only: BackupSectionKey | null = null;
   try {
     const form = await req.formData();
     const candidate = form.get("file");
     if (candidate instanceof File) file = candidate;
     const forceRaw = form.get("force");
     force = forceRaw === "1" || forceRaw === "true";
+    // محدوده‌ی بازیابی — فیلد section یا only (هم‌ارز)
+    const scopeRaw = form.get("section") ?? form.get("only");
+    if (typeof scopeRaw === "string" && scopeRaw !== "" && scopeRaw !== "all") {
+      if (!BACKUP_SECTION_KEYS.has(scopeRaw)) {
+        return invalid("محدوده‌ی بازیابی انتخاب‌شده معتبر نیست.");
+      }
+      only = scopeRaw as BackupSectionKey;
+    }
   } catch (error) {
     console.error("backup import form error:", error);
     return NextResponse.json(
@@ -228,11 +243,15 @@ export async function POST(req: NextRequest) {
         // ۴) جایگزینی رکوردهای دیتابیس داخل تراکنش واحد
         //    (بدون force: بکاپ قدیمی‌ای که حذف والد‌هایش داده‌ی فعلیِ
         //    آزمون‌ها/نمونه‌سؤال‌ها/گواهی‌نامه‌ها را پاک می‌کرد، رد می‌شود)
-        const { restored } = await importBackup(payload, { force });
+        const { restored, section } = await importBackup(payload, {
+          force,
+          only: only ?? undefined,
+        });
 
         return NextResponse.json({
           ok: true,
           restored,
+          section,
           filesRestored,
           exportedAt: payload.exportedAt,
         });
@@ -253,14 +272,33 @@ export async function POST(req: NextRequest) {
       return invalid("فایل JSON بکاپ قابل خواندن نیست.");
     }
     const payload = validateBackupPayload(parsed);
-    const { restored } = await importBackup(payload, { force });
+    const { restored, section } = await importBackup(payload, {
+      force,
+      only: only ?? undefined,
+    });
 
-    return NextResponse.json({ ok: true, restored, filesRestored: 0 });
+    return NextResponse.json({
+      ok: true,
+      restored,
+      section,
+      filesRestored: 0,
+    });
   } catch (error) {
     // بازیابیِ نیازمند تأیید صریح (از دست رفتن داده‌ی فعلی بخش‌های غایب
-    // از فایل قدیمی) — بدون هیچ تغییری در دیتابیس
+    // از فایل قدیمی یا خارج از محدوده‌ی انتخابی) — بدون هیچ تغییری در دیتابیس
     if (error instanceof BackupDataLossError) {
       return dataLossResponse(error.losses);
+    }
+    // کلید خارجی بی‌مرجع در فایل — خطای قطعی با راهنمایی بازیابی والد مربوطه
+    if (error instanceof BackupForeignKeyError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: "fk-invalid",
+          details: error.details,
+        },
+        { status: 400 }
+      );
     }
     const message =
       error instanceof Error ? error.message : "خطای ناشناخته در بازیابی.";

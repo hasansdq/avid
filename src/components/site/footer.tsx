@@ -72,7 +72,9 @@ export function Footer({
 
   return (
     <footer
-      className="mt-auto border-t border-foreground/[0.07] bg-foreground/[0.02] backdrop-blur-xl dark:border-white/[0.07] dark:bg-[#030605]/70"
+      // mb موبایل: فاصله‌ی امن تا منوی موبایلی ثابتِ پایین صفحه (منوی پایین
+      // فوتر را نمی‌پوشاند و فوترِ چسبان به پایینِ «بالای منو» می‌نشیند)
+      className="mt-auto border-t border-foreground/[0.07] bg-foreground/[0.02] backdrop-blur-xl md:mb-0 dark:border-white/[0.07] dark:bg-[#030605]/70 max-md:mb-[calc(env(safe-area-inset-bottom,0px)+5.5rem)]"
       style={{ fontFamily }}
     >
       <div className="mx-auto max-w-7xl px-4 py-14">

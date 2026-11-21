@@ -11,8 +11,9 @@
 ```
 مرورگر ──HTTPS──▶ Apache (DirectAdmin، دامنه + گواهی TLS)
                     │
-                    ├─ /socket.io/  ──▶ 127.0.0.1:3004  (کانتینر chat — Socket.IO)
-                    └─ / (بقیه)     ──▶ 127.0.0.1:3900  (کانتینر web — Next.js standalone؛ ۳۹۰۰ میزبان → ۳۰۰۰ کانتینر)
+                    ├─ /socket.io/    ──▶ 127.0.0.1:3004  (کانتینر chat — Socket.IO)
+                    ├─ /stream-socket/ ─▶ 127.0.0.1:3005  (کانتینر stream — کلاس آنلاین: سیگنالینگ WebRTC + چت)
+                    └─ / (بقیه)       ──▶ 127.0.0.1:3900  (کانتینر web — Next.js standalone؛ ۳۹۰۰ میزبان → ۳۰۰۰ کانتینر)
 
 والی‌های دائمی:
   avid_db       ← SQLite (فایل custom.db)
@@ -23,8 +24,14 @@
 - سرویس `migrate` (یک‌بار در هر up): **نصب تازه** یا **انتقال دیتابیس
   نسخه‌ی قبلی** — بدون حذف داده (جزئیات در بخش ۲-ب). هیچ
   `db push --accept-data-loss`ای در جریان نیست.
-- هر دو سرویس healthcheck دارند (`/api/health` و handshake چت). healthcheck
+- هر سه سرویس healthcheck دارند (`/api/health` و handshake چت/استریم). healthcheck
   وب با **خطای دیتابیس ۵۰۳** برمی‌گرداند → کانتینر `unhealthy` می‌شود.
+- سرویس `stream` (کلاس آنلاین): سیگنالینگ WebRTC + اتاق چت socket.io؛ رسانه‌ی
+  کلاس (صدا/تصویر/اشتراک صفحه) **مستقیم بین مرورگرها** (P2P) جریان دارد و از
+  سرور عبور نمی‌کند — بار پهنای باند VPS نزدیک صفر است و فقط سیگنالینگ/چت
+  (چند بایت در ثانیه) از پروکسی رد می‌شود. برای اینترنت ضعیف، کیفیت
+  «کم‌مصرف» و «فقط صدا» از سمت دانشجو انتخاب می‌شود و سقف بیت‌ریت همان‌جا
+  اعمال می‌شود.
 - پورت‌های میزبان فقط روی **127.0.0.1** بسته شده‌اند — دسترسی از بیرون فقط
   از طریق پروکسی آپاچی دامنه ممکن است.
 - `CHAT_AUTH_SECRET` **الزامی** است — بدون آن compose با پیام خطا متوقف
@@ -146,7 +153,8 @@ rm -rf .db-transfer ./old-custom.db
 2. **تنظیم VirtualHost دامنه** — Admin Level → **Custom HTTPD
    Configurations** → دامنه را انتخاب کنید → محتوای
    `deploy/apache/vhost-include.conf` را در بخش VirtualHost وارد کنید
-   (تنظیمات `/socket.io/` با WebSocket و polling + پروکسی `/` به ۳۰۰۰).
+   (پروکسی `/` → ۳۹۰۰، `/socket.io/` → ۳۰۰۴ و `/stream-socket/` → ۳۰۰۵ —
+   هر دو مسیر سوکت با WebSocket و polling).
 
 3. **گواهی TLS**: از DirectAdmin گواهی رایگان Let's Encrypt برای دامنه بگیرید
    و ریدایرکت HTTP→HTTPS را فعال کنید (کوکی‌های ورود با پروکسی HTTPS خودکار
@@ -154,6 +162,13 @@ rm -rf .db-transfer ./old-custom.db
 
 > اگر دایرکت‌ادمین در حالت **nginx_apache** است (nginx جلو)، به‌جای مرحله‌ی ۲
 > snippet `deploy/nginx/vhost-proxy.conf` را در `server{}` دامنه قرار دهید.
+>
+> **استقرارِ موجود (به‌روزرسانی):** اگر قبلاً vhost را در Custom HTTPD
+> دایرکت‌ادمین تنظیم کرده‌اید، محتوای **نسخه‌ی جدیدِ**
+> `deploy/apache/vhost-include.conf` (یا snippet nginx) را جایگزین قبلی
+> کنید تا مسیر `/stream-socket/` به پورت ۳۰۰۵ (سرویس کلاس آنلاین) هم
+> پروکسی شود — بدون این مسیر، اتاق کلاس آنلاین از مرورگر قابل دسترسی
+> نیست و «کلاس آنلاین وصل نمی‌شود» را می‌بینید.
 
 ---
 
@@ -179,8 +194,9 @@ rm -rf .db-transfer ./old-custom.db
 | کار | دستور (از داخل `avid/`) |
 |---|---|
 | بکاپ آنلاین (DB + uploads) | `bash deploy/backup.sh` |
-| به‌روزرسانی غیرمخرب | `bash deploy/update.sh` (ثبت ایمیج قبلی با :rollback → build → توقف وب/چت → بکاپ سازگار → migrate → up → تایید سلامت؛ در شکستِ بکاپ/مهاجرت، سرویس‌ها با همان ایمیج‌های قبلی برمی‌گردند) |
+| به‌روزرسانی غیرمخرب | `bash deploy/update.sh` (ثبت ایمیج قبلی با :rollback → build → توقف وب/چت/استریم → بکاپ سازگار → migrate → up → تایید سلامت؛ در شکستِ بکاپ/مهاجرت، سرویس‌ها با همان ایمیج‌های قبلی برمی‌گردند) |
 | بازیابی دیتابیس | `bash deploy/restore.sh avid-YYYYMMDD-HHMMSS.db` |
+| بازیابی فقط متن‌های ویرایشگر مدادی | `docker compose stop web chat && docker compose run --rm migrate bun scripts/restore-site-texts.ts /app/backups/avid-YYYYMMDD-HHMMSS.db && docker compose up -d` (با `--dry-run` ابتدا گزارش بگیرید) |
 | لاگ‌ها | `docker compose logs -f web` / `logs -f chat` / `logs migrate` |
 | ورود به کانتینر | `docker compose exec web sh` |
 
@@ -189,6 +205,29 @@ rm -rf .db-transfer ./old-custom.db
 crontab -e
 0 3 * * * cd /home/<user>/avid-app/avid && bash deploy/backup.sh >> /var/log/avid-backup.log 2>&1
 ```
+
+### ۵-الف) ماندگاری متن‌های «ویرایشگر ظاهری مدادی» در آپدیت‌ها
+
+ویرایش‌های مدیر با مداد (متن/رنگ/فونت/اندازه/مخفی‌بودن) در جدول `SiteText`
+ذخیره می‌شوند و کلیدهای آن بین نسخه‌ها **ثابت** است (تاریخچه فقط
+«افزایشی» بوده است). تضمین‌های ماندگاری در مسیر آپدیت:
+
+- **پیش‌فرض‌ها فقط در کد زندگی می‌کنند** — bootstrap و seed هرگز رکورد
+  SiteText نمی‌سازند؛ جدول فقط ویرایش‌های مدیر را نگه می‌دارد. «بازگردانی
+  به پیش‌فرض» فقط با دکمه‌ی خودِ مدیر در پاپ‌آپ مداد انجام می‌شود.
+- **migrate در هر آپدیت «اثبات ماندگاری» چاپ می‌کند** (`✔ متن‌های ویرایشگر
+  مدادی دست‌نخورده ماندند — N رکورد SiteText بدون تغییر`)؛ اگر مهاجرتی
+  واقعاً ردیفی را تغییر دهد، آپدیت با بازگردانی کامل از بکاپ متوقف می‌شود.
+- **کلید منسوخ** (اگر روزی نام کلیدی عوض شود) در `scripts/site-text-registry.ts`
+  (نگاشت `SITE_TEXT_KEY_ALIASES`) ثبت می‌شود؛ migrate در همان آپدیت رکورد
+  قدیمی را منتقل می‌کند و در وجود هر دو، «آخرین ویرایش مدیر» برنده می‌ماند.
+- **بکاپ دانلودی پنل مدیر** (JSON/ZIP) و بکاپ فایلی `deploy/backup.sh` هر دو
+  شامل جدول `SiteText` هستند.
+- **هشدار**: والی `avid_db` را هرگز حذف نکنید (`docker compose down -v`
+  ممنوع) — والی نو یعنی دیتابیس نو یعنی متن‌های سفارشی هم پیش‌فرض.
+  اگر چنین اتفاقی افتاد، از فایل بکاپ فقط متن‌ها را با
+  `scripts/restore-site-texts.ts` (جدول بالا) جراحی کنید — بقیه‌ی داده‌های
+  فعلی و ویرایش‌های جدیدتر حفظ می‌شوند.
 
 ---
 
@@ -227,7 +266,13 @@ crontab -e
       URL نمایش داده شود (والی `avid_uploads`؛ سرو فایل در production
       از route استریم `/uploads/…` انجام می‌شود — در بیلد standalone
       محلی تست شده، روی VPS با پروکسی HTTPS تایید نهایی شود).
-- [ ] **دسترسی پورت‌ها**: `ss -tlnp | grep -E '3900|3004'` — فقط روی
+- [ ] **ماندگاری متن‌های ویرایشگر مدادی در آپدیت واقعی**: چند متن را با
+      مداد تغییر دهید (متن + رنگ + فونت + اندازه + یکی را مخفی کنید) →
+      `bash deploy/update.sh` (بازسازی واقعی کانتینرها) → بعد از رفرش،
+      در **پنجره‌ی ناشناس** هم آخرین متن/ظاهر ذخیره‌شده نمایش داده شود و
+      متن مخفی همچنان پنهان بماند؛ لاگ `migrate` باید «✔ متن‌های ویرایشگر
+      مدادی دست‌نخورده ماندند» چاپ کند.
+- [ ] **دسترسی پورت‌ها**: `ss -tlnp | grep -E '3900|3004|3005'` — فقط روی
       127.0.0.1 باید گوش بدهند (نه 0.0.0.0).
 - [ ] **بکاپ/بازیابی**: یک‌بار `deploy/backup.sh` و بازیابی روی دیتابیس آزمایشی.
 - [ ] **آپلود ویدئو** بزرگ (تا ۲۵۶MB) — `LimitRequestBody`/`client_max_body_size`
@@ -243,6 +288,7 @@ crontab -e
 | web «unhealthy» | `curl 127.0.0.1:3900/api/health` → فیلد `db`؛ خطای دیتابیس؟ والی `avid_db` و لاگ `migrate` |
 | compose درباره CHAT_AUTH_SECRET خطا می‌دهد | `.env` کنار compose.yaml → مقدار `openssl rand -hex 32` |
 | چت وصل نمی‌شود | تنظیم `/socket.io/` در VirtualHost + ماژول `mod_proxy_wstunnel` |
+| کلاس آنلاین وصل نمی‌شود | تنظیم `/stream-socket/` در VirtualHost (نصب جدید: پروکسی به ۳۰۰۵) + ماژول `mod_proxy_wstunnel` |
 | خطای مهاجرت | `docker compose logs migrate` — قبل از آن `deploy/backup.sh` (خودِ migrate هم بکاپ می‌گیرد) |
 | رمز مدیر فراموش شده | در `.env`: `ADMIN_FORCE_RESET=1` + `ADMIN_INITIAL_PASSWORD=…` → `docker compose run --rm migrate` → مقدار را 0 برگردانید |
 | آپلود ناموفق | سطح دسترسی والی avid_uploads: `docker compose exec web ls -la public/uploads` |

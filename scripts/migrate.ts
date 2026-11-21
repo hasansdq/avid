@@ -38,6 +38,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { ensureSchema } from "./ensure-schema";
+import { SITE_TEXT_KEY_ALIASES } from "./site-text-registry";
 
 const PROJECT_ROOT = join(import.meta.dir, "..");
 const SCHEMA_PATH = join(PROJECT_ROOT, "prisma", "schema.prisma");
@@ -264,6 +265,152 @@ function abortWithRestore(
 }
 
 /* ------------------------------------------------------------------ */
+/*  حفاظت از متن‌های ویرایشگر مدادی (SiteText) در طول آپدیت              */
+/* ------------------------------------------------------------------ */
+
+/** یک ردیف خام SiteText — updatedAt به‌صورت epoch-millis عددی ذخیره می‌شود */
+interface SiteTextRawRow {
+  key: string;
+  text: string | null;
+  color: string | null;
+  fontKey: string | null;
+  fontSize: number | null;
+  hidden: number;
+  updatedAt: number;
+}
+
+/**
+ * تصویر لحظه‌ای ردیف‌های SiteText — «اثبات ماندگاری» متن‌های سفارشی:
+ * آپدیت هرگز نباید متن/رنگ/فونت/اندازه/مخفی‌بودن ویرایش‌های مدیر را
+ * بازنویسی یا حذف کند؛ بعد از مهاجرت‌ها همین تصویر دوباره خوانده و
+ * مقایسه می‌شود و کوچک‌ترین اختلاف = شکست آپدیت + بازگردانی از بکاپ.
+ */
+function siteTextSnapshot(dbPath: string): SiteTextRawRow[] {
+  try {
+    const db = new Database(dbPath, { readonly: true });
+    try {
+      return db
+        .query(
+          "SELECT key, text, color, fontKey, fontSize, hidden, updatedAt " +
+            "FROM SiteText ORDER BY key"
+        )
+        .all() as SiteTextRawRow[];
+    } finally {
+      db.close();
+    }
+  } catch {
+    // جدول SiteText هنوز وجود ندارد — تصویری خالی
+    return [];
+  }
+}
+
+/** ردیف‌های یکسان؟ (ترتیبِ key تضمین شده — مقایسه سطر‌به‌سطر) */
+function sameSiteTextSnapshot(
+  a: SiteTextRawRow[],
+  b: SiteTextRawRow[]
+): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (
+      x.key !== y.key ||
+      x.text !== y.text ||
+      x.color !== y.color ||
+      x.fontKey !== y.fontKey ||
+      Number(x.fontSize) !== Number(y.fontSize) ||
+      Number(x.hidden) !== Number(y.hidden) ||
+      Number(x.updatedAt) !== Number(y.updatedAt)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * انتقال رکوردهای SiteText با کلید منسوخ به کلید جاری (طبق
+ * SITE_TEXT_KEY_ALIASES در scripts/site-text-registry.ts):
+ *   • فقط رکورد قدیمی موجود است → rename به کلید جدید؛
+ *   • هر دو موجود → «آخرین ویرایش مدیر» (updatedAt بزرگ‌تر) برنده و
+ *     رکورد دیگر حذف می‌شود.
+ * امروزه فهرست مستعارها خالی است (کلیدها در طول تاریخ فقط «افزایشی»
+ * بوده‌اند) — این گام بنابراین no-op و فقط سازوکارِ آینده است.
+ */
+function applySiteTextKeyAliases(dbPath: string): {
+  renamed: string[];
+  mergedKeep: string[];
+  removed: string[];
+} {
+  const result = {
+    renamed: [] as string[],
+    mergedKeep: [] as string[],
+    removed: [] as string[],
+  };
+  const aliases = Object.entries(SITE_TEXT_KEY_ALIASES);
+  if (aliases.length === 0 || !existsSync(dbPath)) return result;
+
+  const db = new Database(dbPath);
+  try {
+    db.exec("PRAGMA busy_timeout = 5000");
+    db.exec("BEGIN");
+    for (const [oldKey, newKey] of aliases) {
+      if (oldKey === newKey) continue;
+      const oldRow = db
+        .query(
+          "SELECT key, text, color, fontKey, fontSize, hidden, updatedAt " +
+            "FROM SiteText WHERE key = ?"
+        )
+        .get(oldKey) as SiteTextRawRow | null;
+      if (!oldRow) continue;
+      const newRow = db
+        .query("SELECT key, updatedAt FROM SiteText WHERE key = ?")
+        .get(newKey) as { key: string; updatedAt: number } | null;
+      if (!newRow) {
+        // فقط رکورد قدیمی موجود است → انتقال ساده به کلید جاری
+        db.run("UPDATE SiteText SET key = ? WHERE key = ?", [newKey, oldKey]);
+        result.renamed.push(`${oldKey} → ${newKey}`);
+      } else if (Number(oldRow.updatedAt) > Number(newRow.updatedAt)) {
+        // هر دو موجود؛ ویرایشِ کلید قدیمی جدیدتر است → محتوایش برنده می‌شود
+        // و روی رکوردِ کلید جاری می‌نشیند؛ رکورد قدیمی حذف می‌شود.
+        db.run(
+          "UPDATE SiteText SET text = ?, color = ?, fontKey = ?, fontSize = ?, " +
+            "hidden = ?, updatedAt = ? WHERE key = ?",
+          [
+            oldRow.text,
+            oldRow.color,
+            oldRow.fontKey,
+            oldRow.fontSize,
+            Number(oldRow.hidden),
+            Number(oldRow.updatedAt),
+            newKey,
+          ]
+        );
+        db.run("DELETE FROM SiteText WHERE key = ?", [oldKey]);
+        result.mergedKeep.push(`${oldKey} (آخرین ویرایش) → ${newKey}`);
+        result.removed.push(oldKey);
+      } else {
+        // هر دو موجود؛ ویرایشِ کلید جاری جدیدتر/برابر است → همان برنده است
+        db.run("DELETE FROM SiteText WHERE key = ?", [oldKey]);
+        result.mergedKeep.push(`${newKey} (آخرین ویرایش) نگه داشته شد`);
+        result.removed.push(oldKey);
+      }
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+      /* بی‌صدا */
+    }
+    throw error;
+  } finally {
+    db.close();
+  }
+  return result;
+}
+
+/* ------------------------------------------------------------------ */
 /*  حالت ۱: نصب تازه — prisma migrate deploy                            */
 /* ------------------------------------------------------------------ */
 function deployFlow(): void {
@@ -304,6 +451,9 @@ async function reconcileFlow(): Promise<void> {
       db.close();
     }
   })();
+
+  // — تصویر لحظه‌ای متن‌های ویرایشگر مدادی — برای اثبات ماندگاری —
+  const siteTextBefore = siteTextSnapshot(DB_PATH);
 
   // — گام ۲: شفا‌ی افزایشی ساختار (فقط افزودنِ جدول/ستون/ایندکس) —
   // این گام تضمین می‌کند ارجاع‌های ستونیِ مهاجرت‌های قدیمی (مثل
@@ -396,6 +546,51 @@ async function reconcileFlow(): Promise<void> {
   }
   console.log("✔ ساختار دیتابیس دقیقاً با schema مطابق است.");
 
+  // — گام ۴.۵: اثبات ماندگاری متن‌های سفارشی (SiteText) —
+  // هیچ مهاجرت/بازیابی/شفایی نباید متن/رنگ/فونت/اندازه/مخفی‌بودنِ
+  // ویرایش‌های مدیر را تغییر داده باشد؛ کوچک‌ترین اختلاف = شکستِ
+  // آپدیت + بازگردانی کامل از بکاپ. (پیش‌فرض‌ها فقط در «کد» زندگی
+  // می‌کنند؛ جدول SiteText فقط ویرایش‌های مدیر را نگه می‌دارد و
+  // بازگردانی به پیش‌فرض فقط با دکمه‌ی خودِ مدیر انجام می‌شود.)
+  const siteTextAfter = siteTextSnapshot(DB_PATH);
+  if (!sameSiteTextSnapshot(siteTextBefore, siteTextAfter)) {
+    const changed = siteTextAfter
+      .filter(
+        (r) =>
+          !siteTextBefore.some(
+            (b) =>
+              b.key === r.key &&
+              b.text === r.text &&
+              b.color === r.color &&
+              b.fontKey === r.fontKey &&
+              Number(b.fontSize) === Number(r.fontSize) &&
+              Number(b.hidden) === Number(r.hidden)
+          )
+      )
+      .map((r) => r.key)
+      .slice(0, 8);
+    const missing = siteTextBefore
+      .filter(
+        (b) => !siteTextAfter.some((r) => r.key === b.key)
+      )
+      .map((r) => r.key)
+      .slice(0, 8);
+    abortWithRestore(
+      backup,
+      "ردیف‌های SiteText (متن‌های ویرایشگر مدادی) در طول مهاجرت تغییر کرده‌اند — " +
+        "آپدیت هرگز نباید متن سفارشی مدیر را بازنویسی یا حذف کند",
+      [
+        changed.length > 0 ? `کلیدهای تغییر‌یافته: ${changed.join("، ")}` : "",
+        missing.length > 0 ? `کلیدهای حذف‌شده: ${missing.join("، ")}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    );
+  }
+  console.log(
+    `✔ متن‌های ویرایشگر مدادی دست‌نخورده ماندند — ${siteTextAfter.length} رکورد SiteText بدون تغییر.`
+  );
+
   // — گام ۵: تایید حفظ داده — شمارش سطرهای جدول‌های موجود تغییر نکرده —
   const after = (() => {
     const db = new Database(DB_PATH, { readonly: true });
@@ -417,6 +612,44 @@ async function reconcileFlow(): Promise<void> {
   console.log(
     `✔ داده‌ها حفظ شدند — ${Object.keys(before).length} جدول موجود، سطرها بدون تغییر.`
   );
+
+  // — گام ۶: انتقال کلیدهای منسوخ SiteText به کلیدهای جاری —
+  // سازوکارِ آینده: امروزه فهرست مستعارها خالی است (کلیدها در طول
+  // تاریخ فقط «افزایشی» بوده‌اند) و این گام no-op است؛ اگر روزی کلیدی
+  // تغییر نام داد، رکورد قبلی به‌طور خودکار منتقل می‌شود و در وجود
+  // هر دو، «آخرین ویرایش مدیر» (updatedAt بزرگ‌تر) برنده می‌ماند.
+  // (عمداً بعد از گام ۵ اجرا می‌شود تا حذفِ آگاهانه‌ی رکوردهای تکراری
+  // توسط گارد شمارش سطر، «شکست» تلقی نشود.)
+  let aliases: ReturnType<typeof applySiteTextKeyAliases>;
+  try {
+    aliases = applySiteTextKeyAliases(DB_PATH);
+  } catch (error) {
+    abortWithRestore(
+      backup,
+      "انتقال کلیدهای منسوخ SiteText ناموفق بود",
+      String(error)
+    );
+  }
+  if (
+    aliases.renamed.length > 0 ||
+    aliases.mergedKeep.length > 0
+  ) {
+    for (const r of aliases.renamed) {
+      console.log(`✔ SiteText: انتقال کلید ${r}`);
+    }
+    for (const m of aliases.mergedKeep) {
+      console.log(`✔ SiteText: ادغام — ${m}`);
+    }
+    for (const d of aliases.removed) {
+      console.log(
+        `— SiteText: رکورد تکراری «${d}» حذف شد (آخرین ویرایش برنده شد).`
+      );
+    }
+  } else {
+    console.log(
+      "✔ کلیدهای SiteText بین نسخه‌ها ثابت‌اند — کلید منسوخی برای انتقال نبود."
+    );
+  }
 }
 
 /* ------------------------------------------------------------------ */

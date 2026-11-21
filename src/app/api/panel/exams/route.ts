@@ -7,6 +7,7 @@ import { getSessionUser } from "@/lib/user-auth";
  *   • آزمون‌های دوره‌هایی که کاربر در آنها ثبت‌نام کرده (فقط اعضای همان دوره)
  *   • آزمون‌های آزاد (همه)
  *   • آزمون‌های رمزدار (همه می‌بینند؛ برای شرکت باید رمز را وارد کنند)
+ *   • آزمون‌های کلاس (فقط اعضای همان کلاس — بقیه اصلاً نمی‌بینند)
  * هر آزمون همراه تعداد سوال و سوابق شرکت خود کاربر است.
  */
 export async function GET(req: NextRequest) {
@@ -38,6 +39,11 @@ export async function GET(req: NextRequest) {
             accessType: "course",
             course: { title: { in: myCourseTitles } },
           },
+          // آزمون کلاس — فقط اعضای همان کلاس
+          {
+            accessType: "class",
+            class: { members: { some: { userId: session.id } } },
+          },
         ],
       },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
@@ -47,7 +53,9 @@ export async function GET(req: NextRequest) {
         description: true,
         accessType: true,
         durationMinutes: true,
+        allowBack: true,
         course: { select: { title: true } },
+        class: { select: { title: true } },
         _count: { select: { questions: true } },
       },
     });
@@ -85,7 +93,9 @@ export async function GET(req: NextRequest) {
           description: e.description,
           accessType: e.accessType,
           durationMinutes: e.durationMinutes,
+          allowBack: e.allowBack,
           courseTitle: e.course?.title ?? null,
+          classTitle: e.class?.title ?? null,
           questionCount: e._count.questions,
           myAttempts: attempts.filter((a) => a.examId === e.id),
         })),

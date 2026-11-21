@@ -223,7 +223,13 @@ export function EditableText({
     const stack = ctx?.fontStackFor(row.fontKey);
     if (stack) style.fontFamily = stack;
   }
-  if (row?.fontSize != null) style.fontSize = `${row.fontSize}px`;
+  if (row?.fontSize != null) {
+    style.fontSize = `${row.fontSize}px`;
+    // اندازه‌ی فونت روی متغیر CSS هم منتشر می‌شود تا استایل‌های واکنش‌گرای سایت
+    // (مثل کاهش ۲۰٪ اسلوگان هیرو در موبایل) بتوانند نسبت به آن محاسبه شوند —
+    // inline font-size با !important در media query موبایل قابل‌تغییر است.
+    (style as Record<string, string>)["--st-size"] = `${row.fontSize}px`;
+  }
 
   const content =
     customText !== null
@@ -239,7 +245,7 @@ export function EditableText({
   if (!editable) {
     return (
       <span
-        className={cn(hidden && isAdmin && "opacity-60", className)}
+        className={cn("site-text-value", hidden && isAdmin && "opacity-60", className)}
         style={style}
         title={hiddenTitle}
       >
@@ -252,7 +258,11 @@ export function EditableText({
 
   return (
     <span
-      className={cn("relative inline-block", hidden && "opacity-60", className)}
+      className={cn(
+        "site-text-value relative inline-block",
+        hidden && "opacity-60",
+        className
+      )}
       style={style}
       title={hiddenTitle}
     >

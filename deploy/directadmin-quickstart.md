@@ -16,7 +16,7 @@ nano .env        # ADMIN_INITIAL_PASSWORD قوی + CHAT_AUTH_SECRET=$(openssl ra
 
 docker compose config --quiet && echo OK   # اعتبارسنجی
 docker compose up -d --build
-docker compose ps    # web و chat باید healthy شوند
+docker compose ps    # web و chat و stream باید healthy شوند
 ```
 
 - رمز مدیر: همان `ADMIN_INITIAL_PASSWORD` (یا اگر خالی بود، رمز تصادفی در
@@ -34,9 +34,13 @@ docker compose ps    # web و chat باید healthy شوند
    ```
 2. **VirtualHost دامنه**: Admin Level → **Custom HTTPD Configurations** →
    دامنه → محتوای `deploy/apache/vhost-include.conf` را در VirtualHost
-   قرار دهید (پروکسی `/` → 3900 و `/socket.io/` → 3004 با WebSocket).
+   قرار دهید (پروکسی `/` → 3900، `/socket.io/` → 3004 و `/stream-socket/` → 3005
+   با WebSocket — کلاس آنلاین به همین مسیر وصل می‌شود).
    اگر دایرکت‌ادمین nginx_apache است: به‌جایش `deploy/nginx/vhost-proxy.conf`
    را داخل `server{}` بگذارید.
+   **استقرار موجود:** اگر قبلاً vhost را تنظیم کرده‌اید، محتوای جدید
+   `vhost-include.conf` (یا snippet nginx) را جایگزین کنید — مسیر
+   `/stream-socket/` تازه اضافه شده و بدون آن کلاس آنلاین کار نمی‌کند.
 3. **گواهی TLS**: Let's Encrypt رایگان از پنل + فعال‌سازی ریدایرکت HTTPS.
 
 ## ۳) بعد از اولین ورود (`/superadmin`)
@@ -50,6 +54,6 @@ docker compose ps    # web و chat باید healthy شوند
 
 ```bash
 curl -s 127.0.0.1:3900/api/health      # {"ok":true,"db":"ok"}
-ss -tlnp | grep -E '3900|3004'         # فقط 127.0.0.1
-docker compose logs --tail 20 web
+ss -tlnp | grep -E '3900|3004|3005'         # فقط 127.0.0.1
+docker compose logs --tail 20 web stream
 ```

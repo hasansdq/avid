@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CalendarClock,
+  ChevronDown,
   ExternalLink,
   LogOut,
   Menu,
@@ -32,7 +33,12 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { MODULES } from "@/components/admin/modules/registry";
+import {
+  MODULES,
+  NAV_CATEGORIES,
+  type AdminModule,
+  type NavCategory,
+} from "@/components/admin/modules/registry";
 import type { ModuleKey } from "@/components/admin/types";
 import { LogoMark } from "@/components/admin/shared/logo-mark";
 import {
@@ -81,18 +87,154 @@ function ModuleNavItem({
   );
 }
 
+/* ————— دسته‌بندی آکاردئونی ناوبری ————— */
+
+/** ماژول‌ها به کلید — رندر سریع آیتم‌های دسته‌ها */
+const MODULES_BY_KEY = new Map<string, AdminModule>(
+  MODULES.map((m) => [m.key, m])
+);
+
+/** کلیدهای ماژول‌هایی که داخل دسته‌ها قرار گرفته‌اند */
+const CATEGORIZED_KEYS = new Set<string>(
+  NAV_CATEGORIES.flatMap((c) => c.items)
+);
+
+/** آیتم‌های مستقلِ بالای دسته‌ها (نمای کلی پنل) */
+const TOP_STANDALONE: ModuleKey[] = ["dashboard", "stats"];
+
+/** سرصفحه‌ی دسته — کلیک: باز/بسته کردن کشویی زیرمجموعه‌ها */
+function CategoryHeader({
+  category,
+  open,
+  containsActive,
+  onToggle,
+}: {
+  category: NavCategory;
+  open: boolean;
+  containsActive: boolean;
+  onToggle: () => void;
+}) {
+  const Icon = category.icon;
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      aria-controls={`nav-cat-${category.key}`}
+      className={cn(
+        "group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-black transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        open ? "text-foreground" : "text-foreground/90 hover:bg-foreground/[0.04]"
+      )}
+    >
+      <Icon
+        className={cn(
+          "size-4.5 shrink-0 transition-colors",
+          open
+            ? "text-teal-600 dark:text-teal-300"
+            : "text-muted-foreground group-hover:text-teal-600 dark:group-hover:text-teal-300"
+        )}
+      />
+      <span className="flex-1 text-start">{category.label}</span>
+      {/* نقطه — نشان می‌دهد ماژول فعال داخل این دسته است (وقتی جمع است) */}
+      {containsActive && !open ? (
+        <span
+          className="size-1.5 shrink-0 rounded-full bg-primary"
+          aria-hidden
+        />
+      ) : null}
+      <ChevronDown
+        className={cn(
+          "size-4 shrink-0 text-muted-foreground transition-transform duration-300 ease-out",
+          open && "rotate-180"
+        )}
+      />
+    </button>
+  );
+}
+
+/** یک دسته‌ی آکاردئونی: سرصفحه + زیرمجموعه‌ها با انیمیشن کشویی */
+function NavCategoryBlock({
+  category,
+  open,
+  activeKey,
+  onSelect,
+  onToggle,
+}: {
+  category: NavCategory;
+  open: boolean;
+  activeKey: ModuleKey;
+  onSelect: (key: ModuleKey) => void;
+  onToggle: (key: string) => void;
+}) {
+  const containsActive = category.items.includes(activeKey);
+  return (
+    <div className="space-y-0.5">
+      <CategoryHeader
+        category={category}
+        open={open}
+        containsActive={containsActive}
+        onToggle={() => onToggle(category.key)}
+      />
+      {/*
+        انیمیشن کشویی: 0fr → 1fr روی grid-template-rows (مرورگرهای مدرن)
+        + محو شدن؛ visibility در انتهای بسته‌شدن خاموش می‌شود تا زیرمجموعه‌های
+        جمع‌شده از دسترس کیبورد/صفحه‌خوان خارج بمانند.
+      */}
+      <div
+        id={`nav-cat-${category.key}`}
+        className={cn(
+          "grid transition-[grid-template-rows,opacity,visibility] duration-300 ease-out",
+          open
+            ? "visible grid-rows-[1fr] opacity-100"
+            : "invisible grid-rows-[0fr] opacity-0"
+        )}
+      >
+        <div className="overflow-hidden">
+          <div
+            className="ms-2.5 space-y-0.5 border-s border-border/70 py-1 ps-2.5"
+          >
+            {category.items.map((key) => {
+              const m = MODULES_BY_KEY.get(key);
+              if (!m) return null;
+              return (
+                <ModuleNavItem
+                  key={key}
+                  moduleKey={m.key}
+                  label={m.label}
+                  icon={m.icon}
+                  active={activeKey === key}
+                  onSelect={onSelect}
+                />
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** ناوبری کامل + برند — محتوای مشترک سایدبار و Sheet */
 function SidebarContent({
   activeKey,
   onSelect,
   onLogout,
   logoutPending,
+  openCategory,
+  onToggleCategory,
 }: {
   activeKey: ModuleKey;
   onSelect: (key: ModuleKey) => void;
   onLogout: () => void;
   logoutPending: boolean;
+  openCategory: string | null;
+  onToggleCategory: (key: string) => void;
 }) {
+  // آیتم‌های مستقلِ پس از دسته‌ها — هر ماژولی که در دسته‌ای نرفته (مانند چت، فونت‌ها، گالری…)
+  const bottomStandalone = MODULES.filter(
+    (m) => !CATEGORIZED_KEYS.has(m.key) && !TOP_STANDALONE.includes(m.key)
+  );
+
   return (
     <div className="flex h-full flex-col gap-2">
       {/* برند */}
@@ -105,8 +247,36 @@ function SidebarContent({
       </div>
 
       {/* ماژول‌ها */}
-      <nav className="flex-1 space-y-1 overflow-y-auto py-2 pe-1" aria-label="ماژول‌های مدیریت">
-        {MODULES.map((m) => (
+      <nav
+        className="flex-1 space-y-1 overflow-y-auto py-2 pe-1"
+        aria-label="ماژول‌های مدیریت"
+      >
+        {/* آیتم‌های مستقل بالای دسته‌ها */}
+        {MODULES.filter((m) => TOP_STANDALONE.includes(m.key)).map((m) => (
+          <ModuleNavItem
+            key={m.key}
+            moduleKey={m.key}
+            label={m.label}
+            icon={m.icon}
+            active={activeKey === m.key}
+            onSelect={onSelect}
+          />
+        ))}
+
+        {/* دسته‌های آکاردئونی */}
+        {NAV_CATEGORIES.map((category) => (
+          <NavCategoryBlock
+            key={category.key}
+            category={category}
+            open={openCategory === category.key}
+            activeKey={activeKey}
+            onSelect={onSelect}
+            onToggle={onToggleCategory}
+          />
+        ))}
+
+        {/* بقیه‌ی آیتم‌های مستقل (خارج از دسته‌ها) */}
+        {bottomStandalone.map((m) => (
           <ModuleNavItem
             key={m.key}
             moduleKey={m.key}
@@ -146,6 +316,20 @@ export function AdminShell({
   const [sheetOpen, setSheetOpen] = useState(false);
   const [logoutPending, setLogoutPending] = useState(false);
 
+  /** دسته‌ی بازِ یگانه — آکاردئون: با باز کردن دسته‌ای، دسته‌های باز بسته می‌شوند */
+  const [openCategory, setOpenCategory] = useState<string | null>(null);
+
+  // با تغییر ماژول فعال، دسته‌ی همان ماژول خودکار باز می‌شود تا محل ماژول در
+  // سایدبار دیده شود (شامل پرش‌های درون‌ماژولی مثل «مشاهده همه» داشبورد)
+  useEffect(() => {
+    const cat = NAV_CATEGORIES.find((c) => c.items.includes(activeKey));
+    setOpenCategory(cat?.key ?? null);
+  }, [activeKey]);
+
+  const toggleCategory = (key: string) => {
+    setOpenCategory((prev) => (prev === key ? null : key));
+  };
+
   const active = MODULES.find((m) => m.key === activeKey) ?? MODULES[0];
   const ActiveModule = active.component;
 
@@ -173,6 +357,8 @@ export function AdminShell({
             onSelect={handleSelect}
             onLogout={handleLogout}
             logoutPending={logoutPending}
+            openCategory={openCategory}
+            onToggleCategory={toggleCategory}
           />
         </div>
       </aside>
@@ -195,6 +381,8 @@ export function AdminShell({
               onSelect={handleSelect}
               onLogout={handleLogout}
               logoutPending={logoutPending}
+              openCategory={openCategory}
+              onToggleCategory={toggleCategory}
             />
           </div>
         </SheetContent>

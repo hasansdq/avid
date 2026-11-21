@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, RefreshCw, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { apiFetch, UNAUTHORIZED_EVENT } from "@/components/admin/api";
+import { apiFetch, timeoutSignal, UNAUTHORIZED_EVENT } from "@/components/admin/api";
 import { LoginScreen } from "@/components/admin/login-screen";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { btnGradient } from "@/components/admin/shared/styles";
@@ -39,10 +39,16 @@ export function SuperAdminApp() {
   // بررسی وضعیت نشست هنگام بارگذاری — با سقف زمان ۱۰ ثانیه
   useEffect(() => {
     let alive = true;
+    // نشانه‌ی «هیدراتاسیون موفق» — نگهبان داخل layout برای خودترمیمی به آن نگاه می‌کند.
+    try {
+      (window as { __avidHydrated?: boolean }).__avidHydrated = true;
+    } catch {
+      /* فقط نشانه است؛ شکستش مهم نیست */
+    }
     apiFetch<{ authenticated: boolean; username?: string }>("/api/auth/me", {
       // اگر درخواست گیر کند، حداکثر ۱۰ ثانیه صبر می‌کنیم؛ سپس به‌جای
       // چرخش بی‌پایان، حالت خطای شبکه با دکمه تلاش مجدد نمایش می‌یابد.
-      signal: AbortSignal.timeout(10_000),
+      signal: timeoutSignal(10_000),
     })
       .then((res) => {
         if (!alive) return;

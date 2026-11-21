@@ -412,7 +412,8 @@ export function ChatWidget() {
   return (
     <div
       dir="ltr"
-      className="fixed bottom-4 left-4 z-[45] flex flex-col items-start gap-3"
+      // bottom موبایل: بالای منوی موبایلی ثابتِ پایین صفحه می‌نشیند (زیر آن گم نمی‌شود)
+      className="fixed bottom-4 left-4 z-[45] flex flex-col items-start gap-3 max-md:bottom-[calc(env(safe-area-inset-bottom,0px)+5.75rem)]"
     >
       {/* — پنل گفتگو — */}
       {open ? (
@@ -517,17 +518,6 @@ export function ChatWidget() {
       {/* — حباب خوش‌آمدگویی خودکار (پنجره‌ی کامل چت باز نمی‌شود) — */}
       {!open && welcomeVisible && welcomeText ? (
         <div className="chat-pop flex w-[min(20rem,calc(100vw-2rem))] flex-col items-start gap-2.5">
-          {/* دکمه‌ی «ادامه چت» — بالای حباب، هم‌تراز با دکمه‌ی چت */}
-          <button
-            type="button"
-            dir="rtl"
-            onClick={openWelcomeChat}
-            className="flex h-9 items-center gap-1.5 rounded-full bg-gradient-to-l from-teal-400 to-emerald-500 px-4 text-xs font-black text-teal-950 shadow-lg shadow-teal-500/25 transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/60 focus-visible:ring-offset-2 active:scale-95"
-          >
-            <MessageCircle className="size-4" strokeWidth={2.4} />
-            ادامه چت
-          </button>
-
           {/* حباب حاوی پیام خوش‌آمدگویی */}
           <div
             dir="rtl"
@@ -554,6 +544,17 @@ export function ChatWidget() {
               {welcomeText}
             </p>
           </div>
+
+          {/* دکمه‌ی «ادامه چت» — زیر حباب، نزدیک دنباله‌ی حباب و تصویر پشتیبان */}
+          <button
+            type="button"
+            dir="rtl"
+            onClick={openWelcomeChat}
+            className="ml-2.5 flex h-9 items-center gap-1.5 self-start rounded-full bg-gradient-to-l from-teal-400 to-emerald-500 px-4 text-xs font-black text-teal-950 shadow-lg shadow-teal-500/25 transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/60 focus-visible:ring-offset-2 active:scale-95"
+          >
+            <MessageCircle className="size-4" strokeWidth={2.4} />
+            ادامه چت
+          </button>
         </div>
       ) : null}
 

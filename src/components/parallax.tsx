@@ -243,11 +243,15 @@ export function ParallaxBackground() {
       {/*
        * موبایل (< md): پس‌زمینه‌ی کاملاً ثابت و سبک —
        * درخشش‌های گرادیانی بدون blur و بدون هیچ انیمیشنی؛
+       * رنگ درخشش‌ها برای «هر دو تم» جداگانه تنظیم شده است
+       * (تم روشن: سایه‌ی ملایمِ سبز/بنفشِ تیره؛ تم تیره: نورِ
+       * teal/violet ملایم) تا پس‌زمینه‌ی موبایل همیشه هم‌خانواده‌ی
+       * تم فعال باشد؛
        * لایه‌های انیمیشنی (orbها، ذرات، چیپ‌ها و نویز) فقط دسکتاپ رندر می‌شوند.
        */}
       <div className="absolute inset-0 md:hidden">
-        <div className="absolute -top-24 right-[8%] size-[300px] rounded-full bg-[radial-gradient(circle,rgba(45,212,191,0.16),transparent_70%)]" />
-        <div className="absolute bottom-[18%] -left-20 size-[280px] rounded-full bg-[radial-gradient(circle,rgba(167,139,250,0.12),transparent_70%)]" />
+        <div className="absolute -top-24 right-[8%] size-[300px] rounded-full bg-[radial-gradient(circle,rgba(13,148,136,0.08),transparent_70%)] dark:bg-[radial-gradient(circle,rgba(45,212,191,0.13),transparent_70%)]" />
+        <div className="absolute bottom-[18%] -left-20 size-[280px] rounded-full bg-[radial-gradient(circle,rgba(124,58,237,0.06),transparent_70%)] dark:bg-[radial-gradient(circle,rgba(167,139,250,0.10),transparent_70%)]" />
       </div>
 
       {/* glowing orbs — فقط دسکتاپ */}

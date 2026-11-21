@@ -237,7 +237,7 @@ export function VideosPage() {
         </nav>
       </header>
 
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 pb-16 pt-8 sm:pt-10">
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 pb-16 pt-8 sm:pt-10 max-md:pb-36">
         {/* سربرگ بخش */}
         <div className="mx-auto mb-10 max-w-2xl text-center">
           <span className="glass inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold text-teal-700 dark:text-teal-300">
@@ -629,8 +629,8 @@ export function VideosPage() {
         </DialogContent>
       </Dialog>
 
-      {/* فوتر مینیمال */}
-      <footer className="mt-auto border-t border-foreground/[0.06] py-6 text-center dark:border-white/[0.06]">
+      {/* فوتر مینیمال — با فاصله‌ی امن تا منوی موبایلیِ پایین صفحه */}
+      <footer className="mt-auto border-t border-foreground/[0.06] py-6 text-center md:mb-0 dark:border-white/[0.06] max-md:mb-[calc(env(safe-area-inset-bottom,0px)+5.5rem)]">
         <p className="text-xs font-bold text-muted-foreground">
           آکادمی آوید — دسترسی آزاد به آموزش
         </p>

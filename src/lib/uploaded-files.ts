@@ -130,7 +130,7 @@ async function buildUsageMap(): Promise<Map<string, string>> {
   };
 
   try {
-    const [settings, chatSettings, courses, videos, playlists, certificates, questions, fonts] =
+    const [settings, chatSettings, courses, videos, playlists, certificates, questions, fonts, sampleQuestions] =
       await Promise.all([
         db.siteSettings.findUnique({ where: { id: "main" } }),
         db.chatSettings.findUnique({ where: { id: "main" } }),
@@ -140,6 +140,7 @@ async function buildUsageMap(): Promise<Map<string, string>> {
         db.certificate.findMany({ select: { fileUrl: true } }),
         db.examQuestion.findMany({ select: { image: true, video: true } }),
         db.installedFont.findMany({ select: { cssText: true } }),
+        db.sampleQuestion.findMany({ select: { fileUrl: true } }),
       ]);
 
     put(settings?.logoUrl, "settings");
@@ -155,6 +156,8 @@ async function buildUsageMap(): Promise<Map<string, string>> {
       put(q.image, "exams");
       put(q.video, "exams");
     }
+    // فایل‌های نمونه سوال (تصویر/PDF/ویدئو)
+    for (const sq of sampleQuestions) put(sq.fileUrl, "sampleQuestions");
     // فونت‌ها داخل cssText به /uploads/fonts/<name> ارجاع می‌دهند
     for (const f of fonts) {
       const matches = f.cssText.matchAll(/\/uploads\/fonts\/[^)'"\s]+/g);
@@ -170,6 +173,7 @@ async function buildUsageMap(): Promise<Map<string, string>> {
 function sectionFromFolder(relPath: string): string {
   const top = relPath.split("/")[0] ?? "";
   if (top === "videos" || top === "certificates" || top === "fonts") return top;
+  if (top === "sample-questions") return "sampleQuestions";
   return "other";
 }
 

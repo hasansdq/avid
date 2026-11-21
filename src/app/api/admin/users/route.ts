@@ -3,6 +3,7 @@ import type { Prisma, User } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
 import { bad, str } from "@/lib/api-helpers";
+import { trackSignup } from "@/lib/stats";
 import {
   isValidNationalId,
   normalizeNationalId,
@@ -16,7 +17,7 @@ import {
  *  • status — all | active | blocked
  *  • page   — شماره‌ی صفحه (۱ مبنا؛ ۲۰ کاربر در هر صفحه)
  *
- * پاسخ: { users: (User + آمار)[], total, page, pageCount }
+ * پاسخ: { users: (User + نقش + شمار کلاس + آمار اقساط)[], total, page, pageCount }
  *
  * POST /api/admin/users — افزودن کاربر جدید توسط مدیر.
  * فیلدهای الزامی: نام، نام خانوادگی و شماره موبایل (یکتا).
@@ -79,6 +80,19 @@ export async function GET(req: NextRequest) {
         })
       : [];
 
+    // — شمار کلاس‌هایی که کاربرانِ همین صفحه عضو آنها هستند (یک پرس‌وجوی گروهی) —
+    const classGroups = ids.length
+      ? await db.classMembership.groupBy({
+          by: ["userId"],
+          where: { userId: { in: ids } },
+          _count: { _all: true },
+        })
+      : [];
+    const classesByUser = new Map<string, number>();
+    for (const g of classGroups) {
+      classesByUser.set(g.userId, g._count._all);
+    }
+
     const statsByUser = new Map<string, UserStats>();
     for (const e of enrollments) {
       // ثبت‌نام‌های بدون حساب کاربری (SetNull) در آمار لحاظ نمی‌شوند
@@ -110,6 +124,7 @@ export async function GET(req: NextRequest) {
       const stats = statsByUser.get(u.id);
       return {
         ...u,
+        classesCount: classesByUser.get(u.id) ?? 0,
         enrollmentsCount: stats?.enrollmentsCount ?? 0,
         installmentPaid: stats?.installmentPaid ?? 0,
         installmentPending: stats?.installmentPending ?? 0,
@@ -193,6 +208,8 @@ export async function POST(req: NextRequest) {
         ...(note ? { note } : {}),
       },
     });
+    // ساخت دستی کاربر توسط مدیر → آمار ثبت‌نام
+    void trackSignup();
 
     return NextResponse.json(user, { status: 201 });
   } catch (error) {

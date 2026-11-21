@@ -81,6 +81,8 @@ export interface PanelUser {
   phone: string;
   /** کد ملی (اختیاری) — برای استعلام گواهی‌نامه‌ها */
   nationalId: string | null;
+  /** نقش حساب — student | teacher؛ استاد بخش‌های ویژه (دوره/کلاس/استریم/مالی) دارد */
+  role: "student" | "teacher";
   createdAt: string;
 }
 
@@ -117,13 +119,17 @@ export interface PanelExam {
   description: string;
   accessType: ExamAccess;
   durationMinutes: number;
+  /** امکان بازگشت به سوالات قبلی هنگام آزمون (false = فقط حرکت به جلو) */
+  allowBack: boolean;
   courseTitle: string | null;
+  /** کلاس هدف آزمون کلاسی (فقط برای اعضای همان کلاس نمایش داده می‌شود) */
+  classTitle: string | null;
   questionCount: number;
   myAttempts: PanelExamAttempt[];
 }
 
 /** نوع دسترسی آزمون از دید کاربر */
-export type ExamAccess = "course" | "open" | "password";
+export type ExamAccess = "course" | "open" | "password" | "class";
 
 /** سابقه‌ی شرکت کاربر در یک آزمون */
 export interface PanelExamAttempt {
@@ -144,7 +150,10 @@ export interface PanelExamStart {
     title: string;
     description: string;
     durationMinutes: number;
+    /** امکان بازگشت به سوالات قبلی هنگام آزمون (false = فقط حرکت به جلو) */
+    allowBack: boolean;
     courseTitle: string | null;
+    classTitle: string | null;
   };
   questions: PanelQuestionView[];
 }

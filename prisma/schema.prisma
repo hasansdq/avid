@@ -104,6 +104,16 @@ model Course {
 
   // گواهینامه‌های صادرشده برای این دوره
   certificates Certificate[]
+
+  // دعوت‌های کلاس‌های آنلاین (استریم) این دوره
+  streamInvitations StreamInvitation[]
+
+  // — استاد مالک دوره (اختیاری) — دوره‌هایی که استاد از پنل خود ساخته است؛
+  // null یعنی دوره‌ی مدیر. حذف استاد، دوره‌ها را نگه می‌دارد (SetNull).
+  teacher   User?    @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  teacherId String?
+
+  @@index([teacherId])
 }
 
 // گروه‌های زمان‌بندی بخش حضوری دوره‌های حضوری/ترکیبی —
@@ -314,6 +324,9 @@ model Enrollment {
   // — اقساط (برای ثبت‌نام‌های پرداخت اقساطی) —
   installments   Installment[]
 
+  // — تلاش‌های پرداخت آنلاینِ اقساط از پنل کاربر —
+  installmentPayments InstallmentPayment[]
+
   // — حضور و غیاب این ثبت‌نام در جلسات دوره —
   attendanceRecords AttendanceRecord[]
 }
@@ -361,7 +374,17 @@ model User {
   // کد ملی (اختیاری) — برای استعلام گواهی‌نامه‌ها در صفحه‌ی عمومی /certificate
   nationalId String?      @unique
   status     String       @default("active") // active | blocked — کاربر مسدود نمی‌تواند وارد پنل شود
+  // — نقش حساب — چهار نقش در سیستم:
+  //  • مدیر کل (AdminUser — جدول جدا) → دسترسی کامل پنل مدیر
+  //  • استاد (teacher) → در پنل خود دوره/کلاس/استریم می‌سازد و مالی‌اش را می‌بیند
+  //  • فراگیر → کاربر عادی که در حداقل یک دوره/کلاس عضو است (نقش محاسبه‌ای؛ ستون ندارد)
+  //  • کاربر عادی → فقط ثبت‌نام سایت؛ بدون دوره/کلاس
+  role       String       @default("student") // student | teacher
   note       String? // یادداشت مدیر درباره‌ی این کاربر
+  // — شماره شبا (اختیاری) — استاد برای دریافت واریز درآمد خودش در بخش «مالی و
+  // درآمد» پنلش ثبت می‌کند؛ مدیر هم از تب «درآمد استاد و شبا» در دیالوگ
+  // «پرداختی‌ها و اقساط» می‌تواند آن را ویرایش کند.
+  shabaNumber String?
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
 
@@ -369,6 +392,81 @@ model User {
   enrollments Enrollment[]
   examAttempts ExamAttempt[]
   certificates Certificate[]
+  classMemberships ClassMembership[]
+  streamParticipants StreamParticipant[]
+
+  // — دارایی‌های استاد (فقط برای role="teacher" معنی دارد) —
+  taughtCourses Course[]
+  taughtClasses ClassRoom[]
+  hostedStreams LiveStream[]
+  // — واریزهای درآمد استاد (ثبت دستی مدیر) —
+  payouts    TeacherPayout[]
+}
+
+// ————————————————— واریز درآمد استاد —————————————————
+
+// واریز دستی درآمد به استاد — مدیر از تب «درآمد استاد و شبا» در دیالوگ
+// «پرداختی‌ها و اقساط» (روبدروی هر استاد در ماژول مدیریت کاربران) ثبت
+// می‌کند: مبلغ + وضعیت (واریز‌شده / در انتظار واریز) + تاریخ و یادداشت.
+// جمعِ واریزهای «paid» با درآمد کل استاد مقایسه می‌شود تا وضعیت تسویه/مانده
+// به دست آید. حذف استاد → واریزهایش هم پاک می‌شود (Cascade).
+model TeacherPayout {
+  id        String    @id @default(cuid())
+  teacherId String
+  amount    Int // مبلغ واریز (تومان)
+  status    String    @default("paid") // paid | pending
+  note      String? // یادداشت مدیر (مثلاً شماره پیگیری واریز)
+  paidAt    DateTime? // تاریخ واریز — پیش‌فرض زمان ثبت
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  teacher   User @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@index([teacherId])
+}
+
+// ————————————————— کلاس‌ها —————————————————
+
+// کلاس آموزشی — از ماژول «کلاس‌ها» در پنل مدیر ساخته می‌شود. هر کلاس لینک
+// دعوت یکتای خود را دارد (inviteSlug → /join/inviteSlug) و کاربران فقط با
+// کلیک روی همان لینک و تکمیل فرم ثبت‌نام عضو کلاس می‌شوند. ثبت‌نام معمولی
+// سایت بدون کلاس است؛ هر کاربر می‌تواند عضو چندین کلاس باشد (بدون سقف).
+model ClassRoom {
+  id          String   @id @default(cuid())
+  title       String
+  description String   @default("")
+  // شناسه‌ی یکتای لینک دعوت — قابل مشاهده/کپی و قابل تغییر از پنل مدیر
+  inviteSlug  String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members ClassMembership[]
+  // آزمون‌های تعریف‌شده فقط برای این کلاس (accessType = "class")
+  exams  Exam[]
+  // دعوت‌های کلاس‌های آنلاین (استریم) این کلاس
+  streamInvitations StreamInvitation[]
+
+  // — استاد مالک کلاس (اختیاری) — کلاس‌هایی که استاد از پنل خود ساخته است؛
+  // null یعنی کلاسِ مدیر. حذف استاد، کلاس را نگه می‌دارد (SetNull).
+  teacher   User?    @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  teacherId String?
+
+  @@index([teacherId])
+}
+
+// عضویت کاربر در کلاس — یک ردیف برای هر جفت (کاربر، کلاس)؛ حذف کاربر یا
+// کلاس عضویت‌ها را هم حذف می‌کند. لیست کلاس‌های کاربر در پنل او نمایش داده
+// نمی‌شود (فقط مدیر می‌بیند).
+model ClassMembership {
+  id        String    @id @default(cuid())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  classRoom ClassRoom @relation(fields: [classId], references: [id], onDelete: Cascade)
+  classId   String
+  createdAt DateTime  @default(now())
+
+  @@unique([userId, classId])
+  @@index([classId])
 }
 
 // ————————————————— گواهینامه‌ها —————————————————
@@ -400,21 +498,34 @@ model Certificate {
 
 // ————————————————— آزمون‌ها —————————————————
 
-// آزمون — سه نوع دسترسی:
+// آزمون — چهار نوع دسترسی:
 //   course   : آزمون دوره — فقط اعضای همان دوره (ثبت‌نام‌شدگان آن) آن را می‌بینند
 //   open     : آزمون آزاد — همه‌ی کاربران وارد‌شده آن را می‌بینند
 //   password : آزمون رمزدار — با وارد کردن رمز توسط کاربر باز می‌شود
+//   class    : آزمون کلاس — فقط اعضای همان کلاس آن را در پنل خود می‌بینند و می‌توانند
+//              آن را باز کنند (سایر کاربران اصلاً آن را نمی‌بینند).
+// بانک آزمون‌ها: هر آزمونِ اصلی (isBankCopy=false) یک‌بار به‌صورت خودکار در بانک
+// ذخیره می‌شود؛ دکمه‌ی «برگزاری دوباره» نسخه‌ی تازه‌ای از همان سوالات برای همان
+// کلاس یا کلاس دیگر می‌سازد (isBankCopy=true با پاسخ‌برگه‌های جدید).
 model Exam {
   id              String   @id @default(cuid())
   title           String
   description     String   @default("")
-  accessType      String   @default("open") // course | open | password
+  accessType      String   @default("open") // course | open | password | class
   course          Course?  @relation(fields: [courseId], references: [id], onDelete: Cascade)
   courseId        String? // آزمون دوره — دوره‌ی وابسته
+  // کلاس هدف آزمون کلاس — حذف کلاس از API مدیر آزمون‌های آن را آزاد+منتشرنشده می‌کند
+  class           ClassRoom? @relation(fields: [classId], references: [id], onDelete: SetNull)
+  classId         String?
   password        String   @default("") // رمز آزمون رمزدار
   durationMinutes Int      @default(0) // مدت آزمون (دقیقه)؛ صفر = بدون محدودیت زمانی
+  allowBack       Boolean  @default(true) // امکان بازگشت به سوالات قبلی هنگام آزمون (سوییچ مدیر)
   published       Boolean  @default(true) // منتشر شده = قابل مشاهده در پنل کاربر
   sortOrder       Int      @default(0) // ترتیب نمایش در پنل مدیر و پنل کاربر — با کشیدن و رها کردن تغییر می‌کند
+  // بانک آزمون‌ها — true یعنی این ردیف یک «برگزاری دوباره» است (در بانک فهرست نمی‌شود)؛
+  // bankOriginId شناسه‌ی آزمون اصلی بانک است (فقط برای شمارش برگزاری‌ها؛ بدون کلید خارجی).
+  isBankCopy      Boolean  @default(false)
+  bankOriginId    String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -422,6 +533,8 @@ model Exam {
   attempts        ExamAttempt[]
 
   @@index([courseId])
+  @@index([classId])
+  @@index([isBankCopy])
 }
 
 // سوال آزمون — هشت نوع پشتیبانی‌شده:
@@ -446,8 +559,10 @@ model ExamQuestion {
 }
 
 // پاسخ کاربر به یک آزمون — هر بار شرکت یک ردیف؛ پاسخ‌ها JSON به ازای هر سوال است.
-// سوالات عینی خودکار تصحیح می‌شوند (autoScore)؛ تشریحی‌‌ها در پنل مدیر
-// دیده می‌شوند و مدیر نمره‌ی نهایی (score) را ثبت می‌کند.
+// سوالات عینی خودکار تصحیح می‌شوند (autoScore)؛ نمره‌ی کسب‌شده‌ی هر سوال
+// در grades نگه داشته می‌شود و مدیر می‌تواند آن را ویرایش کند.
+// نمره‌ی نهایی (score) خودکار = جمع نمره‌ی سوالات؛ scoreManual=true یعنی مدیر
+// نمره‌ی نهایی را دستی تعیین کرده است.
 model ExamAttempt {
   id          String    @id @default(cuid())
   exam        Exam      @relation(fields: [examId], references: [id], onDelete: Cascade)
@@ -455,7 +570,9 @@ model ExamAttempt {
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId     String
   answers     String    @default("{}") // JSON پاسخ‌های کاربر
-  score       Float? // نمره‌ی نهایی — null تا تصحیح تشریحی توسط مدیر
+  grades      String    @default("{}") // JSON نمره‌ی کسب‌شده‌ی هر سوال (questionId → نمره) — قابل ویرایش توسط مدیر
+  score       Float? // نمره‌ی نهایی — null تا تصحیح توسط مدیر
+  scoreManual Boolean   @default(false) // true = نمره‌ی نهایی دستی؛ false = جمع خودکار نمره‌ی سوالات
   autoScore   Float     @default(0) // نمره‌ی خودکار از سوالات عینی
   totalPoints Float     @default(0) // جمع نمره‌ی کل سوالات
   hasEssay    Boolean   @default(false) // دارای سوال تشریحی در انتظار تصحیح
@@ -469,12 +586,15 @@ model ExamAttempt {
 
 // نشست ورود کاربران سایت
 model UserSession {
-  id        String   @id @default(cuid())
-  token     String   @unique
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String    @id @default(cuid())
+  token     String    @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
   expiresAt DateTime
-  createdAt DateTime @default(now())
+  createdAt DateTime   @default(now())
+  // آخرین باری که این نشست «دیده» شده (GET /api/user/session) —
+  // ضربان حضور برای شمارش «کاربران آنلاین» در نمودارهای پنل مدیر
+  lastSeenAt DateTime?
 }
 
 // اقساط پرداخت — برای ثبت‌نام‌هایی که روش پرداخت اقساطی را انتخاب کرده‌اند
@@ -494,6 +614,30 @@ model Installment {
 
   @@index([enrollmentId])
   @@index([status, dueDate])
+}
+
+// تلاش پرداخت آنلاینِ «یک یا چند قسط» از پنل کاربر — چرخه‌ی مستقل از پرداخت
+// پیش‌ثبت‌نام: در آغاز پرداخت رکورد با «کد تلاش» ساخته می‌شود؛ کال‌بک درگاه
+// فقط برای همان تلاشِ دقیق (تطبیق کد تلاش + مبلغ) اقساط را paid می‌کند.
+// installmentIds = آرایه‌ی JSON شناسه‌ی اقساط تحت پوشش این تلاش.
+model InstallmentPayment {
+  id             String   @id @default(cuid())
+  enrollment     Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  enrollmentId   String
+  installmentIds String   @default("[]") // JSON: ["id1", "id2", …]
+  amount         Int // جمع مبالغ اقساط این تلاش (تومان)
+  status         String   @default("pending") // pending | paid | failed
+  gateway        String   @default("") // payping | zarinpal | test
+  refId          String? // کد پرداخت درگاه (paymentCode / authority / کد آزمایشی)
+  attemptCode    String   @unique // کد یکتای تلاش — clientRefId پی‌پینگ
+  cardPan        String? // شماره کارت ماسک‌شده
+  paidAt         DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([enrollmentId])
+  @@index([status])
+  @@index([attemptCode])
 }
 
 // تنظیمات پنل پیامکی — ملی پیامک (رکورد یگانه با id = "main")
@@ -542,6 +686,53 @@ model OtpCode {
   createdAt  DateTime  @default(now())
 
   @@index([phone, createdAt])
+}
+
+// ثبت‌نام نیمه‌کاره — فرم یکپارچه‌ی «ورود/ثبت‌نام»: پس از تایید موفق شماره‌ی
+// موبایلِ ثبت‌نشده (کد پیامکی مصرف‌شده) و پیش از دریافت مشخصات کاربر ساخته
+// می‌شود؛ توکن یک‌بارمصرفِ کوتاه‌مدت اجازه‌ی ساخت حساب بدون درخواست دوباره‌ی
+// کد را می‌دهد. با ثبت مشخصات یا انقضا حذف می‌شود.
+model PendingRegistration {
+  id        String   @id @default(cuid())
+  phone     String   @unique
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+// ————————————————— آمار سایت (نمودارهای پنل مدیر) —————————————————
+
+// شمارنده‌های روزانه — هر روز حداکثر یک ردیف؛ کلید روز «YYYY-MM-DD» بر
+// اساس تقویم/زمان‌بندی Tehran (مخاطب سایت) ساخته می‌شود.
+model StatsDaily {
+  day            String @id // "2026-11-17"
+  visits         Int    @default(0) // تعداد بازدید صفحه (هر بار لود صفحه‌ی سایت)
+  uniqueVisitors Int    @default(0) // بازدیدکننده‌ی یکتای آن روز (کوکی بازدیدکننده)
+  signups        Int    @default(0) // ثبت‌نام موفق (ساخت حساب جدید)
+  logins         Int    @default(0) // ورود موفق حساب‌های موجود
+}
+
+// «بازدیدکننده‌ی یکتا در روز» — یک ردیف به ازای هر (روز، بازدیدکننده)؛
+// درج تکراری با unique رد می‌شود (P2002) یعنی قبلاً شمرده شده است.
+model VisitVisitorDay {
+  id        String   @id @default(cuid())
+  day       String
+  visitorId String
+  createdAt DateTime @default(now())
+
+  @@unique([day, visitorId])
+  @@index([day])
+}
+
+// ضربان حضور کاربران آنلاین — نشستِ دیده‌شده (حداکثر هر ۶۰ ثانیه یک ضربان)
+// یک ردیف می‌نویسد؛ «آنلاین» = ضربان در ۵ دقیقه‌ی اخیر. ردیف‌های قدیمی‌تر
+// از ۴۸ ساعت در حین گزارش‌گیری هرس می‌شوند.
+model PresencePulse {
+  id     String   @id @default(cuid())
+  userId String
+  at     DateTime @default(now())
+
+  @@index([at])
 }
 
 // ————————————————— گالری فایل‌ها —————————————————
@@ -602,11 +793,17 @@ model PaymentSettings {
 
 // مدیران پنل
 model AdminUser {
-  id           String         @id @default(cuid())
-  username     String         @unique
-  passwordHash String
-  createdAt    DateTime       @default(now())
-  sessions     AdminSession[]
+  id              String         @id @default(cuid())
+  username        String         @unique
+  passwordHash    String
+  // — تایید دومرحله‌ای پیامکی ورود مدیر —
+  // شماره موبایل مدیر که کد تایید به آن ارسال می‌شود
+  phone           String         @default("")
+  // فعال/غیرفعال بودن مرحله‌ی دوم (کد پیامکی) — پیش‌فرض غیرفعال؛
+  // ورود فقط با نام کاربری و رمز عبور ممکن است.
+  twoFactorEnabled Boolean       @default(false)
+  createdAt        DateTime       @default(now())
+  sessions         AdminSession[]
 }
 
 // نشست‌های ورود مدیر
@@ -662,4 +859,103 @@ model ChatMessage {
   createdAt      DateTime         @default(now())
 
   @@index([conversationId, createdAt])
+}
+
+// ————————————————— کلاس آنلاین (استریم) —————————————————
+
+// جلسه‌ی کلاس آنلاین — از ماژول «مدیریت استریم» در پنل مدیر ساخته می‌شود.
+// مدیر با انتخاب یک یا چند دوره/کلاس، کاربران همان دوره/کلاس را به کلاس دعوت
+// می‌کند؛ دعوت در پنل کاربر (زیر باکس مشخصات) فقط برای همان کاربران ظاهر
+// می‌شود و در غیاب دعوتِ فعال کاملاً مخفی است. وضعیت‌ها:
+//   scheduled — ایجادشده، پخش شروع نشده (چت فعال است)
+//   live      — مدیر در حال پخش صدا/تصویر است
+//   ended     — جلسه پایان یافته (ورود جدید رد می‌شود)
+model LiveStream {
+  id          String   @id @default(cuid())
+  title       String
+  description String   @default("")
+  status      String   @default("scheduled") // scheduled | live | ended
+  // — شناسه‌ی یکتای «لینک دعوت» کلاس آنلاین — لینکِ اشتراکی استاد با دانشجوها
+  // (inviteSlug → /stream/inviteSlug). لینک خودش دعوت است: هر کاربر وارد‌شده‌ی
+  // دارنده‌ی لینک می‌تواند وارد شود. null یعنی استریم بدون لینک مستقیم (اداری).
+  inviteSlug  String?  @unique
+  startedAt   DateTime? // لحظه‌ی شروع پخش (مدیر یا استادِ مالک)
+  endedAt     DateTime? // لحظه‌ی پایان جلسه
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // — استاد مالک جلسه (اختیاری) — جلساتی که استاد از پنل خود ساخته است؛
+  // null یعنی جلسه‌ی مدیر. مالک، نقش host اتاق را می‌گیرد. حذف استاد → SetNull.
+  host        User?    @relation(fields: [hostId], references: [id], onDelete: SetNull)
+  hostId      String?
+
+  invitations StreamInvitation[]
+  participants StreamParticipant[]
+
+  @@index([hostId])
+}
+
+// دعوت کاربران یک دوره یا کلاس به کلاس آنلاین — هر ردیف یک هدف دعوت است.
+// کاربرانِ مدنظر در لحظه‌ی ورود از روی عضویت‌های زنده تعیین می‌شوند:
+//   courseId   → کاربرانی که ثبت‌نام (Enrollment) فعالِ همان دوره را دارند
+//   classId    → اعضای همان کلاس (ClassMembership)
+// عنوان دوره به‌صورت تصویر لحظه‌ای (courseTitle) ذخیره می‌شود تا با تغییر/حذف
+// دوره، سند گزارش خوانا بماند. حذف دوره/کلاس فقط دعوت را می‌بُرد؛ استریم می‌ماند.
+model StreamInvitation {
+  id          String     @id @default(cuid())
+  stream      LiveStream @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  streamId    String
+  course      Course?    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId    String?
+  courseTitle String     @default("") // تصویر لحظه‌ای عنوان دوره
+  classRoom   ClassRoom? @relation(fields: [classId], references: [id], onDelete: Cascade)
+  classId     String?
+  createdAt   DateTime   @default(now())
+
+  @@index([streamId])
+}
+
+// حضور هر کاربر در یک کلاس آنلاین — یک ردیف برای هر (کلاس، کاربر)؛
+// ورود مجدد پس از خروج دوباره همین ردیف را به‌روز می‌کند (joinedAt جدید).
+// kicked=true یعنی مدیر او را از کلاس اخراج کرده — تا وقتی کلاس زنده است
+// ورود دوباره رد می‌شود. این جدول منبع خروجی اکسل «شرکت‌کنندگان استریم» است.
+model StreamParticipant {
+  id        String     @id @default(cuid())
+  stream    LiveStream @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  streamId  String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  joinedAt  DateTime   @default(now())
+  leftAt    DateTime?
+  kicked    Boolean    @default(false)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([streamId, userId])
+  @@index([streamId])
+}
+
+// مدیریت سکشن‌های صفحه‌ی اول سایت — نمایش/مخفی‌سازی هر سکشن به تفکیک پلتفرم:
+//   موبایل (< 768px) · تبلت (768–1023px) · دسکتاپ (≥ 1024px)
+// جدول فقط « override های مدیر» را نگه می‌دارد (مانند SiteText):
+// نبودِ رکورد یعنی سکشن در هر سه پلتفرم نمایان است.
+model HomepageSection {
+  key       String   @id // hero | courses | actionCards | counters | register | videos | samples | testimonials
+  mobile    Boolean  @default(true)
+  tablet    Boolean  @default(true)
+  desktop   Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+}
+
+// «انیمیشن‌های هیرو» — زیرمجموعه‌ی سکشن هیرو در مدیریت صفحه‌ی اول:
+// روشن/خاموشِ فقط صحنه‌ی «اتم ↔ اثر انگشت» به تفکیک پلتفرم (موبایل < 768px · تبلت 768–1023px · دسکتاپ ≥ 1024px).
+// نمادهای شناور (π، ∑، ∞، </>)، آیکون‌ها و متن‌ها تابع این سوئیچ‌ها نیستند و همیشه نمایان‌اند؛
+// مخفی‌سازی کل هیرو از سوئیچ‌های خودِ سکشن هیرو انجام می‌شود.
+// جدول فقط overrideهای مدیر را نگه می‌دارد؛ نبودِ رکورد یعنی انیمیشن در هر سه پلتفرم روشن است.
+model HeroAnimation {
+  key       String   @id // scene (اتم ↔ اثر انگشت) — تنها انیمیشن قابل کنترل
+  mobile    Boolean  @default(true)
+  tablet    Boolean  @default(true)
+  desktop   Boolean  @default(true)
+  updatedAt DateTime @updatedAt
 }

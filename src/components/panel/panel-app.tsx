@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { faDigits } from "@/lib/fa";
 import { PanelLogin } from "@/components/panel/panel-login";
 import { PanelDashboard } from "@/components/panel/panel-dashboard";
+import { PaymentResultDialog } from "@/components/panel/payment-result-dialog";
 import type { PanelMe } from "@/components/panel/types";
 
 /**
@@ -116,9 +117,13 @@ export function PanelApp({ settings }: { settings: SiteSettings }) {
         <div className="absolute -bottom-40 left-1/4 size-[26rem] rounded-full bg-violet-500/[0.07] blur-[130px] dark:bg-violet-400/[0.05]" />
       </div>
 
-      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-8 sm:py-12">
-        {view === "loading" ? <LoadingScreen /> : null}
+      {/* پاپ‌آپ نتیجه‌ی بازگشت از درگاه (?payment=success|failed|pending) —
+          مستقل از نمای جاری؛ فهرست دوره‌ها با رسیدن داده‌ی داشبورد پر می‌شود */}
+      <PaymentResultDialog enrollments={data?.enrollments ?? null} />
 
+      {/* pb موبایل: فاصله‌ی امن تا منوی موبایلی ثابتِ پایین صفحه */}
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 pt-8 pb-32 sm:pt-12 md:pb-12">
+        {view === "loading" ? <LoadingScreen /> : null}
         {view === "login" ? (
           <div className="flex flex-1 items-center justify-center">
             <PanelLogin settings={settings} onLoggedIn={handleLoggedIn} />

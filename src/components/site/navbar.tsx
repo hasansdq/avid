@@ -3,7 +3,17 @@
 import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { GraduationCap, LogIn, Menu, Rocket, Sparkles } from "lucide-react";
+import { toast } from "sonner";
+import {
+  GraduationCap,
+  Loader2,
+  LogIn,
+  LogOut,
+  Menu,
+  Rocket,
+  Sparkles,
+  User,
+} from "lucide-react";
 import type { NavLink, SiteSettings } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +27,44 @@ import {
 import { anchorProps } from "@/lib/nav-links";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/theme-toggle";
+
+/** نشست کاربر برای دکمه‌ی حساب هدر — null یعنی وارد نشده است */
+interface SessionUser {
+  id: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+}
+
+/**
+ * شناسایی سبکِ ورود کاربر — GET /api/user/session.
+ * بر اساس آن دکمه‌ی «ورود / ثبت‌نام» به «حساب کاربری من» تبدیل می‌شود و
+ * در منوی همبرگری موبایل گزینه‌ی «خروج» ظاهر می‌شود.
+ */
+function useUserSession() {
+  const [user, setUser] = React.useState<SessionUser | null>(null);
+  const [ready, setReady] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    fetch("/api/user/session", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { user: null }))
+      .then((data) => {
+        if (!cancelled) {
+          setUser((data as { user: SessionUser | null })?.user ?? null);
+          setReady(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return { user, ready, setUser };
+}
 
 function Logo({ settings }: { settings: SiteSettings }) {
   const [logoFailed, setLogoFailed] = React.useState(false);
@@ -65,6 +113,8 @@ export function Navbar({
 }) {
   const [scrolled, setScrolled] = React.useState(false);
   const [open, setOpen] = React.useState(false);
+  const { user, ready, setUser } = useUserSession();
+  const [loggingOut, setLoggingOut] = React.useState(false);
 
   React.useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -77,6 +127,22 @@ export function Navbar({
   const menuLinks = links.filter((l) => !l.isButton);
   const ctaLinks = links.filter((l) => l.isButton);
   const cta = ctaLinks[0];
+
+  /** خروج از حساب — از منوی همبرگری موبایل (آیکون خروج به اینجا منتقل شده است) */
+  async function handleLogout() {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await fetch("/api/user/session", { method: "DELETE" });
+      setUser(null);
+      setOpen(false);
+      toast.info("از حساب خود خارج شدید.");
+    } catch {
+      toast.error("خروج از حساب ناموفق بود؛ دوباره تلاش کنید.");
+    } finally {
+      setLoggingOut(false);
+    }
+  }
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 px-4 pt-4" style={{ fontFamily }}>
@@ -104,21 +170,36 @@ export function Navbar({
         </ul>
 
         <div className="flex items-center gap-2">
-          {/* دکمه‌ی «ورود / ثبت‌نام» — همیشه در هدر (دسکتاپ و موبایل) و خارج از منوی همبرگری */}
-          {/* موبایل: فقط آیکون؛ دسکتاپ: آیکون + برچسب — هدایت به /panel که هم ورود و هم ثبت‌نام مستقل (بدون نیاز به انتخاب دوره) را پوشش می‌دهد */}
+          {/* دکمه‌ی حساب — ورود نشده: «ورود / ثبت‌نام»؛ وارد شده: «حساب کاربری من» */}
+          {/* موبایل: فقط آیکون آدمک (به‌جای آیکون خروجِ پیشین) — هدایت به /panel */}
           <Button
             asChild
             variant="outline"
-            className="h-10 rounded-xl border-teal-500/30 bg-teal-500/[0.08] text-teal-700 shadow-sm transition-all hover:bg-teal-500/[0.15] hover:text-teal-800 hover:shadow-md active:scale-95 dark:border-teal-400/30 dark:bg-teal-400/[0.1] dark:text-teal-300 dark:hover:bg-teal-400/[0.16] dark:hover:text-teal-200"
+            className={cn(
+              "h-10 rounded-xl shadow-sm transition-all active:scale-95",
+              user
+                ? "border-violet-500/30 bg-violet-500/[0.08] text-violet-700 hover:bg-violet-500/[0.15] hover:text-violet-800 hover:shadow-md dark:border-violet-400/30 dark:bg-violet-400/[0.1] dark:text-violet-300 dark:hover:bg-violet-400/[0.16] dark:hover:text-violet-200"
+                : "border-teal-500/30 bg-teal-500/[0.08] text-teal-700 hover:bg-teal-500/[0.15] hover:text-teal-800 hover:shadow-md dark:border-teal-400/30 dark:bg-teal-400/[0.1] dark:text-teal-300 dark:hover:bg-teal-400/[0.16] dark:hover:text-teal-200"
+            )}
           >
             <Link
               href="/panel"
-              aria-label="ورود یا ثبت‌نام در سایت"
-              title="ورود به حساب کاربری یا ثبت‌نام جدید در سایت"
+              aria-label={
+                user ? "حساب کاربری من" : "ورود به حساب کاربری یا ثبت‌نام جدید"
+              }
+              title={
+                user
+                  ? "ورود به پنل کاربری (دوره‌ها، اقساط، آزمون‌ها و گواهی‌نامه‌ها)"
+                  : "ورود به حساب کاربری یا ثبت‌نام جدید در سایت"
+              }
             >
-              <LogIn className="size-5" />
+              {ready ? (
+                <User className="size-5" />
+              ) : (
+                <Loader2 className="size-5 animate-spin opacity-60" />
+              )}
               <span className="hidden text-sm font-bold sm:inline">
-                ورود / ثبت‌نام
+                {user ? "حساب کاربری من" : "ورود / ثبت‌نام"}
               </span>
             </Link>
           </Button>
@@ -190,6 +271,28 @@ export function Navbar({
                     <Rocket className="size-4" />
                     {cta.label}
                   </a>
+                ) : null}
+
+                {/* خروج از حساب — آیکون خروج از هدرِ موبایل به اینجا منتقل شده است */}
+                {user ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleLogout()}
+                    disabled={loggingOut}
+                    className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-red-500/25 bg-red-500/[0.06] px-4 py-3 text-sm font-bold text-red-600 transition-colors hover:bg-red-500/[0.12] disabled:opacity-60 dark:border-red-400/25 dark:bg-red-400/[0.08] dark:text-red-300 dark:hover:bg-red-400/[0.14]"
+                  >
+                    <span className="flex items-center gap-2">
+                      {loggingOut ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <LogOut className="size-4" />
+                      )}
+                      خروج از حساب کاربری
+                    </span>
+                    <span className="truncate text-[0.65rem] font-semibold text-muted-foreground">
+                      {user.firstName} {user.lastName}
+                    </span>
+                  </button>
                 ) : null}
               </nav>
             </SheetContent>

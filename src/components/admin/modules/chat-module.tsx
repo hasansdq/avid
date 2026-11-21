@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowRight,
   Bot,
   Clock,
   Inbox,
@@ -233,6 +234,13 @@ function ConversationsTab() {
     void loadThread(id);
   };
 
+  /** بازگشت به لیست گفتگوها (نمای تک‌ستونی موبایل/تبلت) */
+  const backToList = () => {
+    setSelectedId(null);
+    setThread(null);
+    setVisitorTyping(false);
+  };
+
   const handleReplyChange = (value: string) => {
     setReply(value);
     if (
@@ -290,9 +298,14 @@ function ConversationsTab() {
   const selected = list?.find((c) => c.id === selectedId) ?? null;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[340px,1fr]">
-      {/* — لیست گفتگوها — */}
-      <div className="glass flex max-h-[560px] flex-col overflow-hidden rounded-2xl lg:max-h-[calc(100vh-16rem)]">
+    <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
+      {/* — لیست گفتگوها (در نمای تک‌ستونی وقتی گفتگو باز است پنهان) — */}
+      <div
+        className={cn(
+          "glass flex max-h-[560px] flex-col overflow-hidden rounded-2xl lg:max-h-[calc(100vh-16rem)]",
+          selectedId ? "hidden lg:flex" : "flex"
+        )}
+      >
         <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
           <p className="flex items-center gap-2 text-sm font-black text-foreground">
             <Inbox className="size-4 text-teal-600 dark:text-teal-300" />
@@ -384,8 +397,13 @@ function ConversationsTab() {
         </div>
       </div>
 
-      {/* — رشته‌ی گفتگوی انتخاب‌شده — */}
-      <div className="glass flex max-h-[560px] min-h-[420px] flex-col overflow-hidden rounded-2xl lg:max-h-[calc(100vh-16rem)]">
+      {/* — رشته‌ی گفتگوی انتخاب‌شده (در نمای تک‌ستونی فقط وقتی انتخاب شده) — */}
+      <div
+        className={cn(
+          "glass flex max-h-[560px] min-h-[420px] flex-col overflow-hidden rounded-2xl lg:max-h-[calc(100vh-16rem)]",
+          selectedId ? "flex" : "hidden lg:flex"
+        )}
+      >
         {!selectedId || !selected ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
             <span className="flex size-14 items-center justify-center rounded-2xl bg-foreground/[0.04]">
@@ -399,6 +417,19 @@ function ConversationsTab() {
           </div>
         ) : (
           <>
+            {/* دکمه بازگشت به لیست — فقط نمای تک‌ستونی موبایل/تبلت */}
+            <div className="border-b border-border lg:hidden">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={backToList}
+                className="h-9 rounded-lg px-3 text-xs font-bold text-teal-700 hover:bg-teal-500/10 dark:text-teal-300"
+              >
+                <ArrowRight className="size-4" />
+                بازگشت به گفتگوها
+              </Button>
+            </div>
+
             {/* سربرگ گفتگو */}
             <div className="flex items-center gap-3 border-b border-border px-4 py-3">
               <span
@@ -593,7 +624,7 @@ function BotSettingsTab() {
   };
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[1fr,360px]">
+    <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
       {/* — فرم تنظیمات — */}
       <div className="glass space-y-6 rounded-2xl p-5 sm:p-6">
         <ImageUrlField

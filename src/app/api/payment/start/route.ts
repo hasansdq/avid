@@ -176,7 +176,7 @@ export async function POST(req: NextRequest) {
         },
       });
       return NextResponse.json({
-        redirectUrl: `${origin}/register?payment=success`,
+        redirectUrl: `${origin}/panel?payment=success`,
         free: true,
       });
     }

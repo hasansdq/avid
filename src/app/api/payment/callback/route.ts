@@ -60,8 +60,9 @@ async function markAttemptFailed(
  *      موفقِ تلاشِ قبلی هرگز نمی‌تواند تلاشِ جدید با مبلغ متفاوت را paid
  *      کند و کال‌بک تکراری هیچ‌چیز را دوباره ثبت نمی‌کند (idempotent).
  *
- * پس از تأیید، کاربر به /register?payment=success|failed هدایت می‌شود
- * (پاسخ ۳۰۳ تا مرورگرِ فرمِ POST هم با GET ادامه دهد).
+ * پس از تأیید، کاربر به /panel?payment=success|failed هدایت می‌شود
+ * (پاسخ ۳۰۳ تا مرورگرِ فرمِ POST هم با GET ادامه دهد) — پاپ‌آپ نتیجه‌ی
+ * پرداخت و لیست دوره‌ها در پنل کاربر نمایش داده می‌شود.
  */
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
@@ -69,11 +70,11 @@ export async function GET(req: NextRequest) {
   const origin = forwardedOrigin(req);
   const fail = (reason: string) =>
     NextResponse.redirect(
-      `${origin}/register?payment=failed&reason=${encodeURIComponent(reason)}`,
+      `${origin}/panel?payment=failed&reason=${encodeURIComponent(reason)}`,
       303
     );
   const success = () =>
-    NextResponse.redirect(`${origin}/register?payment=success`, 303);
+    NextResponse.redirect(`${origin}/panel?payment=success`, 303);
 
   try {
     const settings = await getPaymentSettings();
@@ -273,11 +274,11 @@ export async function POST(req: NextRequest) {
   const origin = forwardedOrigin(req);
   const fail = (reason: string) =>
     NextResponse.redirect(
-      `${origin}/register?payment=failed&reason=${encodeURIComponent(reason)}`,
+      `${origin}/panel?payment=failed&reason=${encodeURIComponent(reason)}`,
       303
     );
   const success = () =>
-    NextResponse.redirect(`${origin}/register?payment=success`, 303);
+    NextResponse.redirect(`${origin}/panel?payment=success`, 303);
 
   try {
     // پی‌پینگ v3 فرم x-www-form-urlencoded می‌فرستد: status/errorCode/data
@@ -387,7 +388,7 @@ export async function POST(req: NextRequest) {
     // ممنوع؛ Verify دوباره فراخوانی شود) — وضعیت failed ثبت نمی‌شود تا
     // کال‌بکِ بعدی/تلاش مجدد بتواند همان تراکنش را نهایی کند
     if (result.processing) {
-      return NextResponse.redirect(`${origin}/register?payment=pending`, 303);
+      return NextResponse.redirect(`${origin}/panel?payment=pending`, 303);
     }
 
     if (!result.ok) {

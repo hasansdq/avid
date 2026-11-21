@@ -42,6 +42,49 @@ export interface CourseAvailability {
 export type AvailabilityMap = Record<string, CourseAvailability>;
 
 /**
+ * نسخه‌ی «عمومی» ظرفیت برای ارسال به مرورگر کاربر — عمداً فاقد
+ * «باقیمانده» و «ثبت‌نام‌شده» است: اعداد باقیمانده به کاربر نمایش
+ * داده نمی‌شوند و فقط پرچمِ «تکمیل» برای قفل‌کردن رابط کاربری می‌ماند.
+ * (محاسبات سرور همچنان از CourseAvailability کامل استفاده می‌کنند.)
+ */
+export type PublicCourseAvailability = Pick<
+  CourseAvailability,
+  "capacity" | "full"
+> & {
+  /** گروه‌های زمانی — بدون اعداد باقیمانده/ثبت‌نام‌شده */
+  groups?: Pick<
+    GroupAvailability,
+    "id" | "title" | "schedule" | "capacity" | "full"
+  >[];
+};
+
+/** نقشه‌ی عمومی عنوان دوره → وضعیت ظرفیت (بدون اعداد باقیمانده) */
+export type PublicAvailabilityMap = Record<string, PublicCourseAvailability>;
+
+/** حذف اعداد باقیمانده/ثبت‌نام‌شده از نقشه‌ی ظرفیت برای پاسخ عمومی API */
+export function toPublicAvailability(map: AvailabilityMap): PublicAvailabilityMap {
+  const out: PublicAvailabilityMap = {};
+  for (const [title, a] of Object.entries(map)) {
+    out[title] = {
+      capacity: a.capacity,
+      full: a.full,
+      ...(a.groups
+        ? {
+            groups: a.groups.map((g) => ({
+              id: g.id,
+              title: g.title,
+              schedule: g.schedule,
+              capacity: g.capacity,
+              full: g.full,
+            })),
+          }
+        : {}),
+    };
+  }
+  return out;
+}
+
+/**
  * محاسبه‌ی وضعیت ظرفیت از روی اعداد خام — همین منطق هم در
  * سرور (برای اعمال محدودیت) و هم در UI استفاده می‌شود.
  */

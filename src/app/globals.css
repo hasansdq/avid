@@ -35,6 +35,8 @@
   --color-primary: var(--primary);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
+  --color-dialog-foreground: var(--dialog-foreground);
+  --color-dialog: var(--dialog);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
   --radius-sm: calc(var(--radius) - 4px);
@@ -55,6 +57,8 @@
   --card-foreground: #0b1f1a;
   --popover: #ffffff;
   --popover-foreground: #0b1f1a;
+  --dialog: #ffffff;
+  --dialog-foreground: #0b1f1a;
   --primary: #0d9488;
   --primary-foreground: #ffffff;
   --secondary: rgba(13, 148, 136, 0.08);
@@ -94,6 +98,10 @@
   --card-foreground: #e9f5f2;
   --popover: #0b1512;
   --popover-foreground: #e9f5f2;
+  /* سطح بالاتر از پاپ‌اور — پنجره‌های مودال (دایالوگ/شیت) باید از پس‌زمینه‌ی
+     سایت (#04080a) و کارت‌ها (#0a1310) متمایز دیده شوند تا از صفحه جدا بخوانند */
+  --dialog: #101d18;
+  --dialog-foreground: #e9f5f2;
   --primary: #14b8a6;
   --primary-foreground: #02201c;
   --secondary: rgba(255, 255, 255, 0.06);
@@ -166,6 +174,17 @@
 }
 .dark ::-webkit-scrollbar-thumb:hover {
   background: rgba(45, 212, 191, 0.45);
+}
+
+/* ============ پنجره‌های مودال — عمق لایه‌ها در حالت تیره ============ */
+/* پس‌زمینه‌ی سایت تقریباً سیاه است؛ برای اینکه پنجره‌ی شناور از صفحه جدا
+   دیده شود، لایه‌ی پشتِ پنجره در حالت تیره تیره‌تر از پیش است تا سطح
+   مودال (--dialog) به‌وضوح برجسته بخواند. */
+.dark [data-slot="dialog-overlay"],
+.dark [data-slot="alert-dialog-overlay"],
+.dark [data-slot="sheet-overlay"],
+.dark [data-slot="drawer-overlay"] {
+  background-color: rgb(0 0 0 / 0.7);
 }
 
 /* ============ Keyframes ============ */
@@ -375,6 +394,39 @@
   border: 1px solid rgba(255, 255, 255, 0.09);
 }
 
+/* ——— پنل شیشه‌ای اسلوگان هیرو — فقط موبایل ———
+   مستطیل گوشه‌گرد (border-radius هم‌اندازه‌ی هدر) + ته‌رنگ بسیار سبک
+   + blur حداقلی (۲px) — بدون هیچ outline/border؛
+   اسلوگان روی اتمِ پس‌زمینه متمایز و خوانا می‌ماند.
+   جهتِ درخواست کاربر: خطوط شبکه و شکل‌های متحرک پشتِ پنل
+   «واضح‌تر و با جزئیات بیشتر» دیده شوند (blur≈۲px، آلفای تیره≈۰٫۱۵)؛
+   هایلایت سبز تیتر، رنگ/خوانایی متن، جای تیتر و دسکتاپ دست‌نخورده. */
+@media (max-width: 767px) {
+  .hero-slogan-glass {
+    border-radius: 1rem;
+    /* شیشه‌ی روشن: ته‌رنگ بسیار سبک (۸٪) — خطوط شبکه و شکل‌های متحرکِ
+       پس‌زمینه با جزئیات بیشتر از پشت شیشه دیده می‌شوند و متن خوانا می‌ماند */
+    background: rgba(255, 255, 255, 0.08);
+    /* blur حداقلی (۲px) — تقریباً بدون مات‌شدگی؛ جزئیات مدارها، الکترون‌ها
+       و خطوط پس‌زمینه با وضوح کامل از پنل عبور می‌کنند */
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+  }
+  /* حالت تیره: تِینتِ تیره‌ی ۱۵٪ — پنل فقط به‌عنوان شیشه‌ی بسیار سبک
+     دیده می‌شود؛ طرحِ پشتِ آن واضح‌تر و پرجزئیات‌تر نمایان است */
+  .dark .hero-slogan-glass {
+    background: rgba(5, 11, 9, 0.15);
+  }
+  /* کاهش ۲۰٪ اندازه‌ی فونت اسلوگان — فقط موبایل:
+     • حالت پیش‌فرض: ۲۶px ← ۲۰.8px (هم‌ارز کلاس text-[20.8px] روی h1)
+     • حالت سفارشی ویرایشگر مدادی: اندازه‌ی ذخیره‌شده (--st-size) ×۰.8 —
+       !important روی inline style پیروز می‌شود تا فونتِ بزرگ مدادی در
+       موبایل هم دقیقاً ۲۰٪ کوچک‌تر دیده شود؛ دسکتاپ دست‌نخورده می‌ماند. */
+  .hero-slogan-glass .site-text-value {
+    font-size: calc(var(--st-size, 26px) * 0.8) !important;
+  }
+}
+
 .noise-overlay {
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
@@ -457,6 +509,402 @@
   }
 }
 
+/* ================================================== */
+/*  صحنه‌ی سه‌بعدی اتم هیرو — CSS 3D واقعی            */
+/*  استیج (perspective) ⟶ world (preserve-3d):       */
+/*  هر مدار یک صفحه‌ی دایره‌ای واقعی است که با        */
+/*  rotateZ(γ)·rotateX(β) در فضا کج می‌شود؛          */
+/*  پرسپکتیو آن را به بیضیِ دارای عمق فشرده می‌کند    */
+/*  (نیمه‌ی نزدیک درشت‌تر/روشن‌تر و نیمه‌ی دور         */
+/*  باریک‌تر/کم‌رنگ‌تر — ضخامت خط خودبه‌خود با عمق    */
+/*  تغییر می‌کند). الکترون دقیقاً روی خودِ حلقه       */
+/*  می‌نشیند و با «بیل‌بورد» (وارونه‌ی کامل چرخش‌ها)  */
+/*  همیشه رو به دوربین می‌ماند؛ اندازه‌اش با عمق      */
+/*  تغییر می‌کند و پشت هسته پنهان می‌شود — مسیر       */
+/*  حرکت کاملاً حجمی است، نه مسطح.                   */
+/* ================================================== */
+
+/* استیج — منبع پرسپکتیوی صحنه */
+.atom-stage {
+  perspective: 900px;
+  perspective-origin: 50% 50%;
+}
+
+/* فضای سه‌بعدی — کل قلمرو استیج (مدارها به‌صورت ٪ از همین قلمرو اندازه می‌گیرند) */
+.atom-world {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+}
+
+/* صفحه‌ی مدار — دایره‌ای واقعی در فضا (بیضیِ نمایش = پرسپکتیو) */
+.atom-orbit {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-style: preserve-3d;
+}
+
+/* چرخنده‌ی درون‌صفحه‌ای — الکترون را روی دایره‌ی مدار می‌گرداند */
+.atom-spinner {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  animation: atom-spin3d var(--dur, 10s) linear infinite;
+  animation-direction: var(--dir, normal);
+}
+
+/* لنگر الکترون — نقطه‌ی صفربُعد روی خودِ حلقه */
+.atom-anchor {
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform-style: preserve-3d;
+}
+
+/* بیل‌بورد — وارونه‌ی کامل چرخش‌ها؛ الکترون همیشه رو به دوربین و دقیقاً روی مدار */
+.atom-billboard {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  animation: atom-billboard3d var(--dur, 10s) linear infinite;
+  animation-direction: var(--dir, normal);
+}
+
+/* چرخش اسپینر — فاز اولیه از متغیر --ph هر الکترون */
+@keyframes atom-spin3d {
+  from {
+    transform: rotate(var(--ph, 0deg));
+  }
+  to {
+    transform: rotate(calc(var(--ph, 0deg) + 360deg));
+  }
+}
+
+/* بیل‌بورد — دقیقاً وارونه‌ی چرخش اسپینر + چرخش‌های صفحه‌ی مدار (γ، β)؛
+   حالت from با transform ایستای المان یکسان است تا پرشی رخ ندهد.
+   translateZ(8px) الکترون را اندکی رو به دوربین می‌برد تا با صفحه‌ی
+   حلقه z-fight نداشته باشد و همیشه جلوی خط دیده شود. */
+@keyframes atom-billboard3d {
+  from {
+    transform: rotate(calc(-1 * var(--ph, 0deg)))
+      rotateX(var(--bx, -70deg)) rotateZ(var(--bz, 0deg)) translateZ(8px);
+  }
+  to {
+    transform: rotate(calc(-1 * var(--ph, 0deg) - 360deg))
+      rotateX(var(--bx, -70deg)) rotateZ(var(--bz, 0deg)) translateZ(8px);
+  }
+}
+
+/* خود الکترون — کره با هایلایت نقطه‌ای و سایه‌ی داخلی؛ هاله‌ی نور
+   به‌عمدی محدود و ملایم است تا اتم در پس‌زمینه بماند و متن
+   روی آن کاملاً خوانا و متمایز باشد. */
+.atom-electron {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 15px;
+  height: 15px;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background:
+    radial-gradient(
+      circle at 30% 26%,
+      rgba(255, 255, 255, 0.98) 0 18%,
+      transparent 46%
+    ),
+    radial-gradient(
+      circle at 64% 70%,
+      var(--e-hi, #99f6e4),
+      var(--e-mid, #0d9488) 62%,
+      var(--e-lo, #134e4a)
+    );
+  box-shadow:
+    inset -3px -4px 6px rgba(0, 0, 0, 0.4),
+    inset 2px 2px 3px rgba(255, 255, 255, 0.22),
+    0 0 8px 2px var(--e-glow, rgba(13, 148, 136, 0.34)),
+    0 0 18px 5px var(--e-glow2, rgba(13, 148, 136, 0.12));
+}
+
+/* رنگ‌های الکترون — تم روشن (هاله‌ی کوتاه و ملایم) */
+.atom-electron--teal {
+  --e-hi: #99f6e4;
+  --e-mid: #0d9488;
+  --e-lo: #134e4a;
+  --e-glow: rgba(13, 148, 136, 0.34);
+  --e-glow2: rgba(13, 148, 136, 0.12);
+}
+.dark .atom-electron--teal {
+  --e-hi: #ccfbf1;
+  --e-mid: #14b8a6;
+  --e-lo: #0f766e;
+  --e-glow: rgba(45, 212, 191, 0.36);
+  --e-glow2: rgba(45, 212, 191, 0.13);
+}
+.atom-electron--violet {
+  --e-hi: #ddd6fe;
+  --e-mid: #7c3aed;
+  --e-lo: #4c1d95;
+  --e-glow: rgba(139, 92, 246, 0.3);
+  --e-glow2: rgba(139, 92, 246, 0.1);
+}
+.dark .atom-electron--violet {
+  --e-hi: #ede9fe;
+  --e-mid: #8b5cf6;
+  --e-lo: #5b21b6;
+  --e-glow: rgba(167, 139, 250, 0.34);
+  --e-glow2: rgba(167, 139, 250, 0.12);
+}
+.atom-electron--emerald {
+  --e-hi: #a7f3d0;
+  --e-mid: #059669;
+  --e-lo: #064e3b;
+  --e-glow: rgba(16, 185, 129, 0.3);
+  --e-glow2: rgba(16, 185, 129, 0.1);
+}
+.dark .atom-electron--emerald {
+  --e-hi: #d1fae5;
+  --e-mid: #10b981;
+  --e-lo: #065f46;
+  --e-glow: rgba(52, 211, 153, 0.34);
+  --e-glow2: rgba(52, 211, 153, 0.12);
+}
+.atom-electron--amber {
+  --e-hi: #fde68a;
+  --e-mid: #d97706;
+  --e-lo: #78350f;
+  --e-glow: rgba(245, 158, 11, 0.3);
+  --e-glow2: rgba(245, 158, 11, 0.1);
+}
+.dark .atom-electron--amber {
+  --e-hi: #fef3c7;
+  --e-mid: #f59e0b;
+  --e-lo: #92400e;
+  --e-glow: rgba(251, 191, 36, 0.34);
+  --e-glow2: rgba(251, 191, 36, 0.12);
+}
+
+/* استاپ‌های گرادیان حلقه‌ی مدار — رنگ از تم (currentColor)
+   پیروی می‌کند تا حلقه‌های سه‌بعدی در تم روشن/تیره هم‌رنگ مدار باشند */
+.atom-stop {
+  stop-color: currentColor;
+}
+
+/* پیش‌سپردن آرام کل صحنه (چرخش دوبعدی تصویرِ پرسپکتیو — حس کروی) */
+@keyframes atom-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.atom-precess {
+  animation: atom-rotate 80s linear infinite;
+}
+
+/* هسته — چرخش آرام خوشه‌ی پروتون/نوترون */
+.atom-nucleus-spin {
+  animation: atom-rotate 18s linear infinite;
+}
+.atom-nd {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+}
+.atom-nd--teal {
+  background: radial-gradient(circle at 32% 30%, #ccfbf1, #0d9488 62%);
+  box-shadow: 0 0 9px rgba(13, 148, 136, 0.3);
+}
+.dark .atom-nd--teal {
+  background: radial-gradient(circle at 32% 30%, #ccfbf1, #14b8a6 62%);
+  box-shadow: 0 0 9px rgba(45, 212, 191, 0.32);
+}
+.atom-nd--violet {
+  background: radial-gradient(circle at 32% 30%, #ede9fe, #8b5cf6 62%);
+  box-shadow: 0 0 9px rgba(139, 92, 246, 0.28);
+}
+.dark .atom-nd--violet {
+  background: radial-gradient(circle at 32% 30%, #ede9fe, #a78bfa 62%);
+  box-shadow: 0 0 9px rgba(167, 139, 250, 0.3);
+}
+.atom-nd--emerald {
+  background: radial-gradient(circle at 32% 30%, #d1fae5, #10b981 62%);
+  box-shadow: 0 0 9px rgba(16, 185, 129, 0.28);
+}
+.dark .atom-nd--emerald {
+  background: radial-gradient(circle at 32% 30%, #d1fae5, #34d399 62%);
+  box-shadow: 0 0 9px rgba(52, 211, 153, 0.3);
+}
+.atom-nd--amber {
+  background: radial-gradient(circle at 32% 30%, #fef3c7, #f59e0b 62%);
+  box-shadow: 0 0 9px rgba(245, 158, 11, 0.28);
+}
+.dark .atom-nd--amber {
+  background: radial-gradient(circle at 32% 30%, #fef3c7, #fbbf24 62%);
+  box-shadow: 0 0 9px rgba(251, 191, 36, 0.3);
+}
+/* نقطه‌ی داغ مرکز هسته — نورِ محدود و ملایم */
+.atom-nd-hot {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  width: 10px;
+  height: 10px;
+  background: radial-gradient(circle at 35% 32%, #ffffff, #fef9c3 60%, #faf08f);
+  box-shadow:
+    0 0 8px 2px rgba(255, 255, 255, 0.5),
+    0 0 16px 5px rgba(45, 212, 191, 0.2);
+}
+
+/* هاله‌های ضربانی هسته */
+.atom-halo {
+  transform: translate(-50%, -50%);
+  animation: atom-halo 4.4s ease-out infinite;
+}
+@keyframes atom-halo {
+  0% {
+    transform: translate(-50%, -50%) scale(0.55);
+    opacity: 0;
+  }
+  14% {
+    opacity: 0.45;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2.2);
+    opacity: 0;
+  }
+}
+
+/* تپش درخشش هسته */
+@keyframes atom-glow-pulse {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.atom-glow-pulse {
+  animation: atom-glow-pulse 5s ease-in-out infinite;
+}
+
+/* المان‌های شناور ریاضی/برنامه‌نویسی اطراف اتم */
+@keyframes atom-float-a {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-4deg);
+  }
+  50% {
+    transform: translate3d(10px, -16px, 0) rotate(4deg);
+  }
+}
+@keyframes atom-float-b {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-12px, -10px, 0) scale(1.07);
+  }
+}
+@keyframes atom-float-c {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(2deg);
+  }
+  50% {
+    transform: translate3d(12px, 12px, 0) rotate(-3deg);
+  }
+}
+.atom-float-a {
+  animation: atom-float-a 9s ease-in-out infinite;
+}
+.atom-float-b {
+  animation: atom-float-b 11s ease-in-out infinite;
+}
+.atom-float-c {
+  animation: atom-float-c 10s ease-in-out infinite;
+}
+
+/* ————— صحنه‌ی ترکیبی «اتم ↔ اثر انگشت» (هیرو) ————— */
+/* توکن الکترون در حلقه‌ی مورفینگ اتم/اثر انگشت: در حالت پویا، موقعیت و
+   بیل‌بورد (وارونه‌ی چرخش صفحه‌ی مدار برای رو-به-دوربین ماندن
+   کره) هر فریم توسط موتور rAF با transform تنظیم می‌شود — نه چرخش
+   CSS. در حالت ایستا (SSR / prefers-reduced-motion) همان المان با
+   left/top درصدی روی فازِ خودِ مدار می‌ایستد؛ preserve-3d لازم است
+   تا translateZ(8px) واقعاً در فضای سه‌بعدی صفحه‌ی مدار اعمال شود. */
+.atom-scene-token {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform-style: preserve-3d;
+}
+
+/* ورود جهت‌دار هیرو — متن از راست، ستون آیکون‌ها از چپ، اتم با مقیاس */
+@keyframes hero-in-right {
+  from {
+    opacity: 0;
+    transform: translate3d(34px, 24px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+@keyframes hero-in-left {
+  from {
+    opacity: 0;
+    transform: translate3d(-34px, 24px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+@keyframes hero-in-scale {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.animate-hero-in-right {
+  animation: hero-in-right 0.75s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+}
+.animate-hero-in-left {
+  animation: hero-in-left 0.75s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+}
+.animate-hero-in-scale {
+  animation: hero-in-scale 1.15s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+}
+
+/* کاهش حرکت — کل چرخه‌های اتم متوقف و حالت ایستا نمایش داده می‌شود
+   (الکترون‌ها با transform ایستا روی همان فازِ خودِ مدار می‌مانند) */
+@media (prefers-reduced-motion: reduce) {
+  .atom-spinner,
+  .atom-billboard,
+  .atom-precess,
+  .atom-nucleus-spin,
+  .atom-halo,
+  .atom-glow-pulse,
+  .atom-float-a,
+  .atom-float-b,
+  .atom-float-c,
+  .animate-hero-in-right,
+  .animate-hero-in-left,
+  .animate-hero-in-scale {
+    animation: none;
+  }
+}
+
 /* ————————————————— چاپ گواهینامه ————————————————— */
 /* هنگام چاپ/ذخیره‌ی PDF فقط «ریشه‌ی چاپ» (cert-print-root — پورتال زیر body)
    دیده می‌شود؛ بقیه‌ی فرزندان بدنه با display:none کاملاً از چاپ خارج می‌شوند
@@ -509,3 +957,19 @@
     max-height: none !important;
   }
 }
+
+/* cache-bust 1794857076 */
+
+/* cache-bust 1794857497 */
+
+/* cb 1794857547 */
+
+/* cb 1794857782 */
+
+/* cb 1794862226 */
+
+/* cb 1794862313 */
+
+/* cb 1794862414 */
+
+/* cb 1794862511 */

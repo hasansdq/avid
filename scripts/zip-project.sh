@@ -97,6 +97,54 @@ for CRITICAL in \
   "src/components/admin/modules/backup-module.tsx" \
   "src/components/site/enroll-form.tsx" \
   "src/components/site/hero.tsx" \
+  "src/components/site/atom-fingerprint-scene.tsx" \
+  "src/components/site/atom-code-scene.tsx" \
+  "src/lib/hero-animations.ts" \
+  "src/app/api/admin/hero-animations/route.ts" \
+  "src/components/admin/modules/homepage-module.tsx" \
+  "src/lib/teacher.ts" \
+  "src/lib/teacher-finance.ts" \
+  "src/lib/shaba.ts" \
+  "src/lib/course-write.ts" \
+  "src/lib/streams.ts" \
+  "src/app/api/teacher/finance/route.ts" \
+  "src/app/api/teacher/courses/route.ts" \
+  "src/app/api/teacher/courses/[id]/route.ts" \
+  "src/app/api/teacher/courses/[id]/enrollees/route.ts" \
+  "src/app/api/teacher/classes/route.ts" \
+  "src/app/api/teacher/classes/[id]/route.ts" \
+  "src/app/api/teacher/classes/[id]/members/route.ts" \
+  "src/app/api/teacher/classes/[id]/members/[memberId]/route.ts" \
+  "src/app/api/teacher/streams/route.ts" \
+  "src/app/api/teacher/streams/[id]/route.ts" \
+  "src/app/api/admin/teachers/route.ts" \
+  "src/app/api/admin/teachers/[id]/finance/route.ts" \
+  "src/app/api/admin/teachers/[id]/payouts/route.ts" \
+  "src/app/api/admin/teachers/[id]/payouts/[payoutId]/route.ts" \
+  "src/components/admin/shared/teacher-payments-dialog.tsx" \
+  "src/components/admin/shared/user-payments-dialog.tsx" \
+  "src/components/panel/teacher/teacher-courses.tsx" \
+  "src/components/panel/teacher/teacher-classes.tsx" \
+  "src/components/panel/teacher/teacher-finance.tsx" \
+  "src/components/panel/teacher/teacher-streams.tsx" \
+  "src/components/panel/panel-dashboard.tsx" \
+  "src/app/stream/[id]/page.tsx" \
+  "src/components/stream/stream-room-client.tsx" \
+  "src/components/stream/stream-room.tsx" \
+  "src/components/stream/use-stream-room.ts" \
+  "src/components/stream/types.ts" \
+  "src/app/api/streams/[id]/route.ts" \
+  "src/app/api/streams/[id]/join/route.ts" \
+  "src/app/api/streams/[id]/leave/route.ts" \
+  "src/app/api/admin/streams/route.ts" \
+  "src/app/api/admin/streams/[id]/route.ts" \
+  "src/app/api/admin/streams/[id]/kick/route.ts" \
+  "src/app/api/admin/streams/[id]/export/route.ts" \
+  "src/components/admin/modules/streams-module.tsx" \
+  "src/components/chat/chat-widget.tsx" \
+  "src/components/chat/use-chat-socket.ts" \
+  "src/app/api/chat/bootstrap/route.ts" \
+  "src/app/api/chat/messages/route.ts" \
   "src/instrumentation.ts" \
   "src/lib/ensure-schema.ts" \
   "scripts/migrate.ts" \
@@ -106,9 +154,21 @@ for CRITICAL in \
   "scripts/restore.ts" \
   "scripts/healthcheck.ts" \
   "prisma/migrations/0_init/migration.sql" \
-  "prisma/migrations/1_add_zarinpal_code/migration.sql" \
-  "prisma/migrations/2_complete_schema/migration.sql" \
-  "prisma/migrations/3_v8_payment_attempt_and_clean_defaults/migration.sql" \
+  "prisma/migrations/20261112000000_payment_attempt_code/migration.sql" \
+  "prisma/migrations/20261114000100_add_academy_features/migration.sql" \
+  "prisma/migrations/20261115000100_clear_support_hours_default/migration.sql" \
+  "prisma/migrations/20261115000200_installment_payments/migration.sql" \
+  "prisma/migrations/20261116000100_pending_registration/migration.sql" \
+  "prisma/migrations/20261117000100_admin_2fa_stats/migration.sql" \
+  "prisma/migrations/20261117170000_homepage_section_visibility/migration.sql" \
+  "prisma/migrations/20261118100000_exam_attempt_grades/migration.sql" \
+  "prisma/migrations/20261119000000_exam_allow_back/migration.sql" \
+  "prisma/migrations/20261130120000_class_stream_tables/migration.sql" \
+  "prisma/migrations/20261130130000_exam_class_bank/migration.sql" \
+  "prisma/migrations/20261201000000_teacher_role/migration.sql" \
+  "prisma/migrations/20261202000000_hero_animations/migration.sql" \
+  "prisma/migrations/20261203000000_teacher_shaba_payouts/migration.sql" \
+  "prisma/migrations/migration_lock.toml" \
   "prisma/baseline.sql" \
   "mini-services/chat-service/index.ts" \
   "mini-services/chat-service/web-dev-supervisor.ts" \
@@ -116,6 +176,12 @@ for CRITICAL in \
   "mini-services/chat-service/tsconfig.json" \
   "mini-services/chat-service/package.json" \
   "mini-services/chat-service/bun.lock" \
+  "mini-services/stream-service/index.ts" \
+  "mini-services/stream-service/healthcheck.ts" \
+  "mini-services/stream-service/Dockerfile" \
+  "mini-services/stream-service/tsconfig.json" \
+  "mini-services/stream-service/package.json" \
+  "mini-services/stream-service/bun.lock" \
   "compose.yaml" \
   "Dockerfile" \
   "tsconfig.json" \

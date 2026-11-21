@@ -21,6 +21,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       where: { id },
       include: {
         course: { select: { title: true } },
+        class: { select: { title: true } },
         questions: { orderBy: { order: "asc" } },
         _count: { select: { attempts: true } },
       },
@@ -53,6 +54,14 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       if (!course) return bad("دوره‌ی انتخاب‌شده یافت نشد.");
     }
 
+    // آزمون کلاس — کلاس باید واقعی باشد
+    if (data.classId) {
+      const classRoom = await db.classRoom
+        .findUnique({ where: { id: data.classId }, select: { id: true } })
+        .catch(() => null);
+      if (!classRoom) return bad("کلاس انتخاب‌شده یافت نشد.");
+    }
+
     const exam = await db.exam
       .update({
         where: { id },
@@ -61,12 +70,15 @@ export async function PATCH(req: NextRequest, { params }: Params) {
           description: data.description,
           accessType: data.accessType,
           courseId: data.accessType === "course" ? data.courseId : null,
+          classId: data.accessType === "class" ? data.classId : null,
           password: data.password,
           durationMinutes: data.durationMinutes,
+          allowBack: data.allowBack,
           published: data.published,
         },
         include: {
           course: { select: { title: true } },
+          class: { select: { title: true } },
           _count: { select: { questions: true, attempts: true } },
         },
       })

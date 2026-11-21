@@ -2,6 +2,8 @@ import type {
   ChatConversation,
   ChatMessage,
   ChatSettings,
+  ClassMembership,
+  ClassRoom,
   Course,
   CourseGroup,
   CourseInstallment,
@@ -15,6 +17,8 @@ import type {
   NavLink,
   PaymentSettings,
   Playlist,
+  SampleQuestion,
+  SampleQuestionCategory,
   SiteSettings,
   SmsLog,
   SmsSettings,
@@ -28,6 +32,8 @@ export type {
   ChatConversation,
   ChatMessage,
   ChatSettings,
+  ClassMembership,
+  ClassRoom,
   Course,
   CourseGroup,
   CourseInstallment,
@@ -41,6 +47,8 @@ export type {
   NavLink,
   PaymentSettings,
   Playlist,
+  SampleQuestion,
+  SampleQuestionCategory,
   SiteSettings,
   SmsLog,
   SmsSettings,
@@ -81,8 +89,12 @@ export type CourseWithUsage = Course & {
   installmentTemplate?: CourseInstallment[];
 };
 
-/** کاربر + آمار ثبت‌نام و اقساط (پاسخ GET /api/admin/users) */
+/** کاربر + نقش و آمار ثبت‌نام/کلاس/اقساط (پاسخ GET /api/admin/users) */
 export type UserWithStats = User & {
+  /** نقش حساب — «student» یا «teacher» (ستون خود User؛ برای خوانایی تکرار شده) */
+  role: string;
+  /** شمار کلاس‌هایی که کاربر عضو آنهاست */
+  classesCount: number;
   enrollmentsCount: number;
   installmentPaid: number;
   installmentPending: number;
@@ -90,9 +102,40 @@ export type UserWithStats = User & {
   installmentPaidAmount: number;
 };
 
-/** آزمون + عنوان دوره و شمارنده‌ها (پاسخ GET /api/admin/exams) */
+/** استاد + آمار دوره/کلاس/استریم (پاسخ GET /api/admin/teachers) */
+export type TeacherWithStats = User & {
+  /** شمار دوره‌هایی که مالکشان این استاد است */
+  coursesCount: number;
+  /** شمار کلاس‌هایی که مالکشان این استاد است */
+  classesCount: number;
+  /** شمار کل استریم‌های میزبانی‌شده توسط این استاد */
+  streamsCount: number;
+  /** شمار استریم‌های پایان‌یافته‌ی این استاد */
+  streamsEndedCount: number;
+  /** شمار دانشجویان یکتای دوره‌های این استاد */
+  studentsCount: number;
+};
+
+/** کلاس + شمارنده‌ی اعضا (پاسخ GET /api/admin/classes) */
+export type ClassRoomWithCount = ClassRoom & {
+  _count: { members: number };
+};
+
+/** عضویت + مشخصات کاربر (پاسخ GET /api/admin/classes/[id]/members) */
+export type ClassMemberRow = ClassMembership & {
+  user: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    phone: string;
+    nationalId: string | null;
+  };
+};
+
+/** آزمون + عنوان دوره/کلاس و شمارنده‌ها (پاسخ GET /api/admin/exams) */
 export type ExamWithStats = Exam & {
   course?: { title: string } | null;
+  class?: { title: string } | null;
   _count?: { questions: number; attempts: number };
 };
 
@@ -101,18 +144,34 @@ export type EnrollmentWithInstallments = Enrollment & {
   installments: Installment[];
 };
 
+/** دسته‌ی نمونه سوال + شمارنده‌ها (پاسخ GET /api/admin/sample-questions/categories) */
+export type SampleQuestionCategoryWithCount = SampleQuestionCategory & {
+  _count: { items: number };
+  publishedItems: number;
+};
+
+/** نمونه سوال + دسته (پاسخ GET /api/admin/sample-questions/items) */
+export type SampleQuestionWithCategory = SampleQuestion & {
+  category?: { id: string; title: string } | null;
+};
+
 /** کلیدهای ماژول‌های پنل مدیریت */
 export type ModuleKey =
   | "dashboard"
+  | "stats"
+  | "homepageSections"
   | "settings"
   | "courses"
   | "videos"
   | "exams"
   | "certificates"
+  | "samples"
   | "testimonials"
   | "enrollments"
   | "payment"
   | "users"
+  | "classes"
+  | "streams"
   | "sms"
   | "chat"
   | "fonts"

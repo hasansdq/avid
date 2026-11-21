@@ -12,10 +12,16 @@ RUN bun install --frozen-lockfile
 
 # ———————————————————— ۲) بیلد پروداکشن ————————————————————
 FROM ${BUN_IMAGE} AS build
+# مسیر سوکت سرویس چت (/socket.io) و سرویس استریم (/stream-socket) —
+# در استقرار از همین مبدا با پروکسی Apache/nginx به پورت سرویس می‌روند.
 ARG NEXT_PUBLIC_SOCKET_URI="/"
+ARG NEXT_PUBLIC_STREAM_SOCKET_URI="/"
+ARG NEXT_PUBLIC_STREAM_SOCKET_PATH="/stream-socket"
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     NEXT_PUBLIC_SOCKET_URI=${NEXT_PUBLIC_SOCKET_URI} \
+    NEXT_PUBLIC_STREAM_SOCKET_URI=${NEXT_PUBLIC_STREAM_SOCKET_URI} \
+    NEXT_PUBLIC_STREAM_SOCKET_PATH=${NEXT_PUBLIC_STREAM_SOCKET_PATH} \
     DATABASE_URL="file:/tmp/avid-build.db"
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules

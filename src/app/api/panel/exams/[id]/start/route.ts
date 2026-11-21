@@ -17,6 +17,7 @@ type Params = { params: Promise<{ id: string }> };
  *   • آزاد → همه‌ی کاربران وارد‌شده
  *   • دوره → فقط اعضای همان دوره (ثبت‌نام فعال)
  *   • رمزدار → رمز صحیح
+ *   • کلاس → فقط اعضای همان کلاس
  * پاسخ: { attemptId, exam, questions } — سوالات بدون پاسخ صحیح.
  */
 export async function POST(req: NextRequest, { params }: Params) {
@@ -31,7 +32,10 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const { id } = await params;
     const exam = await db.exam
-      .findUnique({ where: { id }, include: { course: true } })
+      .findUnique({
+        where: { id },
+        include: { course: true, class: { select: { id: true, title: true } } },
+      })
       .catch(() => null);
     if (!exam || !exam.published) {
       return NextResponse.json(
@@ -59,6 +63,18 @@ export async function POST(req: NextRequest, { params }: Params) {
       if (!membership) {
         return NextResponse.json(
           { error: "این آزمون فقط برای اعضای دوره‌ی مرتبط است." },
+          { status: 403 }
+        );
+      }
+    } else if (exam.accessType === "class") {
+      // آزمون کلاس — فقط اعضای همان کلاس می‌توانند آزمون را باز کنند
+      const membership = await db.classMembership.findFirst({
+        where: { userId: session.id, classId: exam.classId ?? "__none__" },
+        select: { id: true },
+      });
+      if (!membership) {
+        return NextResponse.json(
+          { error: "این آزمون فقط برای اعضای کلاس مرتبط است." },
           { status: 403 }
         );
       }
@@ -112,7 +128,9 @@ export async function POST(req: NextRequest, { params }: Params) {
           title: exam.title,
           description: exam.description,
           durationMinutes: exam.durationMinutes,
+          allowBack: exam.allowBack,
           courseTitle: exam.course?.title ?? null,
+          classTitle: exam.class?.title ?? null,
         },
         questions: panelQuestions,
       },

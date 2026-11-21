@@ -8,11 +8,14 @@ import {
   MonitorSmartphone,
   Save,
   ShieldCheck,
+  Smartphone,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,6 +36,10 @@ interface AccountInfo {
   username: string;
   activeSessions: number;
   createdAt?: string | null;
+  /** شماره موبایل مدیر — مقصد کد تایید دومرحله‌ای */
+  phone?: string;
+  /** وضعیت تایید دومرحله‌ای پیامکی ورود */
+  twoFactorEnabled?: boolean;
 }
 
 function Field({
@@ -72,10 +79,18 @@ export function AccountModule() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
+  // — تایید دومرحله‌ای پیامکی (PUT /api/admin/account/2fa) —
+  const [twoFactorPhone, setTwoFactorPhone] = useState("");
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+  const [saving2fa, setSaving2fa] = useState(false);
+
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      setInfo(await apiFetch<AccountInfo>("/api/admin/account"));
+      const data = await apiFetch<AccountInfo>("/api/admin/account");
+      setInfo(data);
+      setTwoFactorPhone(data.phone ?? "");
+      setTwoFactorEnabled(!!data.twoFactorEnabled);
     } catch (error) {
       toastApiError(error);
     } finally {
@@ -136,6 +151,35 @@ export function AccountModule() {
     }
   }
 
+  /** ذخیره‌ی تنظیمات تایید دومرحله‌ای پیامکی (شماره + فعال/غیرفعال) */
+  async function handleSave2fa() {
+    if (saving2fa) return;
+    if (twoFactorEnabled && !/^09\d{9}$/.test(twoFactorPhone.trim())) {
+      toast.error("برای فعال‌سازی، شماره موبایل معتبر وارد کنید (مثال: ۰۹۱۲۳۴۵۶۷۸۹).");
+      return;
+    }
+    setSaving2fa(true);
+    try {
+      await apiFetch("/api/admin/account/2fa", {
+        method: "PUT",
+        body: JSON.stringify({
+          phone: twoFactorPhone.trim(),
+          twoFactorEnabled,
+        }),
+      });
+      toast.success(
+        twoFactorEnabled
+          ? "تایید دومرحله‌ای پیامکی فعال شد؛ ورود از این پس دومرحله‌ای است."
+          : "تایید دومرحله‌ای غیرفعال شد؛ ورود فقط با نام کاربری و رمز عبور انجام می‌شود."
+      );
+      load();
+    } catch (error) {
+      toastApiError(error);
+    } finally {
+      setSaving2fa(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -187,6 +231,94 @@ export function AccountModule() {
           هر ورود به پنل یک نشست ۷ روزه می‌سازد. با تغییر رمز عبور یا دکمه‌ی
           «خروج از همه دستگاه‌ها» می‌توانید همه‌ی نشست‌های قبلی را باطل کنید.
         </p>
+      </section>
+
+      {/* ————— تایید دومرحله‌ای پیامکی ————— */}
+      <section className="glass space-y-4 rounded-2xl p-5 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="flex size-10 items-center justify-center rounded-xl bg-foreground/[0.05]">
+              <Smartphone className="size-5 text-teal-600 dark:text-teal-300" />
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-black text-foreground">
+                  تایید دومرحله‌ای پیامکی
+                </h2>
+                <Badge
+                  variant="outline"
+                  className={
+                    twoFactorEnabled
+                      ? "border-teal-500/40 bg-teal-500/10 text-[0.6rem] text-teal-700 dark:text-teal-300"
+                      : "border-foreground/[0.12] bg-foreground/[0.04] text-[0.6rem] text-muted-foreground"
+                  }
+                >
+                  {twoFactorEnabled ? "فعال" : "غیرفعال (پیش‌فرض)"}
+                </Badge>
+              </div>
+              <p className="text-xs leading-6 text-muted-foreground">
+                مرحله‌ی دوم ورود به پنل: پس از نام کاربری و رمز عبور، کد ۶ رقمی
+                به شماره‌ی موبایل مدیر پیامک می‌شود. پیش‌فرض غیرفعال است و
+                ورود فقط با رمز انجام می‌شود.
+              </p>
+            </div>
+          </div>
+
+          {/* ماژول فعال/غیرفعال‌سازی */}
+          <div className="flex items-center gap-3 rounded-xl border border-foreground/[0.08] bg-foreground/[0.03] px-4 py-2.5 dark:border-white/[0.08] dark:bg-white/[0.03]">
+            <span className="text-xs font-bold text-muted-foreground">
+              {twoFactorEnabled ? "فعال" : "غیرفعال"}
+            </span>
+            <Switch
+              id="two-factor-switch"
+              checked={twoFactorEnabled}
+              onCheckedChange={(v) => setTwoFactorEnabled(v)}
+              disabled={saving2fa}
+              aria-label="فعال یا غیرفعال‌سازی تایید دومرحله‌ای پیامکی"
+            />
+          </div>
+        </div>
+
+        <form
+          className="grid gap-4 sm:grid-cols-[1fr_auto]"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleSave2fa();
+          }}
+        >
+          <div className="space-y-2">
+            <Label htmlFor="two-factor-phone">شماره موبایل مدیر</Label>
+            <Input
+              id="two-factor-phone"
+              dir="ltr"
+              value={twoFactorPhone}
+              onChange={(e) => setTwoFactorPhone(e.target.value.replace(/[^\d]/g, "").slice(0, 11))}
+              placeholder="09123456789"
+              inputMode="numeric"
+              autoComplete="tel"
+              disabled={saving2fa}
+              className="max-w-xs"
+            />
+            <p className="text-[0.7rem] leading-5 text-muted-foreground">
+              کد تایید به این شماره ارسال می‌شود — برای فعال‌سازی، شماره‌ی معتبر
+              الزامی است. پیامک‌ها از ماژول «پنل پیامکی» ارسال می‌شوند.
+            </p>
+          </div>
+          <div className="flex items-end">
+            <Button
+              type="submit"
+              disabled={saving2fa}
+              className={`h-10 rounded-xl text-sm ${btnGradient}`}
+            >
+              {saving2fa ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Save className="size-4" />
+              )}
+              {saving2fa ? "در حال ذخیره..." : "ذخیره تنظیمات"}
+            </Button>
+          </div>
+        </form>
       </section>
 
       {/* ————— تغییر رمز عبور ————— */}

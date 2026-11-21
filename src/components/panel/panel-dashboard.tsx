@@ -6,9 +6,12 @@ import Image from "next/image";
 import {
   ArrowRight,
   Award,
+  Banknote,
+  BookOpen,
   CalendarClock,
   Check,
   ClipboardCheck,
+  CreditCard,
   GraduationCap,
   Hourglass,
   IdCard,
@@ -17,9 +20,10 @@ import {
   LogOut,
   Pencil,
   Phone,
+  Radio,
   RotateCw,
+  School,
   ShieldCheck,
-  User,
   Wallet,
   X,
 } from "lucide-react";
@@ -51,11 +55,15 @@ import {
 import type {
   PanelAttendance,
   PanelEnrollment,
-  PanelInstallment,
   PanelMe,
 } from "@/components/panel/types";
 import { ExamsSection } from "@/components/panel/panel-exams";
 import { CertificatesSection } from "@/components/panel/panel-certificates";
+import { StreamInviteBox } from "@/components/panel/panel-stream-invites";
+import { TeacherCoursesSection } from "@/components/panel/teacher/teacher-courses";
+import { TeacherClassesSection } from "@/components/panel/teacher/teacher-classes";
+import { TeacherStreamsSection } from "@/components/panel/teacher/teacher-streams";
+import { TeacherFinanceSection } from "@/components/panel/teacher/teacher-finance";
 
 /** ظاهر مشترک کارت‌های شیشه‌ای داشبورد — هماهنگ با صفحه‌ی ثبت‌نام */
 const CARD =
@@ -137,7 +145,31 @@ function Chip({
 
 /* ————————————————— بخش‌های داشبورد ————————————————— */
 
-type SectionKey = "courses" | "exams" | "certificates" | "payments";
+type SectionKey =
+  | "courses"
+  | "exams"
+  | "certificates"
+  | "payments"
+  | "teacher-courses"
+  | "teacher-classes"
+  | "teacher-streams"
+  | "teacher-finance";
+
+/** کلید بخش‌های پایه — برای همه‌ی کاربران (دانشجو و استاد) */
+const BASE_SECTION_KEYS: SectionKey[] = [
+  "courses",
+  "exams",
+  "certificates",
+  "payments",
+];
+
+/** کلید بخش‌های استاد — فقط با نقش teacher نمایان می‌شوند */
+const TEACHER_SECTION_KEYS: SectionKey[] = [
+  "teacher-courses",
+  "teacher-classes",
+  "teacher-streams",
+  "teacher-finance",
+];
 
 /** قالب کارت آماری نئونی — استروک رنگی + درخشش؛ رنگ هر بخش متمایز است */
 const SECTIONS: Record<
@@ -180,26 +212,75 @@ const SECTIONS: Record<
     active:
       "border-rose-500 bg-rose-500/[0.10] text-rose-800 shadow-[0_0_28px_rgba(244,63,94,0.45)] dark:border-rose-300 dark:text-rose-200 dark:bg-rose-400/[0.12]",
   },
+  // — بخش‌های استاد (فقط با نقش teacher) —
+  "teacher-courses": {
+    label: "دوره‌های من",
+    icon: BookOpen,
+    idle: "border-teal-500/60 bg-teal-500/[0.05] text-teal-700 shadow-[0_0_16px_rgba(20,184,166,0.20)] hover:shadow-[0_0_26px_rgba(20,184,166,0.35)] dark:border-teal-400/50 dark:text-teal-300",
+    active:
+      "border-teal-500 bg-teal-500/[0.10] text-teal-800 shadow-[0_0_28px_rgba(20,184,166,0.45)] dark:border-teal-300 dark:text-teal-200 dark:bg-teal-400/[0.12]",
+  },
+  "teacher-classes": {
+    label: "کلاس‌های من",
+    icon: School,
+    idle: "border-violet-500/60 bg-violet-500/[0.05] text-violet-700 shadow-[0_0_16px_rgba(139,92,246,0.20)] hover:shadow-[0_0_26px_rgba(139,92,246,0.35)] dark:border-violet-400/50 dark:text-violet-300",
+    active:
+      "border-violet-500 bg-violet-500/[0.10] text-violet-800 shadow-[0_0_28px_rgba(139,92,246,0.45)] dark:border-violet-300 dark:text-violet-200 dark:bg-violet-400/[0.12]",
+  },
+  "teacher-streams": {
+    label: "استریم‌های من",
+    icon: Radio,
+    idle: "border-rose-500/60 bg-rose-500/[0.05] text-rose-700 shadow-[0_0_16px_rgba(244,63,94,0.20)] hover:shadow-[0_0_26px_rgba(244,63,94,0.35)] dark:border-rose-400/50 dark:text-rose-300",
+    active:
+      "border-rose-500 bg-rose-500/[0.10] text-rose-800 shadow-[0_0_28px_rgba(244,63,94,0.45)] dark:border-rose-300 dark:text-rose-200 dark:bg-rose-400/[0.12]",
+  },
+  "teacher-finance": {
+    label: "مالی و درآمد",
+    icon: Wallet,
+    idle: "border-amber-500/60 bg-amber-500/[0.05] text-amber-700 shadow-[0_0_16px_rgba(245,158,11,0.22)] hover:shadow-[0_0_26px_rgba(245,158,11,0.38)] dark:border-amber-400/50 dark:text-amber-300",
+    active:
+      "border-amber-500 bg-amber-500/[0.10] text-amber-800 shadow-[0_0_28px_rgba(245,158,11,0.48)] dark:border-amber-300 dark:text-amber-200 dark:bg-amber-400/[0.12]",
+  },
 };
 
-/** چهار کارت آماری مربعی — بدون تصویر، با استروک نئونی و شمارنده */
+/** برچسب نمایشی هر بخش — در حساب استاد، دو کارت «دوره» با پرانتز تفکیک
+ *  نقش درج می‌شوند تا معنایشان با هشت کارت استاد گمراه‌کننده نباشد:
+ *  دوره‌ها(دانشجو) = دوره‌هایی که استاد خودش در آن‌ها ثبت‌نام کرده؛
+ *  دوره‌ها(استاد) = دوره‌هایی که مالک/ مدرسشان خود استاد است. */
+function sectionLabel(key: SectionKey, isTeacher: boolean): string {
+  if (!isTeacher) return SECTIONS[key].label;
+  if (key === "courses") return "دوره‌ها(دانشجو)";
+  if (key === "teacher-courses") return "دوره‌ها(استاد)";
+  return SECTIONS[key].label;
+}
+
+/** کارت‌های آماری مربعی — بخش‌های پایه برای همه، بخش‌های استاد فقط با نقش استاد.
+ *  هر ضلع کارت ۳۰٪ کوچکتر از سلول شبکه است (عرض ۷۰٪ + نسبت مربع)،
+ *  محتوا هم به همان نسبت جمع می‌شود. */
 function StatCards({
   active,
   onSelect,
   counts,
+  keys,
+  isTeacher,
 }: {
   active: SectionKey;
   onSelect: (key: SectionKey) => void;
-  counts: Record<SectionKey, number | null>;
+  counts: Partial<Record<SectionKey, number | null>>;
+  /** کلیدهای قابل نمایش — پایه + بخش‌های استاد (فقط نقش استاد) */
+  keys: SectionKey[];
+  /** برچسب‌های «دوره‌ها(دانشجو/استاد)» فقط در حساب استاد */
+  isTeacher: boolean;
 }) {
   return (
     <nav
       aria-label="بخش‌های پنل کاربر"
       className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4"
     >
-      {(Object.keys(SECTIONS) as SectionKey[]).map((key) => {
+      {keys.map((key) => {
         const meta = SECTIONS[key];
-        const count = counts[key];
+        const label = sectionLabel(key, isTeacher);
+        const count = counts[key] ?? null;
         const isActive = active === key;
         const Icon = meta.icon;
         return (
@@ -208,29 +289,29 @@ function StatCards({
             type="button"
             onClick={() => onSelect(key)}
             aria-pressed={isActive}
-            aria-label={`${meta.label} — ${
+            aria-label={`${label} — ${
               count === null ? "در حال شمارش" : `${faDigits(count)} مورد`
             }`}
-            title={`${meta.label} — نمایش جزئیات`}
+            title={`${label} — نمایش جزئیات`}
             className={cn(
-              "group flex aspect-square select-none flex-col items-center justify-center gap-1.5 rounded-2xl border-2 p-3 text-center transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-2",
+              "group flex aspect-square w-[70%] select-none flex-col items-center justify-center gap-1 justify-self-center rounded-2xl border-2 p-2 text-center transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-1.5 sm:p-2.5",
               meta.idle,
               isActive && meta.active
             )}
           >
             <Icon
-              className="size-7 shrink-0 transition-transform duration-200 group-hover:scale-110 sm:size-9"
+              className="size-5 shrink-0 transition-transform duration-200 group-hover:scale-110 sm:size-6"
               strokeWidth={1.9}
             />
-            <span className="flex h-8 items-center text-3xl font-black leading-none tabular-nums sm:text-4xl">
+            <span className="flex h-5 items-center text-2xl font-black leading-none tabular-nums sm:text-3xl">
               {count === null ? (
-                <Loader2 className="size-6 animate-spin opacity-60" />
+                <Loader2 className="size-4 animate-spin opacity-60" />
               ) : (
                 faDigits(count)
               )}
             </span>
-            <span className="text-[0.7rem] font-bold sm:text-xs">
-              {meta.label}
+            <span className="text-[0.62rem] font-bold leading-4 sm:text-[0.7rem]">
+              {label}
             </span>
           </button>
         );
@@ -258,12 +339,79 @@ export function PanelDashboard({
   const [loggingOut, setLoggingOut] = React.useState(false);
 
   // بخش فعال داشبورد — با کارت‌های آماری بالای صفحه جابه‌جا می‌شود
-  const [section, setSection] = React.useState<SectionKey>("courses");
+  // مقدار اولیه از پارامتر آدرس (?tab=) خوانده می‌شود تا منوی موبایلیِ
+  // پایین صفحه بتواند مستقیم به «دوره‌های من» (/panel?tab=courses) برود
+  const [section, setSection] = React.useState<SectionKey>(() => {
+    if (typeof window === "undefined") return "courses";
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    return tab === "courses" ||
+      tab === "exams" ||
+      tab === "certificates" ||
+      tab === "payments" ||
+      tab === "teacher-courses" ||
+      tab === "teacher-classes" ||
+      tab === "teacher-streams" ||
+      tab === "teacher-finance"
+      ? (tab as SectionKey)
+      : "courses";
+  });
   // شمارنده‌های کارت‌ها — دوره/پرداخت از داده‌ی ثبت‌نام‌ها، آزمون/گواهینامه با یک دریافت سبک
   const [examsCount, setExamsCount] = React.useState<number | null>(null);
   const [certificatesCount, setCertificatesCount] = React.useState<
     number | null
   >(null);
+
+  // شمارنده‌های بخش‌های استاد — فقط برای حساب استاد با دریافت سبک پر می‌شود
+  const [teacherCounts, setTeacherCounts] = React.useState<
+    Partial<Record<SectionKey, number | null>>
+  >({});
+  const isTeacher = data?.user.role === "teacher";
+
+  React.useEffect(() => {
+    if (!isTeacher) return;
+    let cancelled = false;
+
+    const setCount = (key: SectionKey, n: number) => {
+      if (!cancelled) setTeacherCounts((prev) => ({ ...prev, [key]: n }));
+    };
+
+    async function loadListCount(
+      url: string,
+      key: SectionKey
+    ): Promise<void> {
+      try {
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) throw new Error();
+        const json = (await res.json()) as unknown;
+        setCount(key, Array.isArray(json) ? json.length : 0);
+      } catch {
+        setCount(key, 0);
+      }
+    }
+
+    // مالی: شمارش فروش (summary.salesCount)
+    async function loadFinanceCount(): Promise<void> {
+      try {
+        const res = await fetch("/api/teacher/finance", { cache: "no-store" });
+        if (!res.ok) throw new Error();
+        const json = (await res.json()) as {
+          summary?: { salesCount?: number };
+        };
+        setCount("teacher-finance", json.summary?.salesCount ?? 0);
+      } catch {
+        setCount("teacher-finance", 0);
+      }
+    }
+
+    void loadListCount("/api/teacher/courses", "teacher-courses");
+    void loadListCount("/api/teacher/classes", "teacher-classes");
+    void loadListCount("/api/teacher/streams", "teacher-streams");
+    void loadFinanceCount();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isTeacher]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -448,9 +596,6 @@ export function PanelDashboard({
       {/* ————— کارت پروفایل ————— */}
       <section className={CARD} aria-label="اطلاعات حساب کاربری">
         <div className="flex flex-wrap items-center gap-4">
-          <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-emerald-600 shadow-lg shadow-teal-500/25">
-            <User className="size-7 text-teal-950" strokeWidth={2.2} />
-          </span>
           <div className="min-w-0">
             <h1 className="truncate text-lg font-black text-foreground">
               {user.firstName} {user.lastName}
@@ -490,12 +635,29 @@ export function PanelDashboard({
               </p>
             ) : null}
           </div>
-          <Chip className="ms-auto border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-300">
-            <ShieldCheck className="size-3" />
-            شماره تاییدشده
-          </Chip>
+          {/* استاد — نشان نقش کنار «شماره تاییدشده»؛ دانشجو همان تک‌چیپ قبلی را می‌بیند */}
+          {user.role === "teacher" ? (
+            <div className="flex flex-wrap items-center gap-2 ms-auto">
+              <Chip className="border-teal-500/30 bg-teal-500/10 text-teal-700 dark:border-teal-400/25 dark:bg-teal-400/10 dark:text-teal-300">
+                <GraduationCap className="size-3" />
+                استاد
+              </Chip>
+              <Chip className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-300">
+                <ShieldCheck className="size-3" />
+                شماره تاییدشده
+              </Chip>
+            </div>
+          ) : (
+            <Chip className="ms-auto border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-300">
+              <ShieldCheck className="size-3" />
+              شماره تاییدشده
+            </Chip>
+          )}
         </div>
       </section>
+
+      {/* ————— باکس دعوت به کلاس آنلاین — فقط با دعوت فعال نمایان می‌شود ————— */}
+      <StreamInviteBox />
 
       {/* ————— ویرایش کد ملی (اختیاری) ————— */}
       <Dialog open={nidOpen} onOpenChange={setNidOpen}>
@@ -564,15 +726,18 @@ export function PanelDashboard({
         </DialogContent>
       </Dialog>
 
-      {/* ————— کارت‌های آماری نئونی ————— */}
+      {/* ————— کارت‌های آماری نئونی — چهار کارت پایه برای همه، هشت کارت برای استاد ————— */}
       <StatCards
         active={section}
         onSelect={setSection}
+        keys={isTeacher ? [...BASE_SECTION_KEYS, ...TEACHER_SECTION_KEYS] : BASE_SECTION_KEYS}
+        isTeacher={isTeacher}
         counts={{
           courses: enrollments.length,
           exams: examsCount,
           certificates: certificatesCount,
           payments: paymentsCount,
+          ...(isTeacher ? teacherCounts : {}),
         }}
       />
 
@@ -618,6 +783,20 @@ export function PanelDashboard({
       {section === "payments" ? (
         <PaymentsSection enrollments={enrollments} />
       ) : null}
+
+      {/* ————— بخش‌های استاد — فقط برای نقش teacher فعال (سرویس خودش دسترسی را می‌سنجد) ————— */}
+
+      {/* دوره‌های من (استاد) — ایجاد/ویرایش/حذف دوره‌های خودِ استاد */}
+      {section === "teacher-courses" ? <TeacherCoursesSection /> : null}
+
+      {/* کلاس‌های من (استاد) — کلاس‌ها با لینک دعوت یکتا و اعضا */}
+      {section === "teacher-classes" ? <TeacherClassesSection /> : null}
+
+      {/* استریم‌های من (استاد) — کلاس‌های آنلاین با لینک یکتا و شروع/پایان */}
+      {section === "teacher-streams" ? <TeacherStreamsSection /> : null}
+
+      {/* مالی و درآمد (استاد) — فروش، اقساط و درآمد (فقط خواندنی) */}
+      {section === "teacher-finance" ? <TeacherFinanceSection /> : null}
     </div>
   );
 }
@@ -714,8 +893,6 @@ function PaymentsSection({ enrollments }: { enrollments: PanelEnrollment[] }) {
 /** کارت یک پرداخت — روش، مبلغ، وضعیت، کد پیگیری و اقساط */
 function PaymentCard({ enrollment: e }: { enrollment: PanelEnrollment }) {
   const payStatus = PAYMENT_STATUSES[e.paymentStatus] ?? null;
-  const showInstallments =
-    e.paymentMethod === "installment" && e.installments.length > 0;
 
   return (
     <article className={CARD}>
@@ -766,9 +943,9 @@ function PaymentCard({ enrollment: e }: { enrollment: PanelEnrollment }) {
         <MetaRow label="تاریخ ثبت">{faDate(e.createdAt)}</MetaRow>
       </dl>
 
-      {/* ————— اقساط ————— */}
-      {showInstallments ? (
-        <InstallmentsBlock installments={e.installments} />
+      {/* ————— اقساط و پرداخت آنلاین ————— */}
+      {e.paymentMethod === "installment" && e.installments.length > 0 ? (
+        <InstallmentsBlock enrollment={e} />
       ) : null}
     </article>
   );
@@ -836,8 +1013,6 @@ function EnrollmentCard({ enrollment: e }: { enrollment: PanelEnrollment }) {
     ? ENROLLMENT_STATUSES[e.status]
     : null;
   const payStatus = PAYMENT_STATUSES[e.paymentStatus] ?? null;
-  const showInstallments =
-    e.paymentMethod === "installment" && e.installments.length > 0;
 
   return (
     <article className={CARD}>
@@ -848,6 +1023,9 @@ function EnrollmentCard({ enrollment: e }: { enrollment: PanelEnrollment }) {
         </h3>
         {status ? <Chip className={status.badge}>{status.label}</Chip> : null}
       </div>
+
+      {/* ————— اقساط و پرداختی‌ها — بالاتر از حضور و غیاب و برجسته — */}
+      <CoursePaymentsBlock enrollment={e} />
 
       {/* فراداده */}
       <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -919,11 +1097,6 @@ function EnrollmentCard({ enrollment: e }: { enrollment: PanelEnrollment }) {
       {/* ————— حضور و غیاب ————— */}
       {e.attendance && e.attendance.sessions.length > 0 ? (
         <AttendanceBlock attendance={e.attendance} />
-      ) : null}
-
-      {/* ————— اقساط ————— */}
-      {showInstallments ? (
-        <InstallmentsBlock installments={e.installments} />
       ) : null}
     </article>
   );
@@ -1032,13 +1205,22 @@ function AttendanceBlock({ attendance }: { attendance: PanelAttendance }) {
   );
 }
 
-/* ————————————————— بلوک اقساط ————————————————— */
+/* ————————————————— بلوک اقساط (با پرداخت آنلاین) ————————————————— */
 
+/**
+ * InstallmentsBlock — لیست اقساط یک ثبت‌نام اقساطی با قابلیت پرداخت:
+ *  • روبروی هر قسطِ پرداخت‌نشده دکمه‌ی «پرداخت» — کاربر می‌تواند قبل از
+ *    سررسید، قسط را بپردازد (چرخه‌ی مستقل /api/payment/installment/*)
+ *  • دکمه‌ی «پرداخت کل اقساط» — جمع همه‌ی اقساطِ پرداخت‌نشده در یک تلاش
+ * پس از بازگشت از درگاه (موفق یا ناموفق) کاربر به /panel برمی‌گردد و
+ * وضعیت اقساط تازه‌سازی می‌شود (پاپ‌آپ نتیجه‌ی پرداخت).
+ */
 function InstallmentsBlock({
-  installments,
+  enrollment,
 }: {
-  installments: PanelInstallment[];
+  enrollment: PanelEnrollment;
 }) {
+  const installments = enrollment.installments;
   const now = Date.now();
   const count = installments.length;
   const paidItems = installments.filter((i) => i.status === "paid");
@@ -1049,13 +1231,42 @@ function InstallmentsBlock({
   const pct =
     totalAmount > 0 ? Math.round((paidAmount / totalAmount) * 100) : 0;
 
+  const unpaid = installments.filter((i) => i.status !== "paid");
+
+  // تلاش پرداختِ در جریان: شناسه‌ی قسط، «ALL» یا تهی
+  const [paying, setPaying] = React.useState<string | null>(null);
+
+  /** آغاز پرداخت — POST /api/payment/installment/start و انتقال به درگاه */
+  async function startInstallmentPayment(ids: string[], tag: string) {
+    if (paying) return;
+    setPaying(tag);
+    try {
+      const res = await fetch("/api/payment/installment/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ installmentIds: ids }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.redirectUrl) {
+        throw new Error(data.error || "خطا در آغاز پرداخت قسط");
+      }
+      // انتقال کامل به درگاه (خروج از SPA — مثل فرم ثبت‌نام)
+      window.location.assign(data.redirectUrl as string);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "خطا در آغاز پرداخت قسط"
+      );
+      setPaying(null);
+    }
+  }
+
   return (
-    <div className="mt-4 rounded-2xl border border-teal-500/25 bg-teal-500/[0.04] p-4 dark:border-teal-400/20 dark:bg-teal-400/[0.04]">
+    <div className="mt-4 rounded-2xl border-2 border-teal-500/30 bg-gradient-to-bl from-teal-500/[0.08] to-emerald-500/[0.03] p-4 dark:border-teal-400/25 dark:from-teal-400/[0.08] dark:to-emerald-400/[0.03]">
       {/* سربرگ + خلاصه‌ی پیشرفت */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="flex items-center gap-2 text-sm font-black text-foreground">
           <Wallet className="size-4 text-teal-600 dark:text-teal-300" />
-          اقساط
+          اقساط و پرداختی‌های دوره
         </h4>
         <p className="select-none text-[0.7rem] font-bold text-muted-foreground">
           {faDigits(paidCount)} از {faDigits(count)} قسط پرداخت شده
@@ -1064,11 +1275,11 @@ function InstallmentsBlock({
 
       <Progress
         value={pct}
-        className="mt-3 h-1.5 bg-foreground/10 dark:bg-white/10"
+        className="mt-3 h-2 bg-foreground/10 dark:bg-white/10"
         aria-label={`پیشرفت پرداخت اقساط: ${faDigits(pct)} درصد`}
       />
 
-      {/* ردیف اقساط */}
+      {/* ردیف اقساط — روبروی هر قسطِ پرداخت‌نشده دکمه‌ی پرداخت */}
       <ul className="mt-3 space-y-2">
         {installments.map((i) => {
           // معوق = وضعیت معوق صریح، یا در انتظارِ سررسیدگذشته
@@ -1079,11 +1290,18 @@ function InstallmentsBlock({
           const badge = isOverdue
             ? INSTALLMENT_BADGES.overdue
             : INSTALLMENT_BADGES[i.status];
+          const unpaidItem = i.status !== "paid";
+          const isPayingThis = paying === i.id;
 
           return (
             <li
               key={i.id}
-              className="rounded-xl border border-foreground/[0.07] bg-foreground/[0.02] px-3.5 py-3 dark:border-white/[0.07] dark:bg-white/[0.02]"
+              className={cn(
+                "rounded-xl border px-3.5 py-3 dark:border-white/[0.07]",
+                unpaidItem
+                  ? "border-amber-500/25 bg-amber-500/[0.05] dark:bg-amber-400/[0.05]"
+                  : "border-foreground/[0.07] bg-foreground/[0.02] dark:bg-white/[0.02]"
+              )}
             >
               <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
                 <div className="flex flex-wrap items-center gap-2.5">
@@ -1106,6 +1324,25 @@ function InstallmentsBlock({
                       {badge.label}
                     </Chip>
                   ) : null}
+                  {unpaidItem ? (
+                    <Button
+                      type="button"
+                      onClick={() =>
+                        void startInstallmentPayment([i.id], i.id)
+                      }
+                      disabled={paying !== null}
+                      aria-label={`پرداخت قسط ${faDigits(i.index)}`}
+                      title="پرداخت آنلاین این قسط — قبل از سررسید هم قابل پرداخت است"
+                      className="h-8 rounded-lg bg-gradient-to-l from-teal-400 to-emerald-500 px-4 text-[0.65rem] font-black text-teal-950 shadow-md shadow-teal-500/20 transition-all hover:scale-[1.02] hover:shadow-lg dark:from-teal-300 dark:to-emerald-400 dark:text-teal-950"
+                    >
+                      {isPayingThis ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <CreditCard className="size-3.5" />
+                      )}
+                      پرداخت
+                    </Button>
+                  ) : null}
                 </div>
               </div>
 
@@ -1124,29 +1361,153 @@ function InstallmentsBlock({
         })}
       </ul>
 
+      {/* دکمه‌ی پرداخت کل اقساطِ پرداخت‌نشده + جمع‌بندی */}
+      {unpaid.length > 0 ? (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-teal-500/20 pt-3 dark:border-teal-400/15">
+          <p className="select-none text-[0.7rem] font-bold text-muted-foreground">
+            مانده‌ی اقساط پرداخت‌نشده:{" "}
+            <span className="tabular-nums font-black text-amber-600 dark:text-amber-300">
+              {faAmount(remainingAmount)} تومان
+            </span>{" "}
+            ({faDigits(unpaid.length)} قسط)
+          </p>
+          <Button
+            type="button"
+            onClick={() =>
+              void startInstallmentPayment(
+                unpaid.map((i) => i.id),
+                "ALL"
+              )
+            }
+            disabled={paying !== null}
+            title="پرداخت جمع همه‌ی اقساط پرداخت‌نشده در یک تراکنش"
+            className="h-10 rounded-xl bg-gradient-to-l from-teal-400 to-emerald-500 px-5 text-xs font-black text-teal-950 shadow-lg shadow-teal-500/25 transition-all hover:scale-[1.02] hover:shadow-teal-400/40 dark:from-teal-300 dark:to-emerald-400 dark:text-teal-950"
+          >
+            {paying === "ALL" ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Banknote className="size-4" />
+            )}
+            پرداخت کل اقساط ({faAmount(remainingAmount)} تومان)
+          </Button>
+        </div>
+      ) : (
+        <div className="mt-3 flex items-center gap-2 border-t border-emerald-500/20 pt-3 text-[0.7rem] font-bold dark:border-emerald-400/15">
+          <Check
+            className="size-3.5 text-emerald-600 dark:text-emerald-300"
+            strokeWidth={3}
+          />
+          <p className="select-none text-emerald-700 dark:text-emerald-300">
+            همه‌ی اقساط این دوره پرداخت شده است.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ————————————————— بلوک پرداخت نقدی (با دکمه‌ی پرداخت) ————————————————— */
+
+/**
+ * CashPaymentBlock — خلاصه‌ی پرداختِ نقدیِ یک دوره با دکمه‌ی پرداخت آنلاین
+ * برای وضعیت‌های «در انتظار» و «ناموفق» (تلاش مجدد).
+ */
+function CashPaymentBlock({ enrollment: e }: { enrollment: PanelEnrollment }) {
+  const payStatus = PAYMENT_STATUSES[e.paymentStatus] ?? null;
+  const canPay = e.paymentStatus === "pending" || e.paymentStatus === "failed";
+  const [paying, setPaying] = React.useState(false);
+
+  async function startCashPayment() {
+    if (paying) return;
+    setPaying(true);
+    try {
+      const res = await fetch("/api/payment/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enrollmentId: e.id, method: "cash" }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.redirectUrl) {
+        throw new Error(data.error || "خطا در آغاز پرداخت");
+      }
+      // انتقال کامل به درگاه (خروج از SPA — مثل فرم ثبت‌نام)
+      window.location.assign(data.redirectUrl as string);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "خطا در آغاز پرداخت");
+      setPaying(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-2xl border-2 border-teal-500/30 bg-gradient-to-bl from-teal-500/[0.08] to-emerald-500/[0.03] p-4 dark:border-teal-400/25 dark:from-teal-400/[0.08] dark:to-emerald-400/[0.03]">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h4 className="flex items-center gap-2 text-sm font-black text-foreground">
+            <Banknote className="size-4 text-teal-600 dark:text-teal-300" />
+            پرداختی دوره
+          </h4>
+          <span className="text-sm font-bold tabular-nums text-foreground/90">
+            {e.paymentAmount != null
+              ? `${faAmount(e.paymentAmount)} تومان`
+              : "—"}
+          </span>
+          {payStatus ? <Chip className={payStatus.badge}>{payStatus.label}</Chip> : null}
+        </div>
+        {canPay ? (
+          <Button
+            type="button"
+            onClick={() => void startCashPayment()}
+            disabled={paying}
+            title="پرداخت آنلاین شهریه‌ی نقدی این دوره"
+            className="h-10 rounded-xl bg-gradient-to-l from-teal-400 to-emerald-500 px-5 text-xs font-black text-teal-950 shadow-lg shadow-teal-500/25 transition-all hover:scale-[1.02] hover:shadow-teal-400/40 dark:from-teal-300 dark:to-emerald-400 dark:text-teal-950"
+          >
+            {paying ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <CreditCard className="size-4" />
+            )}
+            {e.paymentStatus === "failed" ? "تلاش مجدد پرداخت" : "پرداخت"}
+          </Button>
+        ) : null}
+      </div>
+
       {/* جمع‌بندی */}
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 border-t border-foreground/[0.07] pt-3 text-[0.7rem] font-bold dark:border-white/[0.07]">
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-teal-500/20 pt-3 text-[0.7rem] font-bold dark:border-teal-400/15">
         <p className="select-none text-muted-foreground">
-          مجموع:{" "}
-          <span className="tabular-nums text-foreground">
-            {faAmount(totalAmount)} تومان
-          </span>
+          روش: <span className="text-foreground">نقدی</span>
         </p>
-        <p className="select-none text-muted-foreground">
-          پرداخت‌شده:{" "}
-          <span className="tabular-nums text-emerald-600 dark:text-emerald-300">
-            {faAmount(paidAmount)} تومان
-          </span>
-        </p>
-        <p className="select-none text-muted-foreground">
-          مانده:{" "}
-          <span className="tabular-nums text-amber-600 dark:text-amber-300">
-            {faAmount(remainingAmount)} تومان
-          </span>
-        </p>
+        {e.paymentStatus === "paid" && e.paidAt ? (
+          <p className="select-none text-muted-foreground">
+            پرداخت‌شده در تاریخ {" "}
+            <span className="text-foreground">{faDate(e.paidAt)}</span>
+          </p>
+        ) : null}
+        {e.paymentStatus === "paid" && e.paymentRefId ? (
+          <p className="select-none text-muted-foreground">
+            کد پیگیری:{" "}
+            <span dir="ltr" className="tabular-nums text-foreground">
+              {faDigits(e.paymentRefId)}
+            </span>
+          </p>
+        ) : null}
       </div>
     </div>
   );
+}
+
+/**
+ * CoursePaymentsBlock — بلوک یکپارچه‌ی «اقساط و پرداختی‌ها» برای کارت دوره:
+ * اقساطی → لیست اقساط با دکمه‌ی پرداخت؛ نقدی → خلاصه با دکمه‌ی پرداخت.
+ * در نبود هر دو، هیچ چیزی رندر نمی‌شود.
+ */
+function CoursePaymentsBlock({ enrollment: e }: { enrollment: PanelEnrollment }) {
+  if (e.paymentMethod === "installment" && e.installments.length > 0) {
+    return <InstallmentsBlock enrollment={e} />;
+  }
+  if (e.paymentMethod === "cash" && e.paymentAmount != null) {
+    return <CashPaymentBlock enrollment={e} />;
+  }
+  return null;
 }
 
 /* ————————————————— اسکلت بارگذاری ————————————————— */
@@ -1170,10 +1531,9 @@ function DashboardSkeleton() {
         </div>
       </div>
 
-      {/* پروفایل */}
-      <div className={cn(CARD, "flex animate-pulse items-center gap-4")}>
-        <div className="size-14 shrink-0 rounded-2xl bg-foreground/10 dark:bg-white/10" />
-        <div className="space-y-2.5">
+      {/* پروفایل — بدون آیکون (مطابق کارت نهایی) */}
+      <div className={cn(CARD, "flex animate-pulse flex-wrap items-center gap-4")}>
+        <div className="min-w-0 space-y-2.5">
           <div className="h-4 w-40 animate-pulse rounded bg-foreground/10 dark:bg-white/10" />
           <div className="h-3 w-56 animate-pulse rounded bg-foreground/10 dark:bg-white/10" />
         </div>

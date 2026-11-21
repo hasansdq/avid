@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   AlertCircle,
   Award,
+  Ban,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -22,6 +23,7 @@ import {
   Loader2,
   Lock,
   Timer,
+  UsersRound,
   X,
   XCircle,
 } from "lucide-react";
@@ -394,6 +396,7 @@ export function ExamsSection() {
   const courseExams = exams?.filter((e) => e.accessType === "course") ?? [];
   const openExams = exams?.filter((e) => e.accessType === "open") ?? [];
   const pwdExams = exams?.filter((e) => e.accessType === "password") ?? [];
+  const classExams = exams?.filter((e) => e.accessType === "class") ?? [];
 
   return (
     <section aria-label="آزمون‌ها">
@@ -428,8 +431,8 @@ export function ExamsSection() {
             آزمونی برای شما نمایش داده نمی‌شود
           </p>
           <p className="max-w-sm text-sm leading-6 text-muted-foreground">
-            با انتشار آزمون‌های آزاد، رمزدار یا آزمون‌های دوره‌های شما،
-            این‌جا فهرست می‌شوند.
+            با انتشار آزمون‌های آزاد، رمزدار، آزمون‌های دوره‌های شما یا آزمون‌های
+            کلاس‌هایتان، این‌جا فهرست می‌شوند.
           </p>
         </div>
       ) : (
@@ -439,6 +442,16 @@ export function ExamsSection() {
               icon={GraduationCap}
               title="آزمون‌های دوره‌های من"
               exams={courseExams}
+              starting={starting}
+              onStart={startExam}
+              onLocked={setPwdExam}
+            />
+          ) : null}
+          {classExams.length > 0 ? (
+            <ExamGroup
+              icon={UsersRound}
+              title="آزمون‌های کلاس‌های من"
+              exams={classExams}
               starting={starting}
               onStart={startExam}
               onLocked={setPwdExam}
@@ -610,6 +623,11 @@ function ExamCard({
               <LinkIcon className="size-3" />
               {exam.courseTitle}
             </p>
+          ) : exam.classTitle ? (
+            <p className="mt-1 flex items-center gap-1.5 text-[0.7rem] font-bold text-muted-foreground">
+              <UsersRound className="size-3" />
+              کلاس {exam.classTitle}
+            </p>
           ) : null}
         </div>
         {exam.accessType === "password" ? (
@@ -635,6 +653,15 @@ function ExamCard({
           <span className="flex items-center gap-1.5">
             <Timer className="size-3.5" />
             {faDigits(exam.durationMinutes)} دقیقه
+          </span>
+        ) : null}
+        {exam.allowBack === false ? (
+          <span
+            className="flex items-center gap-1.5 text-amber-600 dark:text-amber-300"
+            title="در این آزمون امکان بازگشت به سوالات قبلی وجود ندارد"
+          >
+            <Ban className="size-3.5" />
+            بدون بازگشت به سوال قبلی
           </span>
         ) : null}
       </div>
@@ -697,6 +724,9 @@ export function ExamPlayer({
   onFinished: () => void;
 }) {
   const { exam, questions } = start;
+
+  // سوییچ مدیر: امکان بازگشت به سوالات قبلی (پیش‌فرض روشن)
+  const allowBack = exam.allowBack !== false;
 
   // پاسخ‌های کاربر — به ازای شناسه‌ی هر سوال
   const [answers, setAnswers] = React.useState<Record<string, unknown>>(() => {
@@ -808,6 +838,11 @@ export function ExamPlayer({
     }
   }
 
+  /** تعداد سوالات بی‌پاسخ — برای پیام تأیید پایان آزمون */
+  const unansweredCount = questions.filter(
+    (question) => !isAnswered(question)
+  ).length;
+
   const setAnswer = (qid: string, value: unknown) =>
     setAnswers((prev) => ({ ...prev, [qid]: value }));
 
@@ -875,26 +910,42 @@ export function ExamPlayer({
           <div className="flex flex-col gap-5">
             {/* نقطه‌های ناوبری */}
             <div className="flex flex-wrap items-center gap-1.5" role="navigation" aria-label="رفتن به سوال">
-              {questions.map((question, i) => (
-                <button
-                  key={question.id}
-                  type="button"
-                  onClick={() => setCurrent(i)}
-                  aria-label={`سوال ${faDigits(i + 1)}`}
-                  aria-current={i === current ? "true" : undefined}
-                  className={cn(
-                    "flex size-8 items-center justify-center rounded-lg text-xs font-black tabular-nums transition-all",
-                    i === current
-                      ? "bg-gradient-to-br from-teal-400 to-emerald-600 text-teal-950 shadow-md shadow-teal-500/25"
-                      : isAnswered(question)
-                        ? "bg-teal-500/15 text-teal-700 dark:bg-teal-400/15 dark:text-teal-300"
-                        : "bg-foreground/[0.05] text-muted-foreground dark:bg-white/[0.05]"
-                  )}
-                >
-                  {faDigits(i + 1)}
-                </button>
-              ))}
+              {questions.map((question, i) => {
+                const pastBlocked = !allowBack && i < current;
+                return (
+                  <button
+                    key={question.id}
+                    type="button"
+                    disabled={pastBlocked}
+                    onClick={() => setCurrent(i)}
+                    aria-label={`سوال ${faDigits(i + 1)}`}
+                    aria-current={i === current ? "true" : undefined}
+                    aria-disabled={pastBlocked || undefined}
+                    className={cn(
+                      "flex size-8 items-center justify-center rounded-lg text-xs font-black tabular-nums transition-all",
+                      i === current
+                        ? "bg-gradient-to-br from-teal-400 to-emerald-600 text-teal-950 shadow-md shadow-teal-500/25"
+                        : isAnswered(question)
+                          ? "bg-teal-500/15 text-teal-700 dark:bg-teal-400/15 dark:text-teal-300"
+                          : "bg-foreground/[0.05] text-muted-foreground dark:bg-white/[0.05]",
+                      pastBlocked &&
+                        "cursor-not-allowed opacity-45"
+                    )}
+                  >
+                    {faDigits(i + 1)}
+                  </button>
+                );
+              })}
             </div>
+
+            {/* اطلاع‌رسانی: آزمون بدون بازگشت */}
+            {!allowBack ? (
+              <p className="flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[0.65rem] font-black leading-5 text-amber-700 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300">
+                <Ban className="size-3.5 shrink-0" />
+                در این آزمون امکان بازگشت به سوالات قبلی وجود ندارد؛ پاسخ هر
+                سوال را با دقت ثبت کنید.
+              </p>
+            ) : null}
 
             <QuestionView
               index={current}
@@ -905,16 +956,18 @@ export function ExamPlayer({
 
             {/* ناوبری قبلی/بعدی + ثبت نهایی */}
             <div className="flex flex-wrap items-center gap-2 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={current === 0}
-                onClick={() => setCurrent((c) => Math.max(0, c - 1))}
-                className="rounded-xl"
-              >
-                <ChevronRight className="size-4" />
-                سوال قبلی
-              </Button>
+              {allowBack ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={current === 0}
+                  onClick={() => setCurrent((c) => Math.max(0, c - 1))}
+                  className="rounded-xl"
+                >
+                  <ChevronRight className="size-4" />
+                  سوال قبلی
+                </Button>
+              ) : null}
               {current < questions.length - 1 ? (
                 <Button
                   type="button"
@@ -940,23 +993,47 @@ export function ExamPlayer({
         )}
       </main>
 
-      {/* ————— تایید ثبت نهایی ————— */}
+      {/* ————— تأیید پایان آزمون ————— */}
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent dir="rtl" className="max-w-sm rounded-2xl">
           <DialogHeader className="text-right">
-            <DialogTitle className="text-base">ثبت نهایی پاسخ‌ها؟</DialogTitle>
-            <DialogDescription className="leading-6">
-              پس از ثبت نهایی امکان ویرایش پاسخ‌ها نیست.
-              {(() => {
-                const unanswered = questions.filter(
-                  (question) => !isAnswered(question)
-                ).length;
-                return unanswered > 0
-                  ? ` ${faDigits(unanswered)} سوال بی‌پاسخ است.`
-                  : " همه‌ی سوالات پاسخ داده شده‌اند.";
-              })()}
-            </DialogDescription>
+            <DialogTitle className="text-base">پایان آزمون</DialogTitle>
           </DialogHeader>
+
+          <div className="space-y-2 text-right">
+            {unansweredCount > 0 ? (
+              <p className="flex items-center gap-2 text-sm font-bold leading-6 text-foreground">
+                <AlertCircle
+                  className="size-4 shrink-0 text-amber-500"
+                  aria-hidden
+                />
+                <span>
+                  شما به{" "}
+                  <span className="font-black tabular-nums text-amber-600 dark:text-amber-300">
+                    {faDigits(unansweredCount)}
+                  </span>{" "}
+                  سوال پاسخ نداده‌اید.
+                </span>
+              </p>
+            ) : (
+              <p className="flex items-center gap-2 text-sm font-bold leading-6 text-foreground">
+                <CheckCircle2
+                  className="size-4 shrink-0 text-teal-500"
+                  aria-hidden
+                />
+                <span>شما به همه‌ی سوالات پاسخ داده‌اید.</span>
+              </p>
+            )}
+
+            <p className="text-sm font-black leading-6 text-foreground">
+              آیا می‌خواهید آزمون پایان یابد؟
+            </p>
+          </div>
+
+          <DialogDescription className="text-xs leading-5">
+            پس از پایان آزمون امکان ویرایش پاسخ‌ها وجود ندارد.
+          </DialogDescription>
+
           <DialogFooter className="gap-2 sm:justify-start">
             <Button
               type="button"
@@ -969,7 +1046,7 @@ export function ExamPlayer({
               ) : (
                 <CheckCircle2 className="size-4" />
               )}
-              بله، ثبت نهایی
+              بله
             </Button>
             <Button
               type="button"
@@ -978,7 +1055,7 @@ export function ExamPlayer({
               onClick={() => setConfirmOpen(false)}
               className="rounded-xl"
             >
-              بازگشت به آزمون
+              خیر
             </Button>
           </DialogFooter>
         </DialogContent>

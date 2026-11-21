@@ -5,8 +5,8 @@ import { bad } from "@/lib/api-helpers";
 import { parseExamInput } from "@/lib/exam-io";
 
 /**
- * GET /api/admin/exams — لیست آزمون‌ها (با عنوان دوره و تعداد سوال/شرکت‌ها)
- * POST /api/admin/exams — ایجاد آزمون
+ * GET /api/admin/exams — لیست آزمون‌ها (با عنوان دوره/کلاس و تعداد سوال/شرکت‌ها)
+ * POST /api/admin/exams — ایجاد آزمون (به‌صورت خودکار یک‌بار در بانک آزمون‌ها ذخیره می‌شود)
  */
 export async function GET(req: NextRequest) {
   const { denial } = await requireAdmin(req);
@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
       include: {
         course: { select: { title: true } },
+        class: { select: { title: true } },
         _count: { select: { questions: true, attempts: true } },
       },
     });
@@ -47,18 +48,29 @@ export async function POST(req: NextRequest) {
       if (!course) return bad("دوره‌ی انتخاب‌شده یافت نشد.");
     }
 
+    // آزمون کلاس — کلاس باید واقعی باشد
+    if (data.classId) {
+      const classRoom = await db.classRoom
+        .findUnique({ where: { id: data.classId }, select: { id: true } })
+        .catch(() => null);
+      if (!classRoom) return bad("کلاس انتخاب‌شده یافت نشد.");
+    }
+
     const exam = await db.exam.create({
       data: {
         title: data.title,
         description: data.description,
         accessType: data.accessType,
         courseId: data.accessType === "course" ? data.courseId : null,
+        classId: data.accessType === "class" ? data.classId : null,
         password: data.password,
         durationMinutes: data.durationMinutes,
+        allowBack: data.allowBack,
         published: data.published,
       },
       include: {
         course: { select: { title: true } },
+        class: { select: { title: true } },
         _count: { select: { questions: true, attempts: true } },
       },
     });

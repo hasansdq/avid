@@ -4,7 +4,8 @@ import { requireAdmin } from "@/lib/auth";
 
 /**
  * GET /api/admin/account — اطلاعات حساب مدیر جاری.
- * (نام کاربری + تعداد نشست‌های فعال برای ماژول «حساب و امنیت»)
+ * (نام کاربری + تعداد نشست‌های فعال + وضعیت تایید دومرحله‌ای برای
+ * ماژول «حساب و امنیت»)
  */
 export async function GET(req: NextRequest) {
   const { admin, denial } = await requireAdmin(req);
@@ -18,5 +19,7 @@ export async function GET(req: NextRequest) {
     username: admin.username,
     activeSessions,
     createdAt: admin.createdAt,
+    phone: admin.phone,
+    twoFactorEnabled: admin.twoFactorEnabled,
   });
 }

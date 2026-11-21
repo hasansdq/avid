@@ -87,7 +87,7 @@ export function RegisterPage({
       </header>
 
       {/* فرم تمام‌صفحه */}
-      <main className="flex flex-1 items-center justify-center px-4 py-10 md:py-14">
+      <main className="flex flex-1 items-center justify-center px-4 pt-10 pb-36 md:py-14">
         <div className="w-full max-w-xl">
           <div className="mb-8 text-center">
             <span className="glass inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold text-teal-700 dark:text-teal-300">

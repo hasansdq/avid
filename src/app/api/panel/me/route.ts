@@ -119,6 +119,7 @@ export async function GET(req: NextRequest) {
           lastName: user.lastName,
           phone: user.phone,
           nationalId: user.nationalId,
+          role: user.role, // student | teacher — استاد بخش‌های ویژه‌ی پنل را می‌بیند
           createdAt: user.createdAt,
         },
         enrollments: enriched,
@@ -206,6 +207,7 @@ export async function PUT(req: NextRequest) {
           lastName: updated.lastName,
           phone: updated.phone,
           nationalId: updated.nationalId,
+          role: updated.role,
           createdAt: updated.createdAt,
         },
       },

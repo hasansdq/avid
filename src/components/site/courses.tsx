@@ -24,7 +24,7 @@ import {
 } from "@/lib/course-theme";
 import { faDigits, scrollToSection } from "@/lib/fa";
 import { useEnrollStore } from "@/lib/store";
-import type { AvailabilityMap } from "@/lib/availability";
+import type { PublicAvailabilityMap } from "@/lib/availability";
 import { SectionHeading, Reveal } from "@/components/reveal";
 import { EditableText } from "@/components/site/editable-texts";
 import { Badge } from "@/components/ui/badge";
@@ -59,7 +59,7 @@ function CourseCard({
   onEnroll,
 }: {
   course: Course;
-  availability?: AvailabilityMap;
+  availability?: PublicAvailabilityMap;
   onEnroll: (title: string) => void;
 }) {
   const theme = getCourseTheme(course.theme);
@@ -68,11 +68,9 @@ function CourseCard({
     : COURSE_TYPES.online;
   const TypeIcon = typeMeta.icon;
 
-  // وضعیت ظرفیت — تا رسیدن پاسخ سرور، فقط ظرفیت ثابت نمایش داده می‌شود
+  // وضعیت ظرفیت — فقط پرچمِ «تکمیل» برای قفل‌کردن کارت؛ اعداد باقیمانده به کاربر نمایش داده نمی‌شوند
   const avail = availability?.[course.title];
   const full = avail?.full ?? false;
-  const remaining =
-    avail && avail.capacity > 0 ? Math.max(0, avail.remaining) : null;
 
   // تصویر جلد دوره — طرح جدید کارت‌ها بر پایه‌ی تصویر است؛
   // در نبود/خرابی تصویر، هدر گرادیانی با آیکون به عنوان جایگزین امن رندر می‌شود
@@ -174,7 +172,7 @@ function CourseCard({
               <span className="truncate">{course.instructor}</span>
             </span>
           ) : null}
-          {/* ظرفیت — برای همه‌ی دوره‌ها (حضوری و آنلاین) */}
+          {/* ظرفیت — برای همه‌ی دوره‌ها (حضوری و آنلاین)؛ فقط ظرفیت کل/تکمیل، بدون باقیمانده */}
           {course.capacity > 0 ? (
             full ? (
               <span
@@ -185,25 +183,9 @@ function CourseCard({
                 ظرفیت تکمیل
               </span>
             ) : (
-              <span
-                className={cn(
-                  "flex items-center gap-1.5 rounded-full px-2.5 py-1 font-black",
-                  remaining !== null && remaining <= 3
-                    ? "border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-300"
-                    : "bg-foreground/[0.05] text-muted-foreground"
-                )}
-              >
-                <Armchair
-                  className={cn(
-                    "size-3 shrink-0",
-                    remaining !== null && remaining <= 3
-                      ? undefined
-                      : "text-teal-600 dark:text-teal-300"
-                  )}
-                />
-                {remaining !== null
-                  ? `${faDigits(remaining)} نفر باقیمانده`
-                  : `ظرفیت: ${faDigits(course.capacity)} نفر`}
+              <span className="flex items-center gap-1.5 rounded-full bg-foreground/[0.05] px-2.5 py-1 font-black text-muted-foreground">
+                <Armchair className="size-3 shrink-0 text-teal-600 dark:text-teal-300" />
+                ظرفیت: {faDigits(course.capacity)} نفر
               </span>
             )
           ) : null}
@@ -226,15 +208,15 @@ function CourseCard({
         <div className="flex items-center justify-between gap-3 border-t border-foreground/[0.07] pt-4 dark:border-white/[0.07]">
           <div className="min-w-0">
             <span className="block text-[0.65rem] font-medium text-muted-foreground">
-              شهریه‌ی دوره
+              شهریه‌ی نقدی دوره
             </span>
-            {course.price === 0 ? (
+            {course.cashTuition === 0 ? (
               <Badge className="mt-1 rounded-full border border-emerald-600/25 bg-emerald-500/10 px-2.5 py-1 text-[0.65rem] font-black text-emerald-700 hover:bg-emerald-500/10 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-300 dark:hover:bg-emerald-400/10">
                 رایگان
               </Badge>
             ) : (
               <span className="mt-1 block text-sm font-black text-foreground">
-                {faDigits(course.price.toLocaleString("en-US"))}{" "}
+                {faDigits(course.cashTuition.toLocaleString("en-US"))}{" "}
                 <span className="text-[0.6rem] font-medium text-muted-foreground">
                   تومان
                 </span>
@@ -277,14 +259,15 @@ export function Courses({ courses }: { courses: Course[] }) {
 
   // وضعیت ظرفیت دوره‌ها — برای قفل‌کردن دوره‌های تکمیل‌شده روی کارت‌ها
   const [availability, setAvailability] =
-    React.useState<AvailabilityMap | null>(null);
+    React.useState<PublicAvailabilityMap | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
     fetch("/api/enroll/availability")
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (!cancelled && data) setAvailability(data as AvailabilityMap);
+        if (!cancelled && data)
+          setAvailability(data as PublicAvailabilityMap);
       })
       .catch(() => {
         // اطلاعات نمایشی است؛ اعمال نهایی با سرور انجام می‌شود
@@ -313,7 +296,7 @@ export function Courses({ courses }: { courses: Course[] }) {
     filter === "all" ? courses : courses.filter((c) => c.type === filter);
 
   return (
-    <section id="courses" className="relative scroll-mt-28 py-12 md:py-16">
+    <section id="courses" className="relative scroll-mt-28 pt-6 pb-12 md:py-16">
       {/* section glow */}
       <div className="pointer-events-none absolute inset-x-0 top-1/4 -z-[1] mx-auto h-72 max-w-3xl rounded-full bg-teal-500/[0.06] blur-[120px]" />
 

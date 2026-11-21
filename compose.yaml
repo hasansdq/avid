@@ -21,7 +21,7 @@ services:
       DATABASE_URL: file:/app/data/custom.db
       TZ: ${TZ:-Asia/Tehran}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-}
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-admin123}
       ADMIN_FORCE_RESET: ${ADMIN_FORCE_RESET:-0}
       BACKUP_DIR: /app/backups
     volumes:
@@ -90,6 +90,31 @@ services:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "bun", "/app/healthcheck.ts", "http://127.0.0.1:3004/socket.io/?EIO=4&transport=polling"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # — سرویس کلاس آنلاین (استریم): سیگنالینگ WebRTC + اتاق چت — لوکال
+  # (روی 127.0.0.1:3005؛ پروکسی دایرکت‌ادمین از /stream-socket/ به همین پورت)
+  stream:
+    build:
+      context: ./mini-services/stream-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${STREAM_PORT:-3005}:3005"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: file:/app/data/custom.db
+      TZ: ${TZ:-Asia/Tehran}
+    volumes:
+      - avid_db:/app/data:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "bun", "/app/healthcheck.ts", "http://127.0.0.1:3005/stream-socket/?EIO=4&transport=polling"]
       interval: 30s
       timeout: 5s
       retries: 3

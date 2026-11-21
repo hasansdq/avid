@@ -1,0 +1,121 @@
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { requireAdmin } from "@/lib/auth";
+import { bad, bool, int, str } from "@/lib/api-helpers";
+
+/**
+ * PUT    /api/admin/sample-questions/items/[id] — ویرایش جزئی نمونه سوال
+ *        بدنه: { title?, description?, categoryId?, fileUrl?, ext?, size?,
+ *                 sortOrder?, published? } — رشته‌ی خالی categoryId یعنی
+ *        «بدون دسته» (null) تا بتوان دسته را برداشت.
+ * DELETE /api/admin/sample-questions/items/[id] — حذف نمونه سوال
+ */
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type Params = { params: Promise<{ id: string }> };
+
+export async function PUT(req: NextRequest, { params }: Params) {
+  const { denial } = await requireAdmin(req);
+  if (denial) return denial;
+
+  try {
+    const { id } = await params;
+    const body = await req.json().catch(() => null);
+    if (!body) return bad("بدنه‌ی درخواست نامعتبر است.");
+
+    const data: Record<string, unknown> = {};
+
+    if (body.title !== undefined) {
+      const title = str(body.title);
+      if (title.length < 2 || title.length > 120) {
+        return bad("عنوان نمونه سوال باید بین ۲ تا ۱۲۰ نویسه باشد.");
+      }
+      data.title = title;
+    }
+    if (body.description !== undefined) {
+      data.description = str(body.description).slice(0, 500);
+    }
+    if (body.categoryId !== undefined) {
+      // رشته‌ی خالی → بدون دسته؛ در غیر این صورت باید موجود باشد
+      const categoryIdRaw = str(body.categoryId);
+      if (!categoryIdRaw) {
+        data.categoryId = null;
+      } else {
+        const category = await db.sampleQuestionCategory.findUnique({
+          where: { id: categoryIdRaw },
+          select: { id: true },
+        });
+        if (!category) return bad("دسته‌ی انتخابی یافت نشد.", 404);
+        data.categoryId = category.id;
+      }
+    }
+    if (body.fileUrl !== undefined) {
+      const fileUrl = str(body.fileUrl);
+      if (!fileUrl) {
+        return bad("آدرس فایل نمی‌تواند خالی باشد.");
+      }
+      data.fileUrl = fileUrl;
+    }
+    if (body.ext !== undefined) {
+      data.ext = str(body.ext).replace(/^\./, "").toLowerCase().slice(0, 8);
+    }
+    if (body.size !== undefined) {
+      data.size = int(body.size, 0);
+    }
+    if (body.sortOrder !== undefined) {
+      data.sortOrder = int(body.sortOrder, 0);
+    }
+    if (body.published !== undefined) {
+      data.published = bool(body.published, true);
+    }
+
+    if (Object.keys(data).length === 0) {
+      return bad("هیچ فیلدی برای به‌روزرسانی ارسال نشده است.");
+    }
+
+    const item = await db.sampleQuestion
+      .update({
+        where: { id },
+        data,
+        include: { category: { select: { id: true, title: true } } },
+      })
+      .catch(() => null);
+
+    if (!item) return bad("نمونه سوالی با این شناسه یافت نشد.", 404);
+    return NextResponse.json(item, {
+      headers: { "Cache-Control": "no-store" },
+    });
+  } catch (error) {
+    console.error("sample-question item PUT error:", error);
+    return NextResponse.json(
+      { error: "خطا در ویرایش نمونه سوال. لطفاً دوباره تلاش کنید." },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(req: NextRequest, { params }: Params) {
+  const { denial } = await requireAdmin(req);
+  if (denial) return denial;
+
+  try {
+    const { id } = await params;
+    const item = await db.sampleQuestion
+      .delete({ where: { id } })
+      .catch(() => null);
+
+    if (!item) return bad("نمونه سوالی با این شناسه یافت نشد.", 404);
+    return NextResponse.json(
+      { ok: true },
+      { headers: { "Cache-Control": "no-store" } }
+    );
+  } catch (error) {
+    console.error("sample-question item DELETE error:", error);
+    return NextResponse.json(
+      { error: "خطا در حذف نمونه سوال. لطفاً دوباره تلاش کنید." },
+      { status: 500 }
+    );
+  }
+}

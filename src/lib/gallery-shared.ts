@@ -31,10 +31,16 @@ export function sectionLabel(key: string): string {
   return GALLERY_SECTIONS.find((s) => s.key === key)?.label ?? key;
 }
 
-/** اعتبارسنجی بخش ارسالی از فرم آپلود — نامعتبر → "other" */
+/**
+ * اعتبارسنجی بخش ارسالی از فرم آپلود — نامعتبر → "other".
+ * ابتدا تطابق دقیق (کلیدهای camelCase مثل sampleQuestions) و سپس
+ * تطابق کوچک‌شده بررسی می‌شود تا کلیدهای ترکیبی هم معتبر بمانند.
+ */
 export function sanitizeSection(raw: unknown): string {
-  const key = typeof raw === "string" ? raw.trim().toLowerCase() : "";
-  return SECTION_KEYS.has(key) ? key : "other";
+  const key = typeof raw === "string" ? raw.trim() : "";
+  if (SECTION_KEYS.has(key)) return key;
+  const lower = key.toLowerCase();
+  return SECTION_KEYS.has(lower) ? lower : "other";
 }
 
 /* ---------------- دسته‌بندی فرمت ---------------- */

@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  Calculator,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -18,12 +19,15 @@ import {
   GraduationCap,
   KeyRound,
   Layers,
+  Library,
   Link as LinkIcon,
   Loader2,
   Pencil,
   Plus,
+  Repeat,
   Timer,
   Trash2,
+  Users,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -48,6 +52,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -77,9 +83,11 @@ import {
   QUESTION_TYPE_LABELS,
   countBlanks,
   defaultsForType,
+  gradeAttempt,
   parseJsonField,
   tableBlankKeys,
   type ExamAccessType,
+  type GradingQuestion,
   type QuestionAnswer,
   type QuestionOptions,
   type QuestionType,
@@ -94,13 +102,21 @@ interface ExamForm {
   description: string;
   accessType: ExamAccessType;
   courseId: string;
+  classId: string;
   password: string;
   durationMinutes: string;
+  allowBack: boolean;
   published: boolean;
 }
 
 /** پیش‌نام آزمون برای انتخاب دوره */
 interface CourseOption {
+  id: string;
+  title: string;
+}
+
+/** پیش‌نام آزمون برای انتخاب کلاس */
+interface ClassOption {
   id: string;
   title: string;
 }
@@ -172,6 +188,11 @@ const ACCESS_STYLES: Record<
     icon: KeyRound,
     className:
       "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300",
+  },
+  class: {
+    icon: Users,
+    className:
+      "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:border-rose-400/30 dark:bg-rose-400/10 dark:text-rose-300",
   },
 };
 
@@ -370,12 +391,21 @@ export function ExamsModule() {
   const [exams, setExams] = useState<ExamWithStats[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [courses, setCourses] = useState<CourseOption[] | null>(null);
+  const [classes, setClasses] = useState<ClassOption[] | null>(null);
+
+  // تب فعال: فهرست آزمون‌ها / بانک آزمون‌ها
+  const [tab, setTab] = useState<"list" | "bank">("list");
 
   // دیالوگ آزمون
   const [examDialogOpen, setExamDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ExamWithStats | null>(null);
   const [form, setForm] = useState<ExamForm | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // دیالوگ برگزاری دوباره (بانک آزمون‌ها)
+  const [reholdExam, setReholdExam] = useState<ExamWithStats | null>(null);
+  const [reholdTarget, setReholdTarget] = useState<string>("all");
+  const [reholding, setReholding] = useState(false);
 
   // ادیتور سوالات + پاسخ‌برگه‌ها
   const [questionsExam, setQuestionsExam] = useState<ExamWithStats | null>(
@@ -386,12 +416,14 @@ export function ExamsModule() {
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      const [examList, courseList] = await Promise.all([
+      const [examList, courseList, classList] = await Promise.all([
         apiFetch<ExamWithStats[]>("/api/admin/exams"),
         apiFetch<CourseOption[]>("/api/admin/courses"),
+        apiFetch<ClassOption[]>("/api/admin/classes"),
       ]);
       setExams(examList);
       setCourses(courseList.map((c) => ({ id: c.id, title: c.title })));
+      setClasses(classList.map((c) => ({ id: c.id, title: c.title })));
     } catch (error) {
       toastApiError(error);
     } finally {
@@ -412,8 +444,10 @@ export function ExamsModule() {
       description: "",
       accessType: "open",
       courseId: "",
+      classId: "",
       password: "",
       durationMinutes: "0",
+      allowBack: true,
       published: true,
     });
     setExamDialogOpen(true);
@@ -426,8 +460,10 @@ export function ExamsModule() {
       description: exam.description,
       accessType: (exam.accessType as ExamAccessType) ?? "open",
       courseId: exam.courseId ?? "",
+      classId: exam.classId ?? "",
       password: exam.password ?? "",
       durationMinutes: String(exam.durationMinutes ?? 0),
+      allowBack: exam.allowBack ?? true,
       published: exam.published,
     });
     setExamDialogOpen(true);
@@ -446,6 +482,10 @@ export function ExamsModule() {
       toast.error("آزمون دوره باید به یک دوره متصل باشد.");
       return;
     }
+    if (form.accessType === "class" && !form.classId) {
+      toast.error("آزمون کلاس باید به یک کلاس متصل باشد.");
+      return;
+    }
     if (form.accessType === "password" && form.password.trim().length < 3) {
       toast.error("رمز آزمون رمزدار حداقل ۳ نویسه است.");
       return;
@@ -457,8 +497,10 @@ export function ExamsModule() {
         description: form.description,
         accessType: form.accessType,
         courseId: form.courseId || "",
+        classId: form.classId || "",
         password: form.password,
         durationMinutes: form.durationMinutes,
+        allowBack: form.allowBack,
         published: form.published,
       };
       if (editing) {
@@ -496,8 +538,10 @@ export function ExamsModule() {
           description: exam.description,
           accessType: exam.accessType,
           courseId: exam.courseId ?? "",
+          classId: exam.classId ?? "",
           password: exam.password ?? "",
           durationMinutes: exam.durationMinutes,
+          allowBack: exam.allowBack ?? true,
           published: next,
         }),
       });
@@ -519,6 +563,39 @@ export function ExamsModule() {
       toast.success("آزمون حذف شد.");
     } catch (error) {
       toastApiError(error);
+    }
+  }
+
+  /* ————— بانک آزمون‌ها: برگزاری دوباره ————— */
+
+  /** باز کردن دیالوگ برگزاری دوباره — پیش‌فرض همان کلاس آزمون بانکی */
+  function openRehold(exam: ExamWithStats) {
+    setReholdTarget(exam.classId ?? "all");
+    setReholdExam(exam);
+  }
+
+  async function handleRehold() {
+    if (!reholdExam) return;
+    setReholding(true);
+    try {
+      await apiFetch(`/api/admin/exams/${reholdExam.id}/rehold`, {
+        method: "POST",
+        body: JSON.stringify({
+          classId: reholdTarget === "all" ? "" : reholdTarget,
+        }),
+      });
+      toast.success(
+        reholdTarget === "all"
+          ? "برگزاری تازه برای همه‌ی کاربران ساخته شد."
+          : "برگزاری تازه برای کلاس انتخاب‌شده ساخته شد."
+      );
+      setReholdExam(null);
+      setTab("list");
+      await load();
+    } catch (error) {
+      toastApiError(error);
+    } finally {
+      setReholding(false);
     }
   }
 
@@ -547,11 +624,18 @@ export function ExamsModule() {
 
   /* ————— رندر ————— */
 
+  // آزمون‌های بانک (اصلی) — برگزاری‌های دوباره (isBankCopy) در بانک فهرست نمی‌شوند
+  const bankItems = (exams ?? []).filter((e) => !e.isBankCopy);
+
+  /** شمار برگزاری‌های هر آزمون بانکی = خود آزمون + دفعات برگزاری دوباره */
+  const holdingsCount = (item: ExamWithStats) =>
+    1 + (exams ?? []).filter((e) => e.bankOriginId === item.id).length;
+
   return (
     <div className="space-y-6">
       <ModuleHeader
         title="آزمون‌ها"
-        description="ایجاد آزمون دوره‌ای (ویژه اعضای دوره)، آزاد (همه) و رمزدار؛ با هشت نوع سوال، تصویر و ویدئو."
+        description="ایجاد آزمون دوره‌ای (ویژه اعضای دوره)، کلاسی (ویژه اعضای کلاس)، آزاد و رمزدار؛ با هشت نوع سوال، تصویر و ویدئو و بانک آزمون‌ها برای برگزاری دوباره."
       >
         <Button
           type="button"
@@ -563,13 +647,38 @@ export function ExamsModule() {
         </Button>
       </ModuleHeader>
 
+      <Tabs
+        value={tab}
+        onValueChange={(v) => setTab(v as "list" | "bank")}
+        dir="rtl"
+        className="gap-4"
+      >
+        <TabsList className="glass h-auto w-full flex-wrap justify-start gap-1 rounded-2xl p-1.5 sm:w-auto">
+          <TabsTrigger
+            value="list"
+            className="flex-none gap-2 rounded-xl px-3.5 py-2 text-xs font-bold"
+          >
+            <ClipboardCheck className="size-4 shrink-0 text-teal-600 dark:text-teal-300" />
+            آزمون‌ها
+          </TabsTrigger>
+          <TabsTrigger
+            value="bank"
+            className="flex-none gap-2 rounded-xl px-3.5 py-2 text-xs font-bold"
+          >
+            <Library className="size-4 shrink-0 text-rose-600 dark:text-rose-300" />
+            بانک آزمون‌ها
+          </TabsTrigger>
+        </TabsList>
+
+        {/* — تب «آزمون‌ها»: برگزاری‌های فعال (اصلی + برگزاری دوباره) — */}
+        <TabsContent value="list" className="mt-1 space-y-0">
       {loading ? (
         <TableSkeleton cols={7} />
       ) : !exams || exams.length === 0 ? (
         <EmptyState
           icon={ClipboardCheck}
           title="هنوز آزمونی ساخته نشده است"
-          description="با دکمه‌ی «آزمون جدید» اولین آزمون (دوره‌ای، آزاد یا رمزدار) را بسازید؛ سپس سوالات آن را اضافه کنید."
+          description="با دکمه‌ی «آزمون جدید» اولین آزمون (دوره‌ای، کلاسی، آزاد یا رمزدار) را بسازید؛ سپس سوالات آن را اضافه کنید. هر آزمون به‌صورت خودکار در بانک آزمون‌ها ذخیره می‌شود."
         >
           <Button
             type="button"
@@ -594,7 +703,7 @@ export function ExamsModule() {
                   </TableHead>
                   <TableHead>عنوان</TableHead>
                 <TableHead>نوع دسترسی</TableHead>
-                <TableHead>دوره‌ی متصل</TableHead>
+                <TableHead>دوره / کلاس</TableHead>
                 <TableHead>سوالات</TableHead>
                 <TableHead>پاسخ‌برگه‌ها</TableHead>
                 <TableHead>وضعیت</TableHead>
@@ -606,8 +715,17 @@ export function ExamsModule() {
                 <SortableTableRow key={exam.id} id={exam.id}>
                   <TableCell>
                     <div className="flex flex-col gap-0.5">
-                      <span className="font-bold text-foreground">
+                      <span className="flex flex-wrap items-center gap-1.5 font-bold text-foreground">
                         {exam.title}
+                        {exam.isBankCopy ? (
+                          <Badge
+                            variant="outline"
+                            className="gap-1 whitespace-nowrap border-rose-500/30 bg-rose-500/10 text-rose-700 dark:border-rose-400/30 dark:bg-rose-400/10 dark:text-rose-300"
+                          >
+                            <Repeat className="size-3" />
+                            برگزاری دوباره
+                          </Badge>
+                        ) : null}
                       </span>
                       {exam.durationMinutes > 0 ? (
                         <span className="flex items-center gap-1 text-[0.65rem] text-muted-foreground">
@@ -625,6 +743,11 @@ export function ExamsModule() {
                       <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
                         <LinkIcon className="size-3.5" />
                         {exam.course.title}
+                      </span>
+                    ) : exam.class?.title ? (
+                      <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                        <Users className="size-3.5" />
+                        {exam.class.title}
                       </span>
                     ) : (
                       <span className="text-sm text-muted-foreground">—</span>
@@ -706,6 +829,135 @@ export function ExamsModule() {
         </div>
         </SortableRows>
       )}
+        </TabsContent>
+
+        {/* — تب «بانک آزمون‌ها»: هر آزمون فقط یک‌بار به‌صورت خودکار ذخیره می‌شود — */}
+        <TabsContent value="bank" className="mt-1 space-y-0">
+          {loading ? (
+            <TableSkeleton cols={6} />
+          ) : bankItems.length === 0 ? (
+            <EmptyState
+              icon={Library}
+              title="بانک آزمون‌ها خالی است"
+              description="هر آزمونی که می‌سازید به‌صورت خودکار یک‌بار در بانک ذخیره می‌شود؛ با دکمه‌ی «برگزاری دوباره» می‌توانید همان آزمون را برای همان کلاس یا کلاس دیگری دوباره برگزار کنید."
+            >
+              <Button
+                type="button"
+                onClick={openCreate}
+                className={cn("rounded-xl", btnGradient)}
+              >
+                <Plus className="size-4" />
+                آزمون جدید
+              </Button>
+            </EmptyState>
+          ) : (
+            <div className="glass overflow-hidden rounded-2xl">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>عنوان</TableHead>
+                    <TableHead>نوع دسترسی</TableHead>
+                    <TableHead>دوره / کلاس</TableHead>
+                    <TableHead>سوالات</TableHead>
+                    <TableHead>برگزاری‌ها</TableHead>
+                    <TableHead className="text-left">عملیات</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {bankItems.map((exam) => (
+                    <TableRow key={exam.id}>
+                      <TableCell>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-bold text-foreground">
+                            {exam.title}
+                          </span>
+                          {exam.durationMinutes > 0 ? (
+                            <span className="flex items-center gap-1 text-[0.65rem] text-muted-foreground">
+                              <Timer className="size-3" />
+                              {faDigits(exam.durationMinutes)} دقیقه
+                            </span>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <AccessBadge type={exam.accessType} />
+                      </TableCell>
+                      <TableCell>
+                        {exam.course?.title ? (
+                          <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                            <LinkIcon className="size-3.5" />
+                            {exam.course.title}
+                          </span>
+                        ) : exam.class?.title ? (
+                          <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                            <Users className="size-3.5" />
+                            {exam.class.title}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <span className="font-bold tabular-nums text-foreground">
+                          {faDigits(exam._count?.questions ?? 0)}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className="gap-1 whitespace-nowrap border-teal-500/30 bg-teal-500/10 text-teal-700 dark:border-teal-400/30 dark:bg-teal-400/10 dark:text-teal-300"
+                        >
+                          <Repeat className="size-3" />
+                          {faDigits(holdingsCount(exam))} برگزاری
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            onClick={() => openRehold(exam)}
+                            className={cn("rounded-xl", btnGradient)}
+                          >
+                            <Repeat className="size-4" />
+                            برگزاری دوباره
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => openEdit(exam)}
+                            aria-label="ویرایش آزمون بانک"
+                            title="ویرایش"
+                            className="text-muted-foreground hover:text-foreground"
+                          >
+                            <Pencil className="size-4" />
+                          </Button>
+                          <ConfirmDelete
+                            title="حذف آزمون از بانک"
+                            description={`آزمون «${exam.title}» همراه همه‌ی سوالات و پاسخ‌برگه‌های آن حذف می‌شود؛ برگزاری‌های تازه‌ی ساخته‌شده از آن باقی می‌مانند. مطمئن هستید؟`}
+                            onConfirm={() => handleDelete(exam)}
+                          >
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label="حذف آزمون بانک"
+                              title="حذف"
+                              className="text-muted-foreground hover:text-destructive"
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </ConfirmDelete>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* ————— دیالوگ ایجاد/ویرایش آزمون ————— */}
       <Dialog open={examDialogOpen} onOpenChange={setExamDialogOpen}>
@@ -748,7 +1000,7 @@ export function ExamsModule() {
 
               <div className="space-y-2">
                 <Label>نوع دسترسی</Label>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
                   {ACCESS_TYPES.map((type) => {
                     const s = ACCESS_STYLES[type];
                     const active = form.accessType === type;
@@ -759,6 +1011,7 @@ export function ExamsModule() {
                         onClick={() => {
                           set("accessType", type);
                           if (type !== "course") set("courseId", "");
+                          if (type !== "class") set("classId", "");
                           if (type !== "password") set("password", "");
                         }}
                         className={cn(
@@ -785,7 +1038,9 @@ export function ExamsModule() {
                             ? "فقط اعضای همان دوره"
                             : type === "open"
                               ? "همه‌ی کاربران"
-                              : "با وارد کردن رمز"}
+                              : type === "class"
+                                ? "فقط اعضای همان کلاس"
+                                : "با وارد کردن رمز"}
                         </span>
                       </button>
                     );
@@ -814,6 +1069,37 @@ export function ExamsModule() {
                   <p className="text-[0.7rem] leading-5 text-muted-foreground">
                     آزمون فقط به اعضای ثبت‌نام‌شده‌ی این دوره نمایش داده می‌شود.
                   </p>
+                </div>
+              ) : null}
+
+              {form.accessType === "class" ? (
+                <div className="space-y-2">
+                  <Label>کلاس هدف</Label>
+                  <Select
+                    value={form.classId}
+                    onValueChange={(v) => set("classId", v)}
+                  >
+                    <SelectTrigger dir="rtl" className="w-full">
+                      <SelectValue placeholder="کلاسی انتخاب کنید..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(classes ?? []).map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[0.7rem] leading-5 text-muted-foreground">
+                    آزمون فقط برای اعضای همین کلاس در پنل کاربری نمایش داده
+                    می‌شود؛ سایر کاربران آن را نمی‌بینند و نمی‌توانند باز کنند.
+                  </p>
+                  {(classes ?? []).length === 0 ? (
+                    <p className="text-[0.7rem] font-bold leading-5 text-amber-600 dark:text-amber-300">
+                      هنوز کلاسی ساخته نشده است؛ از ماژول «کلاس‌ها» اولین کلاس
+                      را بسازید.
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -859,6 +1145,38 @@ export function ExamsModule() {
                   </div>
                 </div>
               </div>
+
+              {/* سوییچ: امکان بازگشت به سوالات قبلی هنگام آزمون */}
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-foreground/[0.08] bg-foreground/[0.02] px-3 py-2.5 dark:border-white/[0.08] dark:bg-white/[0.02]">
+                <div className="min-w-0 space-y-0.5">
+                  <Label htmlFor="exam-allow-back" className="text-xs">
+                    بازگشت به سوالات قبلی
+                  </Label>
+                  <p className="text-[0.65rem] leading-4 text-muted-foreground">
+                    روشن: کاربر هنگام آزمون می‌تواند به سوالات قبلی برگردد و
+                    پاسخ‌ها را ویرایش کند · خاموش: فقط حرکت رو به جلو و بدون
+                    دسترسی به سوالات قبل.
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-col items-center gap-1">
+                  <Switch
+                    id="exam-allow-back"
+                    checked={form.allowBack}
+                    onCheckedChange={(next) => set("allowBack", next)}
+                    aria-label="بازگشت به سوالات قبلی"
+                  />
+                  <span
+                    className={cn(
+                      "text-[0.6rem] font-black whitespace-nowrap",
+                      form.allowBack
+                        ? "text-teal-600 dark:text-teal-300"
+                        : "text-amber-600 dark:text-amber-300"
+                    )}
+                  >
+                    {form.allowBack ? "با بازگشت" : "بدون بازگشت"}
+                  </span>
+                </div>
+              </div>
             </div>
           ) : null}
 
@@ -881,6 +1199,76 @@ export function ExamsModule() {
               variant="outline"
               disabled={saving}
               onClick={() => setExamDialogOpen(false)}
+              className="rounded-xl"
+            >
+              انصراف
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ————— دیالوگ برگزاری دوباره (بانک آزمون‌ها) ————— */}
+      <Dialog
+        open={!!reholdExam}
+        onOpenChange={(open) => {
+          if (!open) setReholdExam(null);
+        }}
+      >
+        <DialogContent dir="rtl" className="rounded-2xl sm:max-w-md">
+          <DialogHeader className="text-right">
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <Repeat className="size-5 text-teal-600 dark:text-teal-300" />
+              برگزاری دوباره
+            </DialogTitle>
+            <DialogDescription className="leading-6">
+              از آزمون «{reholdExam?.title}» با{" "}
+              {faDigits(reholdExam?._count?.questions ?? 0)} سوال، برگزاری
+              تازه‌ای با همان سوالات و پاسخ‌برگه‌های خالی ساخته می‌شود؛ آزمون
+              اصلی بانک دست‌نخورده می‌ماند.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label>برگزاری برای</Label>
+            <Select value={reholdTarget} onValueChange={setReholdTarget}>
+              <SelectTrigger dir="rtl" className="w-full">
+                <SelectValue placeholder="مخاطبان برگزاری..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">همه‌ی کاربران (آزمون آزاد)</SelectItem>
+                {(classes ?? []).map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[0.7rem] leading-5 text-muted-foreground">
+              همان کلاس یا کلاس دیگری را انتخاب کنید؛ آزمون تازه فقط برای
+              اعضای همان کلاس نمایش داده می‌شود (انتخاب «همه‌ی کاربران» =
+              آزمون آزاد).
+            </p>
+          </div>
+
+          <DialogFooter className="gap-2 sm:justify-start">
+            <Button
+              type="button"
+              disabled={reholding}
+              onClick={() => void handleRehold()}
+              className={cn("rounded-xl", btnGradient)}
+            >
+              {reholding ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Repeat className="size-4" />
+              )}
+              برگزاری دوباره
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={reholding}
+              onClick={() => setReholdExam(null)}
               className="rounded-xl"
             >
               انصراف
@@ -1760,6 +2148,21 @@ interface AttemptRow extends ExamAttempt {
   user: { firstName: string; lastName: string; phone: string };
 }
 
+/** پیش‌نویس نمره‌دهی یک پاسخ‌برگه — مقادیر خام فرم (رشته‌ای) */
+interface GradeDraft {
+  /** questionId → مقدار خام input نمره‌ی آن سوال */
+  grades: Record<string, string>;
+  /** مقدار خام input نمره‌ی نهایی */
+  final: string;
+  /** نمره‌ی نهایی دستی؟ (false = خودکار از جمع نمره‌ی سوالات) */
+  manual: boolean;
+}
+
+/** گرد کردن نمره به دو رقم اعشار */
+function roundGrade(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 function AttemptsViewer({
   exam,
   onClose,
@@ -1770,7 +2173,7 @@ function AttemptsViewer({
   const [attempts, setAttempts] = useState<AttemptRow[] | null>(null);
   const [questions, setQuestions] = useState<ExamQuestion[] | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [gradeInput, setGradeInput] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Record<string, GradeDraft>>({});
   const [gradingId, setGradingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -1792,20 +2195,157 @@ function AttemptsViewer({
     void load();
   }, [load]);
 
-  async function handleSaveScore(attemptId: string) {
-    const raw = gradeInput[attemptId] ?? "";
-    const score = parseFloat(raw);
-    if (!Number.isFinite(score) || score < 0) {
-      toast.error("نمره‌ی معتبر وارد کنید.");
-      return;
+  // — تصحیح خودکار محلی (نتیجه‌ی هر سوال + نمره‌ی خودکار آن) —
+  function autoGradeOf(a: AttemptRow) {
+    if (!questions) return null;
+    const gradingQuestions: GradingQuestion[] = questions.map((q) => ({
+      id: q.id,
+      type: q.type as QuestionType,
+      points: q.points,
+      options: parseJsonField<QuestionOptions>(q.options, {}),
+      answer: parseJsonField<QuestionAnswer>(q.answer, {}),
+    }));
+    return gradeAttempt(
+      gradingQuestions,
+      parseJsonField<Record<string, unknown>>(a.answers, {})
+    );
+  }
+
+  /** نمره‌ی مؤثر هر سوال: ذخیره‌شده (ویرایش مدیر) > خودکار تصحیح */
+  function effectiveGrades(a: AttemptRow): Record<string, number> {
+    const stored = parseJsonField<Record<string, number>>(a.grades, {});
+    const autoEarned = new Map(
+      (autoGradeOf(a)?.perQuestion ?? []).map((g) => [g.questionId, g.earned])
+    );
+    const out: Record<string, number> = {};
+    for (const q of questions ?? []) {
+      out[q.id] = q.id in stored ? stored[q.id] : (autoEarned.get(q.id) ?? 0);
     }
-    setGradingId(attemptId);
+    return out;
+  }
+
+  /** جمع نمره‌ی سوالات از مقادیر خام پیش‌نویس (مقدار نامعتبر = ۰) */
+  function gradesSumOf(grades: Record<string, string>): number {
+    return roundGrade(
+      Object.values(grades).reduce((sum, raw) => {
+        const v = parseFloat(raw);
+        return sum + (Number.isFinite(v) ? v : 0);
+      }, 0)
+    );
+  }
+
+  /** پیش‌نویس تازه از داده‌ی سرور — اولین نمایش پاسخ‌برگه */
+  function initDraft(a: AttemptRow): GradeDraft {
+    const eff = effectiveGrades(a);
+    const sum = roundGrade(Object.values(eff).reduce((s, v) => s + v, 0));
+    const hasScore = a.score !== null && Number.isFinite(a.score);
+    // نمره‌ی نهایی ذخیره‌شده که با جمع نمره‌ی سوالات نخواند → دستی تلقی می‌شود
+    const manual =
+      a.scoreManual || (hasScore && Math.abs((a.score ?? 0) - sum) > 0.005);
+    return {
+      grades: Object.fromEntries(
+        Object.entries(eff).map(([qid, v]) => [qid, String(v)])
+      ),
+      final: String(hasScore ? (a.score ?? sum) : sum),
+      manual,
+    };
+  }
+
+  /** ویرایش نمره‌ی یک سوال — در حالت خودکار، نمره‌ی نهایی بازمحاسبه می‌شود */
+  function updateQuestionGrade(a: AttemptRow, qid: string, value: string) {
+    setDrafts((prev) => {
+      const cur = prev[a.id] ?? initDraft(a);
+      const grades = { ...cur.grades, [qid]: value };
+      return {
+        ...prev,
+        [a.id]: {
+          grades,
+          final: cur.manual ? cur.final : String(gradesSumOf(grades)),
+          manual: cur.manual,
+        },
+      };
+    });
+  }
+
+  /** ثبت دستی نمره‌ی نهایی — تایپ مستقیم در فیلد نهایی */
+  function updateFinal(a: AttemptRow, value: string) {
+    setDrafts((prev) => {
+      const cur = prev[a.id] ?? initDraft(a);
+      return { ...prev, [a.id]: { ...cur, final: value, manual: true } };
+    });
+  }
+
+  /** بازگردانی نمره‌ی نهایی به جمع خودکار نمره‌ی سوالات */
+  function resetFinalToSum(a: AttemptRow) {
+    setDrafts((prev) => {
+      const cur = prev[a.id] ?? initDraft(a);
+      return {
+        ...prev,
+        [a.id]: {
+          ...cur,
+          final: String(gradesSumOf(cur.grades)),
+          manual: false,
+        },
+      };
+    });
+  }
+
+  /** ذخیره‌ی نمره‌ی همه‌ی سوالات + نمره‌ی نهایی (خودکار از جمع یا دستی) */
+  async function handleSaveGrades(a: AttemptRow) {
+    if (!questions) return;
+    const draft = drafts[a.id] ?? initDraft(a);
+
+    const grades: Record<string, number> = {};
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      const v = parseFloat(draft.grades[q.id] ?? "");
+      if (!Number.isFinite(v) || v < 0) {
+        toast.error(`نمره‌ی سوال ${faDigits(i + 1)} معتبر نیست.`);
+        return;
+      }
+      if (v > q.points + 0.001) {
+        toast.error(
+          `نمره‌ی سوال ${faDigits(i + 1)} نمی‌تواند بیش از ${faDigits(q.points)} باشد.`
+        );
+        return;
+      }
+      grades[q.id] = Math.min(v, q.points);
+    }
+
+    let finalScore: number | undefined;
+    if (draft.manual) {
+      const v = parseFloat(draft.final);
+      if (!Number.isFinite(v) || v < 0) {
+        toast.error("نمره‌ی نهایی معتبر نیست.");
+        return;
+      }
+      if (v > a.totalPoints + 0.001) {
+        toast.error(
+          `نمره‌ی نهایی نمی‌تواند بیش از ${faDigits(a.totalPoints)} باشد.`
+        );
+        return;
+      }
+      finalScore = Math.min(v, a.totalPoints);
+    }
+
+    setGradingId(a.id);
     try {
       await apiFetch(`/api/admin/exams/${exam.id}/attempts`, {
         method: "PATCH",
-        body: JSON.stringify({ attemptId, score }),
+        body: JSON.stringify({
+          attemptId: a.id,
+          grades,
+          finalManual: draft.manual,
+          finalScore,
+        }),
       });
-      toast.success("نمره‌ی نهایی ثبت شد.");
+      toast.success("نمره‌های پاسخ‌برگه ذخیره شد.");
+      // پیش‌نویس کنار می‌رود تا از داده‌ی تازه‌ی سرور دوباره ساخته شود
+      setDrafts((prev) => {
+        const next = { ...prev };
+        delete next[a.id];
+        return next;
+      });
       await load();
     } catch (error) {
       toastApiError(error);
@@ -1876,8 +2416,9 @@ function AttemptsViewer({
             </span>
           </DialogTitle>
           <DialogDescription>
-            نمره‌ی سوالات عینی خودکار ثبت شده است؛ سوالات تشریحی را بخوانید و
-            نمره‌ی نهایی را ثبت کنید.
+            نمره‌ی کسب‌شده‌ی هر سوال قابل ویرایش است؛ نمره‌ی نهایی خودکار از
+            جمع نمره‌ی سوالات به دست می‌آید و در صورت نیاز دستی هم قابل تغییر
+            است.
           </DialogDescription>
         </DialogHeader>
 
@@ -1898,6 +2439,16 @@ function AttemptsViewer({
               const answers = parseJsonField<Record<string, unknown>>(
                 a.answers,
                 {}
+              );
+              const draft = expanded
+                ? (drafts[a.id] ?? initDraft(a))
+                : null;
+              const sum = draft ? gradesSumOf(draft.grades) : 0;
+              const autoPerQuestion = expanded
+                ? (autoGradeOf(a)?.perQuestion ?? [])
+                : [];
+              const autoEarned = new Map(
+                autoPerQuestion.map((g) => [g.questionId, g] as const)
               );
               return (
                 <div
@@ -1935,6 +2486,11 @@ function AttemptsViewer({
                         <Clock className="size-3" />
                         {faDate(a.finishedAt ?? a.createdAt)}
                       </Badge>
+                      {a.scoreManual ? (
+                        <Badge variant="outline" className="text-[0.6rem]">
+                          نمره‌ی دستی
+                        </Badge>
+                      ) : null}
                       <span className="text-xs font-black tabular-nums text-teal-700 dark:text-teal-300">
                         {faDigits(a.score ?? a.autoScore)} از{" "}
                         {faDigits(a.totalPoints)}
@@ -1947,19 +2503,62 @@ function AttemptsViewer({
                     </span>
                   </button>
 
-                  {expanded && questions ? (
+                  {expanded && questions && draft ? (
                     <div className="space-y-3 border-t border-foreground/[0.07] p-4 dark:border-white/[0.07]">
                       {questions.map((q, i) => {
                         const user = answers[q.id];
                         const isEssay = q.type === "essay";
+                        const autoG = autoEarned.get(q.id);
+                        const raw = draft.grades[q.id] ?? "";
+                        const earned = parseFloat(raw);
+                        const edited =
+                          autoG && Number.isFinite(earned)
+                            ? Math.abs(earned - autoG.earned) > 0.005
+                            : false;
+                        const overMax =
+                          Number.isFinite(earned) && earned > q.points + 0.001;
                         return (
                           <div
                             key={q.id}
                             className="rounded-xl border border-foreground/[0.08] bg-background/60 p-3 dark:border-white/[0.08]"
                           >
-                            <p className="text-sm font-bold leading-6 text-foreground">
-                              {faDigits(i + 1)}. {q.text || "—"}
-                            </p>
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <p className="text-sm font-bold leading-6 text-foreground">
+                                {faDigits(i + 1)}. {q.text || "—"}
+                                <span className="ms-1 text-[0.62rem] font-medium text-muted-foreground">
+                                  (
+                                  {QUESTION_TYPE_LABELS[
+                                    q.type as QuestionType
+                                  ] ?? q.type}
+                                  {" — "}
+                                  {faDigits(q.points)} نمره)
+                                </span>
+                              </p>
+                              {autoG ? (
+                                autoG.correct === true ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="border-emerald-500/30 bg-emerald-500/10 text-[0.6rem] text-emerald-700 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300"
+                                  >
+                                    درست
+                                  </Badge>
+                                ) : autoG.correct === false ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="border-red-500/30 bg-red-500/10 text-[0.6rem] text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300"
+                                  >
+                                    نادرست
+                                  </Badge>
+                                ) : (
+                                  <Badge
+                                    variant="outline"
+                                    className="border-amber-500/30 bg-amber-500/10 text-[0.6rem] text-amber-700 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300"
+                                  >
+                                    تشریحی
+                                  </Badge>
+                                )
+                              ) : null}
+                            </div>
                             <p className="mt-2 text-xs leading-6 text-muted-foreground">
                               <span className="font-bold">پاسخ کاربر: </span>
                               <bdi
@@ -1978,42 +2577,99 @@ function AttemptsViewer({
                                   .sample || "—"}
                               </p>
                             ) : null}
+                            {/* نمره‌ی کسب‌شده‌ی این سوال — قابل ویرایش مدیر */}
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <Label
+                                htmlFor={`q-${a.id}-${q.id}`}
+                                className="text-[0.7rem] font-bold"
+                              >
+                                نمره‌ی کسب‌شده:
+                              </Label>
+                              <Input
+                                id={`q-${a.id}-${q.id}`}
+                                type="number"
+                                min={0}
+                                max={q.points}
+                                step={0.25}
+                                dir="ltr"
+                                className={cn(
+                                  "h-8 w-20 rounded-lg",
+                                  overMax &&
+                                    "border-red-500/60 focus-visible:ring-red-500/40",
+                                  !overMax && edited && "border-amber-500/60"
+                                )}
+                                value={raw}
+                                onChange={(e) =>
+                                  updateQuestionGrade(a, q.id, e.target.value)
+                                }
+                              />
+                              <span className="text-[0.7rem] text-muted-foreground">
+                                از {faDigits(q.points)}
+                              </span>
+                              {edited && autoG ? (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[0.6rem] text-amber-700 dark:text-amber-300"
+                                >
+                                  ویرایش مدیر — خودکار: {faDigits(autoG.earned)}
+                                </Badge>
+                              ) : null}
+                            </div>
                           </div>
                         );
                       })}
 
-                      {/* ثبت/ویرایش نمره‌ی نهایی */}
+                      {/* نمره‌ی نهایی — خودکار از جمع نمره‌ی سوالات یا دستی */}
                       <div className="flex flex-wrap items-end gap-2 rounded-xl border border-teal-500/25 bg-teal-500/[0.04] p-3 dark:border-teal-400/20 dark:bg-teal-400/[0.03]">
                         <div className="space-y-1">
                           <Label
-                            htmlFor={`grade-${a.id}`}
+                            htmlFor={`final-${a.id}`}
                             className="text-xs font-bold"
                           >
                             نمره‌ی نهایی (از {faDigits(a.totalPoints)})
                           </Label>
                           <Input
-                            id={`grade-${a.id}`}
+                            id={`final-${a.id}`}
                             type="number"
                             min={0}
-                            step={0.5}
+                            max={a.totalPoints}
+                            step={0.25}
+                            dir="ltr"
                             className="w-28"
-                            value={
-                              gradeInput[a.id] ??
-                              String(a.score ?? a.autoScore)
-                            }
-                            onChange={(e) =>
-                              setGradeInput((prev) => ({
-                                ...prev,
-                                [a.id]: e.target.value,
-                              }))
-                            }
+                            value={draft.final}
+                            onChange={(e) => updateFinal(a, e.target.value)}
                           />
                         </div>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "text-[0.6rem]",
+                            draft.manual
+                              ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:border-amber-400/40 dark:bg-amber-400/10 dark:text-amber-300"
+                              : "border-teal-500/40 bg-teal-500/10 text-teal-700 dark:border-teal-400/40 dark:bg-teal-400/10 dark:text-teal-300"
+                          )}
+                        >
+                          {draft.manual
+                            ? "نمره‌ی دستی"
+                            : "خودکار از جمع نمره‌ها"}
+                        </Badge>
+                        {draft.manual ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="rounded-xl"
+                            onClick={() => resetFinalToSum(a)}
+                          >
+                            <Calculator className="size-4" />
+                            بازگردانی به جمع خودکار
+                          </Button>
+                        ) : null}
                         <Button
                           type="button"
                           size="sm"
                           disabled={gradingId === a.id}
-                          onClick={() => handleSaveScore(a.id)}
+                          onClick={() => handleSaveGrades(a)}
                           className={cn("rounded-xl", btnGradient)}
                         >
                           {gradingId === a.id ? (
@@ -2021,12 +2677,14 @@ function AttemptsViewer({
                           ) : (
                             <ClipboardCheck className="size-4" />
                           )}
-                          ثبت نمره
+                          ثبت نمره‌ها
                         </Button>
                         <span className="ms-auto text-[0.65rem] text-muted-foreground">
-                          نمره‌ی خودکار سوالات عینی:{" "}
-                          {faDigits(a.autoScore)} از{" "}
+                          جمع نمره‌ی سوالات: {faDigits(sum)} از{" "}
                           {faDigits(a.totalPoints)}
+                          {a.hasEssay
+                            ? ` — نمره‌ی خودکار سوالات عینی: ${faDigits(a.autoScore)}`
+                            : ""}
                         </span>
                       </div>
                     </div>
