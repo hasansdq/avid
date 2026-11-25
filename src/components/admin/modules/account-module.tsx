@@ -5,8 +5,10 @@ import {
   KeyRound,
   Loader2,
   LogOut,
+  MessageSquare,
   MonitorSmartphone,
   Save,
+  Send,
   ShieldCheck,
   Smartphone,
 } from "lucide-react";
@@ -67,6 +69,8 @@ function Field({
 /**
  * ماژول «حساب و امنیت» مدیر —
  * تغییر رمز عبور (همراه با ابطال همه‌ی نشست‌های قبلی) و خروج از همه دستگاه‌ها.
+ * تنظیمات دومرحله‌ای: هر تغییر با «رمز فعلی» (احراز مجدد) و در صورت تغییر
+ * شماره، تایید کدِ پیامکیِ «شماره‌ی جدید» پیش از ثبت.
  */
 export function AccountModule() {
   const [info, setInfo] = useState<AccountInfo | null>(null);
@@ -81,8 +85,16 @@ export function AccountModule() {
 
   // — تایید دومرحله‌ای پیامکی (PUT /api/admin/account/2fa) —
   const [twoFactorPhone, setTwoFactorPhone] = useState("");
+  const [savedPhone, setSavedPhone] = useState(""); // شماره‌ی ذخیره‌شده‌ی فعلی
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const [saving2fa, setSaving2fa] = useState(false);
+  // احراز مجدد برای هر تغییر امنیتی
+  const [authPassword, setAuthPassword] = useState("");
+  // مرحله‌ی تایید شماره‌ی جدید
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [sendingCode, setSendingCode] = useState(false);
+  const [demoCode, setDemoCode] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -90,6 +102,7 @@ export function AccountModule() {
       const data = await apiFetch<AccountInfo>("/api/admin/account");
       setInfo(data);
       setTwoFactorPhone(data.phone ?? "");
+      setSavedPhone(data.phone ?? "");
       setTwoFactorEnabled(!!data.twoFactorEnabled);
     } catch (error) {
       toastApiError(error);
@@ -151,11 +164,62 @@ export function AccountModule() {
     }
   }
 
-  /** ذخیره‌ی تنظیمات تایید دومرحله‌ای پیامکی (شماره + فعال/غیرفعال) */
+  const phoneChanged =
+    twoFactorPhone.trim() !== "" && twoFactorPhone.trim() !== savedPhone;
+
+  /** گام ۱ — ارسال کد تایید به «شماره‌ی جدید» (با احراز مجدد رمز فعلی) */
+  async function handleSendOtp() {
+    if (sendingCode || saving2fa) return;
+    if (!authPassword) {
+      toast.error("برای تغییر شماره، ابتدا رمز عبور فعلی را وارد کنید.");
+      return;
+    }
+    if (!/^09\d{9}$/.test(twoFactorPhone.trim())) {
+      toast.error("شماره موبایل معتبر وارد کنید (مثال: ۰۹۱۲۳۴۵۶۷۸۹).");
+      return;
+    }
+    setSendingCode(true);
+    try {
+      const data = await apiFetch<{ otpSent?: boolean; demo?: boolean; devCode?: string }>(
+        "/api/admin/account/2fa",
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            phone: twoFactorPhone.trim(),
+            currentPassword: authPassword,
+          }),
+        }
+      );
+      setOtpSent(true);
+      setDemoCode(data.devCode ?? null);
+      toast.success(
+        "کد تایید به شماره‌ی جدید پیامک شد؛ کد را وارد و ذخیره کنید."
+      );
+    } catch (error) {
+      toastApiError(error);
+    } finally {
+      setSendingCode(false);
+    }
+  }
+
+  /**
+   * ذخیره‌ی تنظیمات تایید دومرحله‌ای — با رمز فعلی (احراز مجدد)؛
+   * اگر شماره تغییر کرده باشد، کدِ شماره‌ی جدید الزامی است.
+   */
   async function handleSave2fa() {
     if (saving2fa) return;
+    if (!authPassword) {
+      toast.error(
+        "برای ذخیره‌ی تنظیمات امنیتی، رمز عبور فعلی را وارد کنید."
+      );
+      return;
+    }
     if (twoFactorEnabled && !/^09\d{9}$/.test(twoFactorPhone.trim())) {
       toast.error("برای فعال‌سازی، شماره موبایل معتبر وارد کنید (مثال: ۰۹۱۲۳۴۵۶۷۸۹).");
+      return;
+    }
+    if (phoneChanged && !/^\d{6}$/.test(otpCode.trim())) {
+      toast.error("کد تایید ۶ رقمیِ پیامک‌شده به شماره‌ی جدید را وارد کنید.");
       return;
     }
     setSaving2fa(true);
@@ -163,8 +227,12 @@ export function AccountModule() {
       await apiFetch("/api/admin/account/2fa", {
         method: "PUT",
         body: JSON.stringify({
-          phone: twoFactorPhone.trim(),
+          ...(twoFactorPhone.trim() !== savedPhone
+            ? { phone: twoFactorPhone.trim() }
+            : {}),
           twoFactorEnabled,
+          currentPassword: authPassword,
+          ...(phoneChanged ? { code: otpCode.trim() } : {}),
         }),
       });
       toast.success(
@@ -172,6 +240,11 @@ export function AccountModule() {
           ? "تایید دومرحله‌ای پیامکی فعال شد؛ ورود از این پس دومرحله‌ای است."
           : "تایید دومرحله‌ای غیرفعال شد؛ ورود فقط با نام کاربری و رمز عبور انجام می‌شود."
       );
+      // پاک‌سازی فرمِ تایید پس از ذخیره‌ی موفق
+      setAuthPassword("");
+      setOtpCode("");
+      setOtpSent(false);
+      setDemoCode(null);
       load();
     } catch (error) {
       toastApiError(error);
@@ -280,44 +353,148 @@ export function AccountModule() {
         </div>
 
         <form
-          className="grid gap-4 sm:grid-cols-[1fr_auto]"
+          className="space-y-4"
           onSubmit={(e) => {
             e.preventDefault();
             void handleSave2fa();
           }}
         >
-          <div className="space-y-2">
-            <Label htmlFor="two-factor-phone">شماره موبایل مدیر</Label>
-            <Input
-              id="two-factor-phone"
-              dir="ltr"
-              value={twoFactorPhone}
-              onChange={(e) => setTwoFactorPhone(e.target.value.replace(/[^\d]/g, "").slice(0, 11))}
-              placeholder="09123456789"
-              inputMode="numeric"
-              autoComplete="tel"
-              disabled={saving2fa}
-              className="max-w-xs"
-            />
-            <p className="text-[0.7rem] leading-5 text-muted-foreground">
-              کد تایید به این شماره ارسال می‌شود — برای فعال‌سازی، شماره‌ی معتبر
-              الزامی است. پیامک‌ها از ماژول «پنل پیامکی» ارسال می‌شوند.
-            </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="two-factor-phone">شماره موبایل مدیر</Label>
+              <Input
+                id="two-factor-phone"
+                dir="ltr"
+                value={twoFactorPhone}
+                onChange={(e) => {
+                  setTwoFactorPhone(
+                    e.target.value.replace(/[^\d]/g, "").slice(0, 11)
+                  );
+                  setOtpSent(false); // شماره عوض شد — تایید از نو
+                  setDemoCode(null);
+                }}
+                placeholder="09123456789"
+                inputMode="numeric"
+                autoComplete="tel"
+                disabled={saving2fa || sendingCode}
+                className="max-w-xs"
+              />
+              <p className="text-[0.7rem] leading-5 text-muted-foreground">
+                کد تایید به این شماره ارسال می‌شود — برای فعال‌سازی، شماره‌ی معتبر
+                الزامی است. پیامک‌ها از ماژول «پنل پیامکی» ارسال می‌شوند.
+                {phoneChanged
+                  ? " شماره تغییر کرده است؛ کدِ تاییدِ شماره‌ی جدید پیش از ثبت الزامی است."
+                  : ""}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="two-factor-password">رمز عبور فعلی</Label>
+              <Input
+                id="two-factor-password"
+                type="password"
+                autoComplete="current-password"
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                disabled={saving2fa || sendingCode}
+                className="max-w-xs"
+                required
+              />
+              <p className="text-[0.7rem] leading-5 text-muted-foreground">
+                هر تغییر امنیتی (شماره یا فعال/غیرفعال‌سازی) با احراز مجدد رمز
+                فعلی انجام می‌شود.
+              </p>
+            </div>
           </div>
-          <div className="flex items-end">
-            <Button
-              type="submit"
-              disabled={saving2fa}
-              className={`h-10 rounded-xl text-sm ${btnGradient}`}
-            >
-              {saving2fa ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Save className="size-4" />
-              )}
-              {saving2fa ? "در حال ذخیره..." : "ذخیره تنظیمات"}
-            </Button>
-          </div>
+
+          {phoneChanged ? (
+            <div className="grid gap-4 rounded-xl border border-foreground/[0.08] bg-foreground/[0.03] p-4 sm:grid-cols-[1fr_auto]">
+              <div className="space-y-2">
+                <Label htmlFor="two-factor-otp">کد تایید شماره‌ی جدید</Label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    id="two-factor-otp"
+                    dir="ltr"
+                    value={otpCode}
+                    onChange={(e) =>
+                      setOtpCode(e.target.value.replace(/[^\d]/g, "").slice(0, 6))
+                    }
+                    placeholder="۶ رقم"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    disabled={saving2fa || sendingCode}
+                    className="w-32"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      void handleSendOtp();
+                    }}
+                    disabled={sendingCode || saving2fa || otpSent}
+                    className="h-10 rounded-xl text-sm"
+                  >
+                    {sendingCode ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Send className="size-4" />
+                    )}
+                    {otpSent ? "کد ارسال شد" : "ارسال کد به شماره‌ی جدید"}
+                  </Button>
+                </div>
+                {demoCode ? (
+                  <p
+                    dir="ltr"
+                    className="rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-xs font-bold text-amber-700 dark:text-amber-300"
+                  >
+                    (حالت نمایشی) کد تایید: {faDigits(demoCode)}
+                  </p>
+                ) : null}
+                {!otpSent ? (
+                  <p className="text-[0.7rem] leading-5 text-muted-foreground">
+                    ابتدا رمز فعلی و شماره‌ی جدید را وارد و «ارسال کد» را بزنید؛
+                    سپس کد پیامک‌شده را وارد و ذخیره کنید.
+                  </p>
+                ) : (
+                  <p className="text-[0.7rem] leading-5 text-muted-foreground">
+                    کد به شماره‌ی
+                    <span dir="ltr"> {twoFactorPhone} </span>
+                    پیامک شد. کد را وارد کنید و «ذخیره تنظیمات» را بزنید.
+                  </p>
+                )}
+              </div>
+              <div className="flex items-end">
+                <Button
+                  type="submit"
+                  disabled={saving2fa}
+                  className={`h-10 rounded-xl text-sm ${btnGradient}`}
+                >
+                  {saving2fa ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : phoneChanged ? (
+                    <MessageSquare className="size-4" />
+                  ) : (
+                    <Save className="size-4" />
+                  )}
+                  {saving2fa ? "در حال ذخیره..." : "ذخیره تنظیمات"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-end">
+              <Button
+                type="submit"
+                disabled={saving2fa}
+                className={`h-10 rounded-xl text-sm ${btnGradient}`}
+              >
+                {saving2fa ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Save className="size-4" />
+                )}
+                {saving2fa ? "در حال ذخیره..." : "ذخیره تنظیمات"}
+              </Button>
+            </div>
+          )}
         </form>
       </section>
 

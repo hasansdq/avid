@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
 import { bad, str, float } from "@/lib/api-helpers";
+import { signCertFileUrl, stripCertSig } from "@/lib/cert-files";
 
 /**
  * GET  /api/admin/certificates — لیست همه‌ی گواهینامه‌های صادرشده
@@ -37,8 +38,9 @@ export async function GET(req: NextRequest) {
       orderBy: { issuedAt: "desc" },
       include: CERT_INCLUDE,
     });
+    // فایل گواهینامه خصوصی است — لینک امضاشده‌ی کوتاه‌عمر در پاسخ می‌آید
     return NextResponse.json(
-      { certificates },
+      { certificates: certificates.map((c) => ({ ...c, fileUrl: signCertFileUrl(c.fileUrl) })) },
       { headers: { "Cache-Control": "no-store" } }
     );
   } catch (error) {
@@ -60,7 +62,8 @@ export async function POST(req: NextRequest) {
 
     const userId = str(body.userId);
     const courseId = str(body.courseId);
-    const fileUrl = str(body.fileUrl);
+    // در ذخیره‌سازی query جدا می‌شود تا DB تمیز بماند (امضا فقط در پاسخ/نمایش)
+    const fileUrl = stripCertSig(str(body.fileUrl));
     const note = str(body.note).slice(0, 300);
 
     if (!userId) return bad("انتخاب کاربر الزامی است.");
@@ -148,7 +151,10 @@ export async function POST(req: NextRequest) {
       return bad("ساخت کد رهگیری ناموفق بود؛ دوباره تلاش کنید.");
     }
 
-    return NextResponse.json(certificate, { status: 201 });
+    return NextResponse.json(
+      { ...certificate, fileUrl: signCertFileUrl(certificate.fileUrl) },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("certificate POST error:", error);
     return NextResponse.json(

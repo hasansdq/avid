@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
 import { bad } from "@/lib/api-helpers";
 import { createUserSession, withUserCookie } from "@/lib/user-auth";
+import { requestSecure } from "@/lib/http";
 
 /**
  * POST /api/admin/users/[id]/login — ورود مدیر به سایت «به عنوان کاربر».
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       },
       redirect: "/panel",
     });
-    return withUserCookie(res, token, maxAge);
+    return withUserCookie(res, token, maxAge, requestSecure(req));
   } catch (error) {
     console.error("admin user login-as error:", error);
     return NextResponse.json(

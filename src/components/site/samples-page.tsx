@@ -40,7 +40,7 @@ import {
 } from "@/components/ui/dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LogoMark } from "@/components/admin/shared/logo-mark";
-import { EditableText } from "@/components/site/editable-texts";
+import { EditableText, renderGradientText } from "@/components/site/editable-texts";
 import { Reveal } from "@/components/reveal";
 
 /**
@@ -469,7 +469,7 @@ export function SamplesPage({
             className="mt-5 text-3xl font-black leading-[1.25] text-foreground md:text-[2.6rem] md:leading-[1.2]"
             style={fontFamily ? { fontFamily } : undefined}
           >
-            <EditableText k="samples.title">
+            <EditableText k="samples.title" renderText={renderGradientText}>
               <>
                 نمونه سوالات را{" "}
                 <span className="text-gradient">بررسی کنید</span>

@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ensureFontsSeeded } from "@/lib/fonts";
 import { recordUploadedFile } from "@/lib/uploaded-files";
+import { contentMatchesExt } from "@/lib/file-signature";
 
 /**
  * مدیریت فونت‌های نصب‌شده سایت —
@@ -107,6 +108,18 @@ export async function POST(req: NextRequest) {
 
     const bytes = Buffer.from(await file.arrayBuffer());
     const name = `${key}.${ext}`;
+
+    // — اعتبارسنجی محتوای واقعی فونت (magic bytes) — پسوند/MIME بس نیست (بند ۸) —
+    const head = new Uint8Array(bytes.slice(0, 64 * 1024));
+    if (!contentMatchesExt(ext, head)) {
+      return NextResponse.json(
+        {
+          error:
+            "محتوای فایل با فرمت فونت اعلام‌شده هم‌خوانی ندارد — فایل خراب یا جعل‌شده است.",
+        },
+        { status: 400 }
+      );
+    }
 
     const dir = path.join(process.cwd(), "public", "uploads", "fonts");
     await mkdir(dir, { recursive: true });

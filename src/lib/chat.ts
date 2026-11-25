@@ -11,11 +11,20 @@ export const CHAT_VISITOR_TTL_S = 60 * 60 * 24 * 365;
 /** حداکثر طول پیام چت */
 export const CHAT_MESSAGE_MAX = 2000;
 
+/** مقادیر مجاز نحوه‌ی نمایش تصویر پروفایل چت‌بات */
+export type ChatAvatarMode = "circle" | "custom";
+
+/** اعتبارسنجی مقدار حالت نمایش آواتار (نامعتبر → دایره‌ای) */
+export function parseChatAvatarMode(v: unknown): ChatAvatarMode {
+  return v === "custom" ? "custom" : "circle";
+}
+
 /** فرمت عمومی تنظیمات چت که برای بازدیدکننده ارسال می‌شود */
 export interface PublicChatSettings {
   botName: string;
   botTitle: string;
   botAvatar: string;
+  botAvatarMode: ChatAvatarMode;
   welcomeMessage: string;
   autoOpen: boolean;
   isActive: boolean;
@@ -37,6 +46,7 @@ export function toPublicChatSettings(s: ChatSettings): PublicChatSettings {
     botName: s.botName,
     botTitle: s.botTitle,
     botAvatar: s.botAvatar,
+    botAvatarMode: parseChatAvatarMode(s.botAvatarMode),
     welcomeMessage: s.welcomeMessage,
     autoOpen: s.autoOpen,
     isActive: s.isActive,

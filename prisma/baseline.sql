@@ -329,10 +329,12 @@ CREATE TABLE "Exam" (
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "isBankCopy" BOOLEAN NOT NULL DEFAULT false,
     "bankOriginId" TEXT,
+    "creatorId" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
     CONSTRAINT "Exam_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES "Course" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT "Exam_classId_fkey" FOREIGN KEY ("classId") REFERENCES "ClassRoom" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    CONSTRAINT "Exam_classId_fkey" FOREIGN KEY ("classId") REFERENCES "ClassRoom" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT "Exam_creatorId_fkey" FOREIGN KEY ("creatorId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 
 -- CreateTable
@@ -444,10 +446,18 @@ CREATE TABLE "OtpCode" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "phone" TEXT NOT NULL,
     "codeHash" TEXT NOT NULL,
+    "purpose" TEXT NOT NULL DEFAULT 'general',
     "attempts" INTEGER NOT NULL DEFAULT 0,
     "expiresAt" DATETIME NOT NULL,
     "consumedAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- CreateTable
+CREATE TABLE "RateLimitEntry" (
+    "key" TEXT NOT NULL PRIMARY KEY,
+    "windowStart" DATETIME NOT NULL,
+    "count" INTEGER NOT NULL DEFAULT 0
 );
 
 -- CreateTable
@@ -550,6 +560,7 @@ CREATE TABLE "ChatSettings" (
     "botName" TEXT NOT NULL DEFAULT 'پشتیبان آوید',
     "botTitle" TEXT NOT NULL DEFAULT 'پشتیبانی آکادمی آوید',
     "botAvatar" TEXT NOT NULL DEFAULT '/images/chat/bot-avatar.png',
+    "botAvatarMode" TEXT NOT NULL DEFAULT 'circle',
     "welcomeMessage" TEXT NOT NULL DEFAULT 'سلام 👋 به آکادمی آوید خوش آمدید!
 من پشتیبان آنلاین آوید هستم. اگر درباره‌ی دوره‌ها، ثبت‌نام یا پرداخت سوالی دارید همین‌جا بنویسید؛ پیام شما مستقیماً به تیم پشتیبانی می‌رسد و سریع پاسخ می‌گیرد.',
     "autoOpen" BOOLEAN NOT NULL DEFAULT true,
@@ -725,6 +736,9 @@ CREATE INDEX "Exam_classId_idx" ON "Exam"("classId");
 CREATE INDEX "Exam_isBankCopy_idx" ON "Exam"("isBankCopy");
 
 -- CreateIndex
+CREATE INDEX "Exam_creatorId_idx" ON "Exam"("creatorId");
+
+-- CreateIndex
 CREATE INDEX "ExamQuestion_examId_idx" ON "ExamQuestion"("examId");
 
 -- CreateIndex
@@ -762,6 +776,12 @@ CREATE INDEX "SmsLog_phone_idx" ON "SmsLog"("phone");
 
 -- CreateIndex
 CREATE INDEX "OtpCode_phone_createdAt_idx" ON "OtpCode"("phone", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "OtpCode_phone_purpose_createdAt_idx" ON "OtpCode"("phone", "purpose", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "RateLimitEntry_windowStart_idx" ON "RateLimitEntry"("windowStart");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "PendingRegistration_phone_key" ON "PendingRegistration"("phone");
@@ -822,3 +842,4 @@ CREATE INDEX "StreamParticipant_streamId_idx" ON "StreamParticipant"("streamId")
 
 -- CreateIndex
 CREATE UNIQUE INDEX "StreamParticipant_streamId_userId_key" ON "StreamParticipant"("streamId", "userId");
+

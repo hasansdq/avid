@@ -5,6 +5,10 @@ import {
   isValidDiscountCodeFormat,
   normalizeDiscountCode,
 } from "@/lib/discount";
+import {
+  sanitizeTrustHtml,
+  isSafePublicAssetUrl,
+} from "@/lib/html-sanitize";
 
 /* ---------------- ابزارهای تبدیل و اعتبارسنجی ---------------- */
 
@@ -493,17 +497,25 @@ export function parseSettings(
           return "کلید فونت انتخاب‌شده معتبر نیست یا فونت نصب نشده است.";
         }
       }
-      // کد نمادهای اعتماد: فقط قطعه‌ی HTML رسمی (بدون اسکریپت) پذیرفته می‌شود
+      // لوگو/تصویر آدرس — فقط مسیر محلی، http(s) یا data:image (بند ۹)
+      if (field === "logoUrl" && !isSafePublicAssetUrl(value)) {
+        return "آدرس لوگو معتبر نیست — باید مسیر محلی یا http(s) باشد.";
+      }
+      // کد نمادهای اعتماد: پاکسازی لیست‌سفید (بند ۹) — تَگ/ویژگی غیرمجاز،
+      // on*، javascript: و طرح‌های غیرHTTPS حذف می‌شوند؛ اسکریپت «رسمی» اینماد/
+      // زرین‌پال (src HTTPS از دامنه‌ی رسمی همان سرویس) حفظ می‌شود تا نماد
+      // اعتماد همچنان کار کند. سپس ارجاع به دامنه‌ی رسمی لازم است (قاعده‌ی
+      // پیشین حفظ شده — کد بی‌ارجاع رد می‌شود).
       if ((field === "enamadCode" || field === "zarinpalCode") && value) {
-        if (/<\s*script/i.test(value)) {
-          return `کد ${field === "enamadCode" ? "اینماد" : "زرین‌پال"} نمی‌تواند شامل تَگ اسکریپت باشد.`;
-        }
-        if (field === "enamadCode" && !/enamad\.ir/i.test(value)) {
+        const sanitized = sanitizeTrustHtml(value);
+        if (field === "enamadCode" && !/enamad\.ir/i.test(sanitized)) {
           return "کد اینماد معتبر نیست — باید به trustseal.enamad.ir اشاره کند.";
         }
-        if (field === "zarinpalCode" && !/zarinpal/i.test(value)) {
+        if (field === "zarinpalCode" && !/zarinpal/i.test(sanitized)) {
           return "کد زرین‌پال معتبر نیست — باید به zarinpal.com اشاره کند.";
         }
+        data[field] = sanitized;
+        continue;
       }
       data[field] = value;
     }

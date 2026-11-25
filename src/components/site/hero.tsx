@@ -32,23 +32,22 @@ export function Hero({
 }) {
   const sceneVisibility: SectionVisibility =
     animations?.scene ?? DEFAULT_SECTION_VISIBILITY;
-  const commaIndex = settings.slogan.indexOf("،");
-  const sloganHead =
-    commaIndex >= 0 ? settings.slogan.slice(0, commaIndex + 1) : settings.slogan;
-  const sloganTail =
-    commaIndex >= 0 ? settings.slogan.slice(commaIndex + 1).trim() : "";
 
-  // شکستن اسلوگان به دو خط (تیتر + بخش درخشان) — برای متن سفارشی مداد هم اعمال می‌شود
+  // شکستن اسلوگان به دو خط (تیتر + بخش درخشان) — برای متن پیش‌فرض و متن
+  // سفارشی مداد با «همان منطق واحد» رندر می‌شود؛ اگر متن ویرگول «،» نداشته
+  // باشد، کل متن همان افکت درخشش (text-shine) را حفظ می‌کند — صرفِ تغییر
+  // متن، افکت ظاهری قبلی اسلوگان را از بین نمی‌برد.
   const splitSlogan = (text: string) => {
     const i = text.indexOf("،");
-    const head = i >= 0 ? text.slice(0, i + 1) : text;
+    const head = i >= 0 ? text.slice(0, i + 1) : "";
     const tail = i >= 0 ? text.slice(i + 1).trim() : "";
+    if (!head || !tail) {
+      return <span className="text-shine">{text}</span>;
+    }
     return (
       <>
         {head}
-        {tail ? (
-          <span className="text-shine mt-2 block pb-2">{tail}</span>
-        ) : null}
+        <span className="text-shine mt-2 block pb-2">{tail}</span>
       </>
     );
   };
@@ -83,10 +82,7 @@ export function Hero({
             }}
           >
             <EditableText k="hero.slogan" renderText={splitSlogan}>
-              {sloganHead}
-              {sloganTail ? (
-                <span className="text-shine mt-2 block pb-2">{sloganTail}</span>
-              ) : null}
+              {splitSlogan(settings.slogan)}
             </EditableText>
           </h1>
 

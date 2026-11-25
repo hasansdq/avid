@@ -7,6 +7,13 @@ import {
   type SessionUser,
 } from "@/lib/user-auth";
 import { requestSecure } from "@/lib/http";
+import {
+  clientIpOf,
+  hitRate,
+  rateLimited,
+  rateStorageError,
+  RATE_LIMITS,
+} from "@/lib/rate-limit";
 
 /**
  * POST /api/user/otp/verify — تایید کد پیامکی و ورود به حساب کاربری.
@@ -46,11 +53,29 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // — محدودیت پایدارِ تایید: به‌ازای شماره و IP —
+    const byPhone = await hitRate(
+      `otp-verify:p:${phone}`,
+      RATE_LIMITS.otpVerifyPhone
+    );
+    const byIp = await hitRate(
+      `otp-verify:ip:${clientIpOf(req)}`,
+      RATE_LIMITS.otpVerifyIp
+    );
+    if (byPhone.storageError || byIp.storageError) {
+      // محدودکننده نتوانست شمارش را ذخیره/بخواند — بی‌صدا رها نمی‌شود
+      return rateStorageError();
+    }
+    if (byPhone.exceeded || byIp.exceeded) {
+      const r = byPhone.exceeded ? byPhone : byIp;
+      return rateLimited(r.retryAfterSec);
+    }
+
     const result = await verifyOtp(phone, code, {
       firstName,
       lastName,
       nationalId,
-    });
+    }, "user_auth");
     if (!result.ok) {
       return NextResponse.json(
         { error: result.error },

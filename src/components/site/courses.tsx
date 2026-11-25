@@ -26,7 +26,7 @@ import { faDigits, scrollToSection } from "@/lib/fa";
 import { useEnrollStore } from "@/lib/store";
 import type { PublicAvailabilityMap } from "@/lib/availability";
 import { SectionHeading, Reveal } from "@/components/reveal";
-import { EditableText } from "@/components/site/editable-texts";
+import { EditableText, renderGradientText } from "@/components/site/editable-texts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -305,7 +305,7 @@ export function Courses({ courses }: { courses: Course[] }) {
           icon={Layers}
           badge="دوره‌های آموزشی"
           title={
-            <EditableText k="courses.title">
+            <EditableText k="courses.title" renderText={renderGradientText}>
               <>
                 مهارت خود را با دوره‌های{" "}
                 <span className="text-gradient">حرفه‌ای</span> ارتقا دهید

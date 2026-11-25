@@ -41,6 +41,12 @@ export function MobileBottomNav() {
   const pathname = usePathname();
   const isHome = pathname === "/";
 
+  // صفحات‌ی که منوی پایین در آن‌ها نمایش داده نمی‌شود:
+  // کلاس آنلاین (/stream/…) — تجربه‌ی «اتاق جلسه»ی متمرکز؛ منوی سایت
+  // هم روی نمایش افقی تمام‌صفحه‌ی معلم (LandscapeOverlay) می‌افتاد و هم
+  // کنترل‌های پایین کلاس را می‌پوشاند. (برگرداندن null بعد از همه‌ی هوک‌ها)
+  const isStreamRoom = pathname.startsWith("/stream");
+
   // آیتمِ فعال در هر بار مسیریابی دوباره محاسبه می‌شود
   const items: NavItem[] = React.useMemo(() => {
     const onPanel = pathname === "/panel" || pathname.startsWith("/panel");
@@ -76,6 +82,8 @@ export function MobileBottomNav() {
       },
     ];
   }, [pathname, isHome]);
+
+  if (isStreamRoom) return null;
 
   /** در صفحه‌ی اول: کلیک روی «خانه» به‌جای جابه‌جایی، به بالای صفحه اسکرول می‌کند */
   function handleClick(

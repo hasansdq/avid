@@ -7,6 +7,8 @@
 #   • دیتابیس توسعه (db/custom.db) با همه‌ی هش‌ها/کلیدها حذف می‌شود —
 #     روی VPS دیتابیس تازه با migrate + bootstrap ساخته می‌شود
 #   • پوشه‌های سندباکس/پلتفرم (skills, .zscripts, examples و…) حذف می‌شوند
+#   • فایل‌های گواهینامه‌ی کاربران (public/uploads/certificates) حذف می‌شوند —
+#     داده‌ی خصوصی کاربران نباید در آرشیو عمومیِ قابل‌دانلود باشد (بند ۸)
 #
 # سیاست پوشه‌ی تحویل:
 #   • download/ و public/Download/ بعد از هر اجرا «فقط و فقط» شامل
@@ -60,10 +62,10 @@ rsync -a --delete \
   --exclude '/agent-ctx' \
   --exclude '/public/Download' \
   --exclude '/download' \
+  --exclude '/public/uploads/certificates' \
   --exclude '/screenshots' \
   --exclude '/skills' \
   --exclude '/examples' \
-  --exclude '/tests' \
   --exclude '/Caddyfile' \
   --exclude '.DS_Store' \
   "$ROOT/" "$STAGE/avid/"
@@ -71,6 +73,25 @@ rsync -a --delete \
 # محافظ: فایل‌های حیاتی باید در آرشیو باشند (regression: مسیر آپلود یک‌بار
 # با exclude 'upload' سراسری حذف شده بود)
 for CRITICAL in \
+  "src/app/manifest.ts" \
+  "src/app/api/admin/distribution/route.ts" \
+  "src/components/pwa/pwa-bootstrap.tsx" \
+  "public/sw.js" \
+  "public/images/icons/icon-192.png" \
+  "public/images/icons/icon-512.png" \
+  "public/images/icons/maskable-512.png" \
+  "public/images/icons/apple-touch-icon.png" \
+  "src/middleware.ts" \
+  "src/lib/http.ts" \
+  "src/lib/file-signature.ts" \
+  "src/lib/svg-sanitize.ts" \
+  "src/lib/html-sanitize.ts" \
+  "src/lib/cert-files.ts" \
+  "src/app/api/uploads/certificates/[...path]/route.ts" \
+  "src/app/api/panel/certificates/route.ts" \
+  "src/app/api/certificate/verify/route.ts" \
+  "src/app/api/admin/certificates/route.ts" \
+  "src/app/api/admin/certificates/[id]/route.ts" \
   "src/app/api/admin/upload-image/route.ts" \
   "src/lib/uploaded-files.ts" \
   "src/app/uploads/[...path]/route.ts" \
@@ -82,7 +103,15 @@ for CRITICAL in \
   "src/lib/default-settings.ts" \
   "src/app/api/health/route.ts" \
   "src/app/api/user/otp/request/route.ts" \
+  "src/app/api/user/otp/verify/route.ts" \
+  "src/app/api/user/phone/request/route.ts" \
+  "src/app/api/user/phone/verify/route.ts" \
   "src/app/api/panel/otp/request/route.ts" \
+  "src/app/api/panel/otp/verify/route.ts" \
+  "src/app/api/auth/login/route.ts" \
+  "src/app/api/auth/login/verify/route.ts" \
+  "src/app/api/admin/account/2fa/route.ts" \
+  "src/lib/rate-limit.ts" \
   "src/lib/sms.ts" \
   "src/lib/trust-seals.ts" \
   "src/components/site/trust-seal.tsx" \
@@ -107,6 +136,12 @@ for CRITICAL in \
   "src/lib/shaba.ts" \
   "src/lib/course-write.ts" \
   "src/lib/streams.ts" \
+  "src/app/api/teacher/exams/route.ts" \
+  "src/app/api/teacher/exams/[id]/route.ts" \
+  "src/app/api/teacher/exams/[id]/attempts/route.ts" \
+  "src/app/api/teacher/exams/[id]/questions/route.ts" \
+  "src/app/api/teacher/upload/route.ts" \
+  "src/components/panel/teacher/teacher-exams.tsx" \
   "src/app/api/teacher/finance/route.ts" \
   "src/app/api/teacher/courses/route.ts" \
   "src/app/api/teacher/courses/[id]/route.ts" \
@@ -133,6 +168,9 @@ for CRITICAL in \
   "src/components/stream/stream-room.tsx" \
   "src/components/stream/use-stream-room.ts" \
   "src/components/stream/types.ts" \
+  "src/lib/socket-proxy.ts" \
+  "src/app/stream-socket/[[...rest]]/route.ts" \
+  "src/app/socket.io/[[...rest]]/route.ts" \
   "src/app/api/streams/[id]/route.ts" \
   "src/app/api/streams/[id]/join/route.ts" \
   "src/app/api/streams/[id]/leave/route.ts" \
@@ -141,14 +179,17 @@ for CRITICAL in \
   "src/app/api/admin/streams/[id]/kick/route.ts" \
   "src/app/api/admin/streams/[id]/export/route.ts" \
   "src/components/admin/modules/streams-module.tsx" \
+  "src/components/admin/modules/account-module.tsx" \
   "src/components/chat/chat-widget.tsx" \
   "src/components/chat/use-chat-socket.ts" \
+  "src/lib/chat.ts" \
   "src/app/api/chat/bootstrap/route.ts" \
   "src/app/api/chat/messages/route.ts" \
   "src/instrumentation.ts" \
   "src/lib/ensure-schema.ts" \
   "scripts/migrate.ts" \
   "scripts/ensure-schema.ts" \
+  "scripts/sqlite-query.ts" \
   "scripts/bootstrap.ts" \
   "scripts/backup.ts" \
   "scripts/restore.ts" \
@@ -168,6 +209,9 @@ for CRITICAL in \
   "prisma/migrations/20261201000000_teacher_role/migration.sql" \
   "prisma/migrations/20261202000000_hero_animations/migration.sql" \
   "prisma/migrations/20261203000000_teacher_shaba_payouts/migration.sql" \
+  "prisma/migrations/20261204000000_teacher_exam_creator/migration.sql" \
+  "prisma/migrations/20261205000000_chat_avatar_mode/migration.sql" \
+  "prisma/migrations/20261206000000_security_hardening/migration.sql" \
   "prisma/migrations/migration_lock.toml" \
   "prisma/baseline.sql" \
   "mini-services/chat-service/index.ts" \
@@ -193,6 +237,8 @@ for CRITICAL in \
   "deploy/nginx/vhost-proxy.conf" \
   "DEPLOY.md" \
   "TEST-RESULTS.md" \
+  "tests/admin-login.test.ts" \
+  "tests/dependency-compat.test.ts" \
   ".env.example" \
   ".dockerignore"
 do

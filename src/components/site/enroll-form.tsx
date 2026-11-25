@@ -625,7 +625,19 @@ export function EnrollForm({
 
   /* ————————————————— مرحله‌ی ۴ → ۵: پذیرش قوانین ————————————————— */
 
-  function handleGoToPayment() {
+  /**
+   * گذار از قوانین به پرداخت.
+   *
+   * نکته‌ی ظریف و مهم: preventDefault روی رویداد کلیک الزامی است — React
+   * پس از setStage(5) همان گره‌ی DOM دکمه را در جایگاه دکمه‌ی «ثبت نهایی»
+   * بازاستفاده می‌کند و type آن به «submit» تغییر می‌کند؛ مرورگر رفتار
+   * پیش‌فرض فعال‌سازی دکمه را «پس از پایان dispatch رویداد کلیک» اجرا می‌کند —
+   * یعنی فرم ناخواسته ارسال و کاربر پیش از دیدن مرحله‌ی پرداخت و کد تخفیف
+   * مستقیم به درگاه ریدایرکت می‌شد (با preventDefault + کلیدهای یکتای دکمه‌های
+   * دو مرحله، هر دو مسیر این رفتار ناخواسته بسته می‌شود).
+   */
+  function handleGoToPayment(e?: React.MouseEvent) {
+    e?.preventDefault();
     if (!termsAccepted) {
       toast.error("برای ادامه، قوانین و مقررات ثبت‌نام را مطالعه و بپذیرید.");
       return;
@@ -1732,8 +1744,9 @@ export function EnrollForm({
 
                   {/* — ادامه به مرحله‌ی پرداخت — */}
                   <Button
+                    key="stage-4-continue"
                     type="button"
-                    onClick={handleGoToPayment}
+                    onClick={(e) => handleGoToPayment(e)}
                     disabled={!termsAccepted}
                     className="h-13 w-full rounded-2xl bg-gradient-to-l from-teal-400 to-emerald-500 py-3.5 text-base font-black text-teal-950 shadow-xl shadow-teal-500/30 transition-all hover:scale-[1.01] hover:shadow-teal-400/40 disabled:opacity-60"
                   >
@@ -2014,6 +2027,13 @@ export function EnrollForm({
                                       setDiscountInput(e.target.value);
                                       setDiscountError(null);
                                     }}
+                                    onKeyDown={(e) => {
+                                      // Enter داخل کد تخفیف → «بررسی کد» نه ارسال فرم
+                                      if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        void handleCheckDiscount();
+                                      }
+                                    }}
                                     placeholder="مثلاً: AVID1404"
                                     dir="ltr"
                                     disabled={!!discountInfo || discountChecking}
@@ -2125,6 +2145,7 @@ export function EnrollForm({
 
                       {/* — ثبت نهایی — */}
                       <Button
+                        key="stage-5-submit"
                         type="submit"
                         disabled={loading || courseFull || groupFull || groupMissing || !course}
                         className="h-13 w-full rounded-2xl bg-gradient-to-l from-teal-400 to-emerald-500 py-3.5 text-base font-black text-teal-950 shadow-xl shadow-teal-500/30 transition-all hover:scale-[1.01] hover:shadow-teal-400/40 disabled:opacity-60"

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isValidNationalId, normalizeNationalId } from "@/lib/national-id";
+import { signCertFileUrl } from "@/lib/cert-files";
 
 /**
  * POST /api/certificate/verify — استعلام عمومی گواهی‌نامه‌ها با کد ملی.
@@ -62,8 +63,11 @@ export async function POST(req: NextRequest) {
       {
         ok: true,
         user: { firstName: user.firstName, lastName: user.lastName },
+        // فایل گواهینامه دیگر «لینک همیشگی عمومی» نیست — لینک امضاشده‌ی
+        // کوتاه‌عمر برگردانده می‌شود؛ مسیر دانلود با امضا/مالکیت گره خورده است.
         certificates: certificates.map((c) => ({
           ...c,
+          fileUrl: signCertFileUrl(c.fileUrl),
           issuedAt: c.issuedAt.toISOString(),
         })),
       },

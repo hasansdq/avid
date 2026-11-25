@@ -54,7 +54,12 @@ export function useChatSocket(handlers: ChatSocketHandlers): ChatSocketApi {
 
   useEffect(() => {
     const socket = io(SOCKET_URI, {
-      transports: ["websocket", "polling"],
+      // «polling» پیش از «websocket» + tryAllTransports: handshake همیشه با
+      // HTTP برقرار می‌شود و در صورت امکان به websocket ارتقا می‌یابد؛ اگر
+      // Upgrade در پروکسی پاس داده نشود، اتصال روی polling می‌ماند (نه گیر
+      // در «در حال اتصال»).
+      transports: ["polling", "websocket"],
+      tryAllTransports: true,
       reconnection: true,
       reconnectionAttempts: 12,
       reconnectionDelay: 1500,

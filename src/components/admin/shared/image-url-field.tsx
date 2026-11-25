@@ -7,12 +7,14 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useUploadUrl } from "@/components/admin/shared/upload-url-context";
 
 /**
  * فیلد تصویر با دو حالت — آدرس (URL) یا آپلود مستقیم از سیستم —
  * همراه با پیش‌نمایش زنده:
- *  • آپلود: فایل به /api/admin/upload ارسال می‌شود و آدرس نسبی
- *    برگشتی در همان فیلد قرار می‌گیرد (برای مدیر).
+ *  • آپلود: فایل به API بارگذاری بافت فعال ارسال می‌شود (پیش‌فرض
+ *    /api/admin/upload برای مدیر؛ پنل استاد روی /api/teacher/upload) و
+ *    آدرس نسبی برگشتی در همان فیلد قرار می‌گیرد.
  *  • آدرس: مسیر داخلی (مثل /images/logo.png) یا آدرس کامل خارجی.
  * اگر تصویر در دسترس نباشد کاشی جایگزین نمایش داده می‌شود.
  * بخش استفاده‌کننده (prop «section») به API آپلود ارسال می‌شود تا در
@@ -48,6 +50,8 @@ export function ImageUrlField({
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // آدرس آپلود از بافت — ادمین/استاد را از هم جدا می‌کند
+  const uploadUrl = useUploadUrl();
 
   const trimmed = value.trim();
   const failed = failedSrc !== null && failedSrc === trimmed;
@@ -64,7 +68,7 @@ export function ImageUrlField({
       const body = new FormData();
       body.append("file", file);
       body.append("section", section);
-      const res = await fetch("/api/admin/upload", { method: "POST", body });
+      const res = await fetch(uploadUrl, { method: "POST", body });
       const data = (await res.json().catch(() => null)) as {
         url?: string;
         error?: string;

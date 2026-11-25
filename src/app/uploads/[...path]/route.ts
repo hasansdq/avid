@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createReadStream, statSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { resolve, sep } from "node:path";
+import { db } from "@/lib/db";
+import { getSessionAdmin } from "@/lib/auth";
+import { getSessionUser } from "@/lib/user-auth";
+import { verifyCertSig } from "@/lib/cert-files";
+import { sanitizeSvg } from "@/lib/svg-sanitize";
 
 /**
  * سرو فایل‌های آپلودی — GET /uploads/<فایل> و /uploads/videos/<فایل>
@@ -11,7 +17,7 @@ import { resolve, sep } from "node:path";
  * public/uploads نوشته می‌شود از سمت فایل‌استاتیک ۴۰۴ برمی‌گردد. این
  * route همان فایل را مستقیم از دیسک (از همان مسیری که API آپلود می‌نویسد)
  * به‌صورت استریم برمی‌گرداند — بنابراین نمایش تصویر/ویدئوی تازه بلافاصله
- * پس از آپلود و پس از بازسازی کانتینر (فایل‌ها در والی اند) کار می‌کند.
+ * پس از آپلود و پس از بازسازی کانتینر (فایل‌ها در والیوم) کار می‌کند.
  * فایل‌های موجود در public (نمونه‌های build-time) همچنان از مسیر استاتیک
  * خود سرو می‌شوند و به این route نمی‌رسند.
  *
@@ -19,6 +25,16 @@ import { resolve, sep } from "node:path";
  * • ETag/304 و کش نامحدود — نام فایل‌ها یکتا و تصادفی است (هر آپلود URL
  *   تازه می‌سازد)، پس کشِ immutable امن است.
  * • گارد پیمایش مسیر (path traversal): فقط فایل‌های داخل uploads سرو می‌شوند.
+ * • امنیت (اصلاحات ۸):
+ *   – فایل‌های گواهینامه «خصوصی»اند: فقط با امضای HMAC معتبر (?sig=)،
+ *     نشست مدیر، یا نشست کاربرِ مالکِ همان گواهینامه سرو می‌شوند؛
+ *     بقیه ۴۰۴ می‌گیرند (بدون افشای وجود/نبود فایل). لینک‌های عمومی
+ *     موردنیاز سایت (استعلام گواهینامه با nationalId، پنل کاربر) همان
+ *     API است که لینک امضاشده صادر می‌کند — پس نمایش عمومی استعلام و
+ *     نمایش خصوصی پنل هر دو کار می‌کنند.
+ *   – فایل‌های SVG در زمان «سرو» هم پاکسازی و با CSP سخت‌گیرانه
+ *     (script-src 'none'; sandbox) ارسال می‌شوند — حتی فایل‌های قدیمی
+ *     یا بازیابی‌شده از بکاپ از این لایه رد می‌شوند؛ نمایش لوگو حفظ می‌شود.
  */
 
 export const runtime = "nodejs";
@@ -73,6 +89,38 @@ function resolveFile(segments: string[]): FilePart | null {
   return { abs, size: info.size, mtimeMs: info.mtimeMs };
 }
 
+/**
+ * گره‌ی دسترسی فایل‌های گواهینامه (خصوصی):
+ *  امضای معتبر در query، یا نشست مدیر، یا نشست کاربرِ مالک گواهینامه.
+ */
+async function certificateAccessAllowed(
+  req: NextRequest,
+  segments: string[]
+): Promise<boolean> {
+  const rel = [ "uploads", ...segments ].join("/");
+  const filePath = `/${rel}`; // بدون query — همان مقداری که در DB ذخیره می‌شود
+  const sig = req.nextUrl.searchParams.get("sig");
+  if (sig && verifyCertSig(filePath, sig)) return true;
+  try {
+    if (await getSessionAdmin(req)) return true;
+  } catch {
+    /* خطای دیتابیس — به بررسی مالکیت ادامه بده */
+  }
+  try {
+    const session = await getSessionUser(req);
+    if (session) {
+      const cert = await db.certificate.findFirst({
+        where: { fileUrl: filePath },
+        select: { userId: true },
+      });
+      if (cert && cert.userId === session.id) return true;
+    }
+  } catch {
+    /* بدون نشست/خطا — رد */
+  }
+  return false;
+}
+
 /** ETag ضعیف بر اساس اندازه/زمان تغییر — نام‌ها یکتا هستند */
 function etagFor(f: FilePart): string {
   return `W/"${f.size}-${Math.round(f.mtimeMs)}"`;
@@ -107,7 +155,41 @@ function baseHeaders(f: FilePart, contentType: string): HeadersInit {
     "Accept-Ranges": "bytes",
     "Cache-Control": "public, max-age=31536000, immutable",
     ETag: etagFor(f),
+    "X-Content-Type-Options": "nosniff",
   };
+}
+
+/**
+ * سرو امن SVG — محتوا در زمان سرو پاکسازی و با CSP بدون-اسکریپت ارسال
+ * می‌شود (دفاع لایه‌ای روی پاکسازیِ زمان آپلود). نمایش لوگو حفظ می‌شود.
+ */
+async function serveSanitizedSvg(
+  req: NextRequest,
+  f: FilePart
+): Promise<Response> {
+  const etag = etagFor(f);
+  if (req.headers.get("if-none-match") === etag) {
+    return new NextResponse(null, { status: 304, headers: { ETag: etag } });
+  }
+  let safe: string;
+  try {
+    safe = sanitizeSvg(await readFile(f.abs, "utf8"));
+  } catch {
+    return new NextResponse("not found", { status: 404 });
+  }
+  return new NextResponse(safe, {
+    status: 200,
+    headers: {
+      "Content-Type": "image/svg+xml; charset=utf-8",
+      "Cache-Control": "public, max-age=31536000, immutable",
+      ETag: etag,
+      "X-Content-Type-Options": "nosniff",
+      // اسکریپت‌ها مختل می‌شوند حتی اگر محتوایی رد شود؛ شکل‌ها/گرادیان‌ها سالم‌اند
+      "Content-Security-Policy":
+        "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; font-src 'self'; script-src 'none'; sandbox",
+      "Content-Disposition": "inline",
+    },
+  });
 }
 
 export async function GET(
@@ -123,10 +205,26 @@ export async function GET(
     });
   }
 
+  // — گره‌ی گواهینامه‌ها (فایل خصوصی): بدون امضا/مالکیت/نشست مدیر → ۴۰۴ —
+  if (segments[0] === "certificates") {
+    const allowed = await certificateAccessAllowed(req, segments);
+    if (!allowed) {
+      return new NextResponse("not found", {
+        status: 404,
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
+  }
+
   // مشتری نسخه‌ی کش‌شده دارد؟
   const etag = etagFor(file);
   if (req.headers.get("if-none-match") === etag) {
     return new NextResponse(null, { status: 304, headers: { ETag: etag } });
+  }
+
+  // SVG → پاکسازیِ زمان سرو + CSP سخت‌گیرانه
+  if (file.abs.toLowerCase().endsWith(".svg")) {
+    return serveSanitizedSvg(req, file);
   }
 
   const contentType = mimeFor(file.abs);
@@ -167,12 +265,18 @@ export async function GET(
 
 /** HEAD (مثلاً curl -I / بررسی سلامت لینک) بدون بدنه */
 export async function HEAD(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ path: string[] }> }
 ): Promise<Response> {
   const { path: segments } = await ctx.params;
   const file = resolveFile(segments);
   if (!file) return new NextResponse(null, { status: 404 });
+
+  // گره‌ی گواهینامه‌ها روی HEAD هم اعمال می‌شود
+  if (segments[0] === "certificates") {
+    const allowed = await certificateAccessAllowed(req, segments);
+    if (!allowed) return new NextResponse(null, { status: 404 });
+  }
   return new NextResponse(null, {
     status: 200,
     headers: {

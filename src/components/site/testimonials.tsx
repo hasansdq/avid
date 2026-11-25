@@ -6,7 +6,7 @@ import type { Testimonial } from "@prisma/client";
 import { getCourseTheme } from "@/lib/course-theme";
 import { faDigits } from "@/lib/fa";
 import { SectionHeading, Reveal } from "@/components/reveal";
-import { EditableText } from "@/components/site/editable-texts";
+import { EditableText, renderGradientText } from "@/components/site/editable-texts";
 
 export function Testimonials({ testimonials }: { testimonials: Testimonial[] }) {
   return (
@@ -21,7 +21,7 @@ export function Testimonials({ testimonials }: { testimonials: Testimonial[] }) 
           icon={MessagesSquare}
           badge="نظرات کاربران"
           title={
-            <EditableText k="testimonials.title">
+            <EditableText k="testimonials.title" renderText={renderGradientText}>
               <>
                 کارآموزان ما چه{" "}
                 <span className="text-gradient">می‌گویند؟</span>

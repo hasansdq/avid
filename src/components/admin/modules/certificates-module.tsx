@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
 import {
   Award,
   Check,
@@ -568,12 +567,11 @@ function CertificateFileField({
         <div className="flex items-center gap-3 rounded-2xl border border-border bg-foreground/[0.02] p-3">
           {kind === "image" && !previewFailed ? (
             <div className="relative h-20 w-16 shrink-0 overflow-hidden rounded-xl border border-border bg-foreground/[0.03]">
-              <Image
+              {/* لینک امضاشده (?sig=) — <img> مستقیم؛ بهینه‌ساز next/image کوئری را رد می‌کند */}
+              <img
                 src={value}
                 alt="پیش‌نمایش گواهینامه"
-                fill
-                sizes="64px"
-                className="object-contain"
+                className="absolute inset-0 h-full w-full object-contain"
                 onError={() => setPreviewFailed(true)}
               />
             </div>

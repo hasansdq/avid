@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
+import { generateStreamInviteSlug } from "@/lib/teacher";
 import { bad, str } from "@/lib/api-helpers";
 import {
   invitationViews,
@@ -37,6 +38,11 @@ export async function GET(req: NextRequest) {
 /**
  * POST /api/admin/streams — ایجاد کلاس آنلاین جدید با دعوت کاربران دوره/کلاس.
  * body: { title, description?, courseIds?: string[], classIds?: string[] }
+ *
+ * انتخاب دوره/کلاس اختیاری است:
+ *  • با انتخاب → فقط کاربران همان دوره/کلاس باکس «دعوت به کلاس» می‌بینند؛
+ *  • بدون انتخاب (کلاس «لینک-تنها») → هیچ کاربری باکس دعوت نمی‌بیند و
+ *    لینک دعوت یکتا ساخته می‌شود — ورود فقط برای دارندگان لینک.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -64,11 +70,25 @@ export async function POST(req: NextRequest) {
     const prepared = await prepareInvitations({ courseIds, classIds });
     if (!prepared.ok) return bad(prepared.error);
 
+    // — صفر دعوت → کلاس «لینک-تنها»: لینک دعوت یکتا ساخته می‌شود تا فقط
+    //   دارندگان لینک بتوانند وارد شوند (بدون باکس دعوت برای هیچ کاربری) —
+    const linkOnly = prepared.data.length === 0;
+    let inviteSlug: string | null = null;
+    if (linkOnly) {
+      const slug = await generateStreamInviteSlug();
+      if (!slug.ok) return bad(slug.error, 500);
+      inviteSlug = slug.slug;
+    }
+
     const stream = await db.liveStream.create({
       data: {
         title,
         description,
-        invitations: { createMany: { data: prepared.data } },
+        ...(inviteSlug ? { inviteSlug } : {}),
+        invitations:
+          prepared.data.length > 0
+            ? { createMany: { data: prepared.data } }
+            : undefined,
       },
       include: STREAM_INCLUDE,
     });

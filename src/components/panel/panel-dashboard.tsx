@@ -12,6 +12,7 @@ import {
   Check,
   ClipboardCheck,
   CreditCard,
+  FilePlus2,
   GraduationCap,
   Hourglass,
   IdCard,
@@ -24,6 +25,7 @@ import {
   RotateCw,
   School,
   ShieldCheck,
+  UserRound,
   Wallet,
   X,
 } from "lucide-react";
@@ -64,6 +66,7 @@ import { TeacherCoursesSection } from "@/components/panel/teacher/teacher-course
 import { TeacherClassesSection } from "@/components/panel/teacher/teacher-classes";
 import { TeacherStreamsSection } from "@/components/panel/teacher/teacher-streams";
 import { TeacherFinanceSection } from "@/components/panel/teacher/teacher-finance";
+import { TeacherExamsSection } from "@/components/panel/teacher/teacher-exams";
 
 /** ظاهر مشترک کارت‌های شیشه‌ای داشبورد — هماهنگ با صفحه‌ی ثبت‌نام */
 const CARD =
@@ -153,9 +156,13 @@ type SectionKey =
   | "teacher-courses"
   | "teacher-classes"
   | "teacher-streams"
-  | "teacher-finance";
+  | "teacher-finance"
+  | "teacher-exams";
 
-/** کلید بخش‌های پایه — برای همه‌ی کاربران (دانشجو و استاد) */
+/** حالت پنل — فقط برای حساب استاد معنی دارد؛ دانشجو همیشه «دانشجو» است */
+type PanelMode = "teacher" | "student";
+
+/** کلید بخش‌های پایه — نمای «ورود به عنوان دانشجو» برای همه‌ی کاربران */
 const BASE_SECTION_KEYS: SectionKey[] = [
   "courses",
   "exams",
@@ -163,13 +170,28 @@ const BASE_SECTION_KEYS: SectionKey[] = [
   "payments",
 ];
 
-/** کلید بخش‌های استاد — فقط با نقش teacher نمایان می‌شوند */
+/** کلید بخش‌های استاد — نمای «ورود به عنوان استاد»؛ فقط با نقش teacher */
 const TEACHER_SECTION_KEYS: SectionKey[] = [
   "teacher-courses",
   "teacher-classes",
   "teacher-streams",
   "teacher-finance",
+  "teacher-exams",
 ];
+
+/** بخش پیش‌فرض هر حالت — هنگام جابه‌جایی حالت پنل */
+const MODE_DEFAULT_SECTION: Record<PanelMode, SectionKey> = {
+  teacher: "teacher-courses",
+  student: "courses",
+};
+
+/** کلید ذخیره‌ی آخرین حالت پنل استاد در localStorage */
+const MODE_STORAGE_KEY = "avid_panel_mode";
+
+/** آیا کلید بخش، بخشِ استاد است؟ (با پیشوند teacher-) */
+function isTeacherSection(key: SectionKey): boolean {
+  return key.startsWith("teacher-");
+}
 
 /** قالب کارت آماری نئونی — استروک رنگی + درخشش؛ رنگ هر بخش متمایز است */
 const SECTIONS: Record<
@@ -241,10 +263,17 @@ const SECTIONS: Record<
     active:
       "border-amber-500 bg-amber-500/[0.10] text-amber-800 shadow-[0_0_28px_rgba(245,158,11,0.48)] dark:border-amber-300 dark:text-amber-200 dark:bg-amber-400/[0.12]",
   },
+  "teacher-exams": {
+    label: "ساخت آزمون",
+    icon: FilePlus2,
+    idle: "border-lime-600/60 bg-lime-500/[0.06] text-lime-700 shadow-[0_0_16px_rgba(132,204,22,0.22)] hover:shadow-[0_0_26px_rgba(132,204,22,0.38)] dark:border-lime-400/50 dark:text-lime-300",
+    active:
+      "border-lime-600 bg-lime-500/[0.12] text-lime-800 shadow-[0_0_28px_rgba(132,204,22,0.48)] dark:border-lime-300 dark:text-lime-200 dark:bg-lime-400/[0.14]",
+  },
 };
 
 /** برچسب نمایشی هر بخش — در حساب استاد، دو کارت «دوره» با پرانتز تفکیک
- *  نقش درج می‌شوند تا معنایشان با هشت کارت استاد گمراه‌کننده نباشد:
+ *  نقش درج می‌شوند تا معنایشان با کارت‌های دو حالت گمراه‌کننده نباشد:
  *  دوره‌ها(دانشجو) = دوره‌هایی که استاد خودش در آن‌ها ثبت‌نام کرده؛
  *  دوره‌ها(استاد) = دوره‌هایی که مالک/ مدرسشان خود استاد است. */
 function sectionLabel(key: SectionKey, isTeacher: boolean): string {
@@ -320,6 +349,96 @@ function StatCards({
   );
 }
 
+/* ————————————————— سوییچ دو نما ————————————————— */
+
+/** دو گزینه‌ی سوییچ نما */
+const MODE_OPTIONS: {
+  value: PanelMode;
+  label: string;
+  caption: string;
+  icon: React.ComponentType<{
+    className?: string;
+    strokeWidth?: number;
+  }>;
+}[] = [
+  {
+    value: "teacher",
+    label: "استاد",
+    caption: "ورود به عنوان استاد",
+    icon: GraduationCap,
+  },
+  {
+    value: "student",
+    label: "دانشجو",
+    caption: "ورود به عنوان دانشجو",
+    icon: UserRound,
+  },
+];
+
+/**
+ * ModeSwitch — سوییچ دو نما در پنل استاد:
+ *  • «ورود به عنوان استاد» → دوره‌ها(استاد)، کلاس‌های من، استریم‌های من،
+ *    مالی و درآمد و ساخت آزمون
+ *  • «ورود به عنوان دانشجو» → دوره‌ها(دانشجو)، آزمون‌ها، گواهینامه‌ها، پرداخت
+ *
+ * انتخاب کاربر در localStorage ذخیره می‌شود تا در مراجعات بعدی همان نما
+ * باز شود (؟mode=/؟tab= آدرس بر آن اولویت دارد).
+ */
+function ModeSwitch({
+  mode,
+  onChange,
+}: {
+  mode: PanelMode;
+  onChange: (next: PanelMode) => void;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="حالت پنل استاد — استاد یا دانشجو"
+      className="grid grid-cols-2 gap-2 rounded-2xl border border-foreground/[0.08] bg-card/85 p-1.5 shadow-xl shadow-black/[0.04] backdrop-blur-xl dark:border-white/[0.08] dark:bg-[#08110e]/70"
+    >
+      {MODE_OPTIONS.map((opt) => {
+        const active = mode === opt.value;
+        const Icon = opt.icon;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(opt.value)}
+            title={opt.caption}
+            aria-label={opt.caption}
+            className={cn(
+              "flex select-none flex-col items-center justify-center gap-0.5 rounded-xl px-3 py-2.5 text-center transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              active
+                ? "border border-teal-500/50 bg-teal-500/[0.10] shadow-[0_0_20px_rgba(20,184,166,0.25)] dark:border-teal-400/50 dark:bg-teal-400/[0.10]"
+                : "border border-transparent hover:bg-foreground/[0.04] dark:hover:bg-white/[0.04]"
+            )}
+          >
+            <span
+              className={cn(
+                "flex items-center gap-1.5",
+                active
+                  ? "text-teal-700 dark:text-teal-300"
+                  : "text-muted-foreground"
+              )}
+            >
+              <Icon className="size-5" strokeWidth={2} />
+              <span className="text-sm font-black text-foreground">
+                {opt.label}
+              </span>
+            </span>
+            <span className="text-[0.62rem] font-bold leading-4 text-muted-foreground">
+              {opt.caption}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ————————————————— داشبورد ————————————————— */
 
 export function PanelDashboard({
@@ -351,9 +470,57 @@ export function PanelDashboard({
       tab === "teacher-courses" ||
       tab === "teacher-classes" ||
       tab === "teacher-streams" ||
-      tab === "teacher-finance"
+      tab === "teacher-finance" ||
+      tab === "teacher-exams"
       ? (tab as SectionKey)
       : "courses";
+  });
+
+  // ————— اسکرول لنگردار به محتوای بخش —————
+  // با کلیک روی هر کارت آماری، محتوای همان بخش بلافاصله زیر کارت‌ها رندر
+  // می‌شود و صفحه نیز با اسکرول نرم به ابتدای همان محتوا هدایت می‌شود
+  // (رفتار لنگر: دو requestAnimationFrame تضم می‌کند رندرِ محتوای تازه
+  // پیش از اسکرول کامل شده باشد).
+  const sectionAnchorRef = React.useRef<HTMLDivElement | null>(null);
+  const scrollToSectionContent = React.useCallback(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        sectionAnchorRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+    });
+  }, []);
+
+  const handleSelectSection = React.useCallback(
+    (key: SectionKey) => {
+      setSection(key);
+      scrollToSectionContent();
+    },
+    [scrollToSectionContent]
+  );
+
+  // ————— حالت پنل استاد (دو نما) —————
+  // پنل استاد به دو بخش تقسیم می‌شود: «ورود به عنوان استاد» (پنج بخش
+  // دارایی استاد) و «ورود به عنوان دانشجو» (چهار بخش دانشجو). حالت از
+  // ?mode= یا ?tab= آدرس و بعد از آخرین انتخاب کاربر خوانده می‌شود؛
+  // پیش‌فرضِ استاد = نمای استاد. برای دانشجو همیشه نمای دانشجو است.
+  const [mode, setMode] = React.useState<PanelMode>(() => {
+    if (typeof window === "undefined") return "teacher";
+    const params = new URLSearchParams(window.location.search);
+    const m = params.get("mode");
+    if (m === "teacher" || m === "student") return m;
+    // ?tab= هم حالت را تعیین می‌کند — تب استاد → استاد؛ تب دانشجو/نامعتبر → دانشجو
+    const tab = params.get("tab");
+    if (tab) return tab.startsWith("teacher-") ? "teacher" : "student";
+    try {
+      const saved = window.localStorage.getItem(MODE_STORAGE_KEY);
+      if (saved === "teacher" || saved === "student") return saved;
+    } catch {
+      // localStorage غیرقابل‌دسترسی — پیش‌فرض اعمال می‌شود
+    }
+    return "teacher";
   });
   // شمارنده‌های کارت‌ها — دوره/پرداخت از داده‌ی ثبت‌نام‌ها، آزمون/گواهینامه با یک دریافت سبک
   const [examsCount, setExamsCount] = React.useState<number | null>(null);
@@ -366,6 +533,9 @@ export function PanelDashboard({
     Partial<Record<SectionKey, number | null>>
   >({});
   const isTeacher = data?.user.role === "teacher";
+
+  // حالت مؤثر — برای دانشجو همیشه «دانشجو»؛ سوییچ فقط برای استاد است
+  const effectiveMode: PanelMode = isTeacher ? mode : "student";
 
   React.useEffect(() => {
     if (!isTeacher) return;
@@ -406,6 +576,7 @@ export function PanelDashboard({
     void loadListCount("/api/teacher/courses", "teacher-courses");
     void loadListCount("/api/teacher/classes", "teacher-classes");
     void loadListCount("/api/teacher/streams", "teacher-streams");
+    void loadListCount("/api/teacher/exams", "teacher-exams");
     void loadFinanceCount();
 
     return () => {
@@ -450,6 +621,40 @@ export function PanelDashboard({
     setLoggingOut(true);
     void onLogout();
   }
+
+  /* ————— حالت پنل استاد: جابه‌جایی و سازگاری ————— */
+
+  /** جابه‌جایی بین دو نما — انتخاب کاربر ذخیره و بخش فعال به بخش
+   *  پیش‌فرضِ حالت تازه می‌رود (استاد → دوره‌ها(استاد)، دانشجو → دوره‌ها) */
+  function switchMode(next: PanelMode) {
+    if (!isTeacher || next === mode) return;
+    setMode(next);
+    try {
+      window.localStorage.setItem(MODE_STORAGE_KEY, next);
+    } catch {
+      // ذخیره‌سازی ممکن نیست — فقط همین نشست اعمال می‌شود
+    }
+    setSection(MODE_DEFAULT_SECTION[next]);
+  }
+
+  // یک‌بار پس از رسیدن داده — سازگاری بخش فعال با حالت/نقش:
+  //  • دانشجو با تب استادی (آدرس دستی) → دوره‌ها
+  //  • استاد در نمای استاد با بخش دانشجو → دوره‌ها(استاد) و بالعکس
+  const harmonized = React.useRef(false);
+  React.useEffect(() => {
+    if (!data || harmonized.current) return;
+    harmonized.current = true;
+    if (!isTeacher) {
+      if (isTeacherSection(section)) setSection("courses");
+      return;
+    }
+    if (effectiveMode === "teacher" && !isTeacherSection(section)) {
+      setSection(MODE_DEFAULT_SECTION.teacher);
+    } else if (effectiveMode === "student" && isTeacherSection(section)) {
+      setSection(MODE_DEFAULT_SECTION.student);
+    }
+    // اجرای یک‌باره پس از رسیدن داده — سازگاری اولیه بخش/حالت
+  }, [data]);
 
   // — کد ملی (اختیاری): نسخه‌ی محلی برای به‌روزرسانی فوری پس از ذخیره —
   const [nidOverride, setNidOverride] = React.useState<
@@ -726,11 +931,18 @@ export function PanelDashboard({
         </DialogContent>
       </Dialog>
 
-      {/* ————— کارت‌های آماری نئونی — چهار کارت پایه برای همه، هشت کارت برای استاد ————— */}
+      {/* ————— سوییچ دو نما — فقط برای استاد ————— */}
+      {isTeacher ? <ModeSwitch mode={mode} onChange={switchMode} /> : null}
+
+      {/* ————— کارت‌های آماری نئونی — نمای استاد: پنج کارت؛ نمای دانشجو: چهار کارت ————— */}
       <StatCards
         active={section}
-        onSelect={setSection}
-        keys={isTeacher ? [...BASE_SECTION_KEYS, ...TEACHER_SECTION_KEYS] : BASE_SECTION_KEYS}
+        onSelect={handleSelectSection}
+        keys={
+          effectiveMode === "teacher"
+            ? TEACHER_SECTION_KEYS
+            : BASE_SECTION_KEYS
+        }
         isTeacher={isTeacher}
         counts={{
           courses: enrollments.length,
@@ -741,8 +953,15 @@ export function PanelDashboard({
         }}
       />
 
-      {/* ————— محتوای بخش فعال ————— */}
-
+      {/* ————— محتوای بخش فعال — لنگر اسکرول نرم —————
+          با کلیک روی هر کارت آماری، صفحه با اسکرول نرم به همین نقطه
+          (ابتدای محتوای بخش انتخاب‌شده) هدایت می‌شود؛ scroll-mt فاصله‌ی
+          امن بالای محتوا را حفظ می‌کند. */}
+      <div
+        ref={sectionAnchorRef}
+        id="panel-section-content"
+        className="flex scroll-mt-6 flex-col gap-4 sm:gap-6"
+      >
       {/* دوره‌ها — لیست دوره‌های ثبت‌نام‌شده/گذرانده با حضور و غیاب و معدل */}
       {section === "courses" ? (
         <section aria-label="دوره‌های من">
@@ -784,7 +1003,7 @@ export function PanelDashboard({
         <PaymentsSection enrollments={enrollments} />
       ) : null}
 
-      {/* ————— بخش‌های استاد — فقط برای نقش teacher فعال (سرویس خودش دسترسی را می‌سنجد) ————— */}
+      {/* ————— بخش‌های استاد — فقط در نمای استاد فعال (سرویس خودش دسترسی را می‌سنجد) ————— */}
 
       {/* دوره‌های من (استاد) — ایجاد/ویرایش/حذف دوره‌های خودِ استاد */}
       {section === "teacher-courses" ? <TeacherCoursesSection /> : null}
@@ -797,6 +1016,10 @@ export function PanelDashboard({
 
       {/* مالی و درآمد (استاد) — فروش، اقساط و درآمد (فقط خواندنی) */}
       {section === "teacher-finance" ? <TeacherFinanceSection /> : null}
+
+      {/* ساخت آزمون (استاد) — ایجاد/ویرایش آزمون، ادیتور سوالات و تصحیح */}
+      {section === "teacher-exams" ? <TeacherExamsSection /> : null}
+      </div>
     </div>
   );
 }

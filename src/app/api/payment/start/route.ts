@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
+import { getSessionUser } from "@/lib/user-auth";
 import {
   getPaymentSettings,
   isPaymentEnabled,
@@ -28,6 +29,12 @@ import { forwardedOrigin } from "@/lib/http";
  * روی ثبت‌نام ذخیره می‌شود؛ برای پی‌پینگ همین کد به‌عنوان clientRefId
  * به درگاه ارسال می‌شود تا کال‌بک فقط برای «همان تلاشِ دقیق» — با
  * تطبیق کد تلاش و مبلغ — پرداخت را ثبت کند.
+ *
+ * امنیت: نیازمند نشست کاربر است و ثبت‌نام باید به «همین کاربر» تعلق
+ * داشته باشد (userId مالک، یا برای ردیف‌های قدیمیِ بدون userId، تطابق شماره‌ی
+ * ثبت‌نام با شماره‌ی حساب). کال‌بک درگاه هیچ‌وقت به کوکیِ ورود وابسته نیست
+ * (تایید سمت سرورِ درگاه + کد تلاش). مبلغ/تخفیف/اقساط همه سمت سرور محاسبه
+ * می‌شوند (مثل قبل).
  */
 
 /** تولید کد یکتای تلاش پرداخت — «ATT-» + ۱۶ نویسه‌ی تصادفی hex */
@@ -47,6 +54,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // — ورود کاربر الزامی است (کال‌بک درگاه مستقل از کوکی است، اما آغاز
+    // پرداخت فقط برای کاربرِ واردشده‌ی مالکِ ثبت‌نام) —
+    const session = await getSessionUser(req);
+    if (!session) {
+      return NextResponse.json(
+        { error: "برای پرداخت، ابتدا وارد حساب خود شوید." },
+        { status: 401 }
+      );
+    }
+
     const enrollment = await db.enrollment.findUnique({
       where: { id: enrollmentId },
     });
@@ -56,6 +73,23 @@ export async function POST(req: NextRequest) {
         { status: 404 }
       );
     }
+
+    // — مالکیت: ثبت‌نام باید به همین کاربر تعلق داشته باشد —
+    // ردیف‌های قدیمیِ بدون userId: تطابق شماره‌ی ثبت‌نام با شماره‌ی حساب
+    if (enrollment.userId) {
+      if (enrollment.userId !== session.id) {
+        return NextResponse.json(
+          { error: "این ثبت‌نام به حساب شما تعلق ندارد." },
+          { status: 403 }
+        );
+      }
+    } else if (enrollment.phone !== session.phone) {
+      return NextResponse.json(
+        { error: "این ثبت‌نام به حساب شما تعلق ندارد." },
+        { status: 403 }
+      );
+    }
+
     if (enrollment.paymentStatus === "paid") {
       return NextResponse.json(
         { error: "این ثبت‌نام قبلاً پرداخت شده است." },

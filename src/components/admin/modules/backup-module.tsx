@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Apple,
   Award,
   CheckCircle2,
   DatabaseBackup,
@@ -10,13 +11,16 @@ import {
   FileQuestion,
   FileUp,
   FolderDown,
+  Globe,
   GraduationCap,
   HardDriveDownload,
   Loader2,
+  Monitor,
   MonitorPlay,
   PanelTop,
   RotateCcw,
   ShieldAlert,
+  Smartphone,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -256,6 +260,45 @@ export function BackupModule() {
   /* — در دسترس‌بودن فایل ZIP پروژه (public/Download/avid-latest.zip) —
      در محیط توسعه/سندباکس موجود است؛ روی برخی استقرارها ممکن است نباشد — */
   const [zipAvailable, setZipAvailable] = useState<boolean | null>(null);
+
+  /* — توزیع اپلیکیشن سایت (بخش «نصب برای کاربران») —
+     آدرس فعال و نام سایت برای فایل نصبی و کارت‌های QR — */
+  const [distInfo, setDistInfo] = useState<{
+    siteUrl: string;
+    siteName: string;
+  } | null>(null);
+  /** کارت‌های QR اندروید/iOS برای نمایش درون‌پنلی (SVG تولیدی خود API) */
+  const [qrAndroid, setQrAndroid] = useState<string | null>(null);
+  const [qrIos, setQrIos] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/distribution?platform=info", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!cancelled && j) setDistInfo({ siteUrl: j.siteUrl, siteName: j.siteName });
+      })
+      .catch(() => {});
+    fetch("/api/admin/distribution?platform=android&display=inline", {
+      cache: "no-store",
+    })
+      .then((r) => (r.ok ? r.text() : null))
+      .then((s) => {
+        if (!cancelled && s && s.trim().startsWith("<svg")) setQrAndroid(s);
+      })
+      .catch(() => {});
+    fetch("/api/admin/distribution?platform=ios&display=inline", {
+      cache: "no-store",
+    })
+      .then((r) => (r.ok ? r.text() : null))
+      .then((s) => {
+        if (!cancelled && s && s.trim().startsWith("<svg")) setQrIos(s);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -613,6 +656,182 @@ export function BackupModule() {
               داده‌ها برمی‌گرداند.
             </p>
           </article>
+        </div>
+      </section>
+
+      {/* ————— توزیع اپلیکیشن سایت (نصب روی دستگاه کاربران) ————— */}
+      <section className="glass space-y-5 rounded-2xl border-teal-500/30 p-5 sm:p-6">
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-teal-500/10">
+            <Smartphone className="size-5 text-teal-600 dark:text-teal-300" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-sm font-black text-foreground">
+              توزیع اپلیکیشن سایت — نصب برای کاربران
+            </h2>
+            <p className="text-xs leading-6 text-muted-foreground">
+              فایل نصبی ویندوز، کارت نصب اندروید و iOS و بسته‌ی وب‌اپلیکیشن را
+              دانلود و در اختیار کاربران بگذارید — هر کدام با آدرس فعلی سایت
+              ساخته می‌شود.
+              {distInfo ? (
+                <>
+                  {" "}
+                  آدرس فعال:{" "}
+                  <span dir="ltr" className="font-bold text-foreground/80">
+                    {distInfo.siteUrl}
+                  </span>
+                </>
+              ) : null}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          {/* — ویندوز — */}
+          <div className="flex flex-col gap-3 rounded-2xl border border-foreground/10 bg-foreground/[0.02] p-4 dark:border-white/10 dark:bg-white/[0.02]">
+            <div className="flex items-center gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/10">
+                <Monitor className="size-5 text-sky-600 dark:text-sky-300" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-black text-foreground">
+                  فایل نصبی ویندوز (‎.cmd)
+                </p>
+                <p className="text-[0.65rem] leading-5 text-muted-foreground">
+                  اجرای فایل روی ویندوز: میان‌بر دسکتاپ + منوی Start می‌سازد و
+                  سایت در پنجره‌ی اپ مستقل (Edge/Chrome) باز می‌شود.
+                </p>
+              </div>
+            </div>
+            <a
+              href="/api/admin/distribution?platform=windows"
+              download
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-sky-600/40 bg-sky-500/10 px-4 text-xs font-bold text-sky-700 transition-all hover:bg-sky-500/20 dark:border-sky-400/40 dark:bg-sky-400/10 dark:text-sky-300 dark:hover:bg-sky-400/20"
+            >
+              <FolderDown className="size-4" />
+              دانلود فایل نصبی ویندوز
+            </a>
+            <p className="text-[0.65rem] leading-5 text-muted-foreground">
+              فایل را برای کاربران ارسال کنید — اجرا با دابل‌کلیک؛ نیازی به
+              نصب‌کننده‌ی اضافه ندارد (Edge یا Chrome باید موجود باشد). راه
+              جایگزین: در منوی مرورگر دسکتاپ «نصب اپلیکیشن» (Install app) را
+              بزنند.
+            </p>
+          </div>
+
+          {/* — اندروید — */}
+          <div className="flex flex-col gap-3 rounded-2xl border border-foreground/10 bg-foreground/[0.02] p-4 dark:border-white/10 dark:bg-white/[0.02]">
+            <div className="flex items-center gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10">
+                <Smartphone className="size-5 text-emerald-600 dark:text-emerald-300" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-black text-foreground">
+                  اپ اندروید — نصب از وب (PWA)
+                </p>
+                <p className="text-[0.65rem] leading-5 text-muted-foreground">
+                  کارت QR را به کاربران بدهید: اسکن → باز شدن در کروم → منوی ⋮ →
+                  «نصب اپلیکیشن» — آیکون لانچر و پنجره‌ی مستقل ساخته می‌شود.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="flex size-[104px] shrink-0 items-center justify-center overflow-hidden rounded-xl border border-foreground/10 bg-white p-1.5 dark:border-white/10">
+                {qrAndroid ? (
+                  <span
+                    className="qr-inline [&>svg]:size-full"
+                    dangerouslySetInnerHTML={{ __html: qrAndroid }}
+                  />
+                ) : (
+                  <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                )}
+              </span>
+              <a
+                href="/api/admin/distribution?platform=android"
+                download
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-emerald-600/40 bg-emerald-500/10 px-4 text-xs font-bold text-emerald-700 transition-all hover:bg-emerald-500/20 dark:border-emerald-400/40 dark:bg-emerald-400/10 dark:text-emerald-300 dark:hover:bg-emerald-400/20"
+              >
+                <FolderDown className="size-4" />
+                دانلود کارت نصب (SVG)
+              </a>
+            </div>
+          </div>
+
+          {/* — iOS — */}
+          <div className="flex flex-col gap-3 rounded-2xl border border-foreground/10 bg-foreground/[0.02] p-4 dark:border-white/10 dark:bg-white/[0.02]">
+            <div className="flex items-center gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-zinc-500/10">
+                <Apple className="size-5 text-zinc-700 dark:text-zinc-300" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-black text-foreground">
+                  وب‌اپ iOS — Add to Home Screen
+                </p>
+                <p className="text-[0.65rem] leading-5 text-muted-foreground">
+                  کارت QR را به کاربران iPhone بدهید: اسکن → باز شدن در Safari →
+                  Share → «Add to Home Screen» — وب‌اپ تمام‌صفحه با آیکون.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="flex size-[104px] shrink-0 items-center justify-center overflow-hidden rounded-xl border border-foreground/10 bg-white p-1.5 dark:border-white/10">
+                {qrIos ? (
+                  <span
+                    className="qr-inline [&>svg]:size-full"
+                    dangerouslySetInnerHTML={{ __html: qrIos }}
+                  />
+                ) : (
+                  <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                )}
+              </span>
+              <a
+                href="/api/admin/distribution?platform=ios"
+                download
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-zinc-500/40 bg-zinc-500/10 px-4 text-xs font-bold text-zinc-700 transition-all hover:bg-zinc-500/20 dark:border-zinc-400/40 dark:bg-zinc-400/10 dark:text-zinc-300 dark:hover:bg-zinc-400/20"
+              >
+                <FolderDown className="size-4" />
+                دانلود کارت نصب (SVG)
+              </a>
+            </div>
+          </div>
+
+          {/* — نسخه وب — */}
+          <div className="flex flex-col gap-3 rounded-2xl border border-foreground/10 bg-foreground/[0.02] p-4 dark:border-white/10 dark:bg-white/[0.02]">
+            <div className="flex items-center gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-teal-500/10">
+                <Globe className="size-5 text-teal-600 dark:text-teal-300" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-black text-foreground">
+                  وب‌اپلیکیشن سایت — بسته‌ی کامل (ZIP)
+                </p>
+                <p className="text-[0.65rem] leading-5 text-muted-foreground">
+                  بسته‌ی کامل و کم‌حجم کدهای سایت (آماده‌ی استقرار/به‌روزرسانی
+                  روی سرور) — شامل مانیفست PWA و آیکون‌های نصب.
+                </p>
+              </div>
+            </div>
+            {zipAvailable === null ? (
+              <span className="inline-flex h-10 items-center gap-2 rounded-xl border border-foreground/15 px-4 text-xs font-bold text-muted-foreground">
+                <Loader2 className="size-3.5 animate-spin" />
+                در حال بررسی…
+              </span>
+            ) : zipAvailable ? (
+              <a
+                href="/Download/avid-latest.zip"
+                download
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-teal-600/40 bg-teal-500/10 px-4 text-xs font-bold text-teal-700 transition-all hover:bg-teal-500/20 dark:border-teal-400/40 dark:bg-teal-400/10 dark:text-teal-300 dark:hover:bg-teal-400/20"
+              >
+                <FolderDown className="size-4" />
+                دانلود نسخه‌ی وب (ZIP)
+              </a>
+            ) : (
+              <span className="text-[0.65rem] leading-5 text-muted-foreground">
+                فایل ZIP روی این سرور قرار ندارد — از محیط توسعه/ریپو اصلی قابل
+                دریافت است.
+              </span>
+            )}
+          </div>
         </div>
       </section>
 

@@ -7,6 +7,13 @@ import {
   type SessionUser,
 } from "@/lib/user-auth";
 import { requestSecure } from "@/lib/http";
+import {
+  clientIpOf,
+  hitRate,
+  rateLimited,
+  rateStorageError,
+  RATE_LIMITS,
+} from "@/lib/rate-limit";
 
 /**
  * POST /api/user/phone/verify — مرحله‌ی تایید شماره موبایل فرم یکپارچه‌ی
@@ -51,6 +58,24 @@ export async function POST(req: NextRequest) {
         { error: "کد تایید ۶ رقمی را کامل وارد کنید." },
         { status: 400 }
       );
+    }
+
+    // — محدودیت پایدارِ تایید: به‌ازای شماره و IP (شمارنده مانَدگار) —
+    const byPhone = await hitRate(
+      `otp-verify:p:${phone}`,
+      RATE_LIMITS.otpVerifyPhone
+    );
+    const byIp = await hitRate(
+      `otp-verify:ip:${clientIpOf(req)}`,
+      RATE_LIMITS.otpVerifyIp
+    );
+    if (byPhone.storageError || byIp.storageError) {
+      // محدودکننده نتوانست شمارش را ذخیره/بخواند — بی‌صدا رها نمی‌شود
+      return rateStorageError();
+    }
+    if (byPhone.exceeded || byIp.exceeded) {
+      const r = byPhone.exceeded ? byPhone : byIp;
+      return rateLimited(r.retryAfterSec);
     }
 
     const result = await verifyPhone(phone, code, {

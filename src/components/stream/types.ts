@@ -79,6 +79,8 @@ export interface AdminStreamRow {
   title: string;
   description: string;
   status: string;
+  /** لینک دعوت یکتا (جلسات استاد و جلسه‌های «لینک-تنها») — null یعنی دعوت دوره/کلاسی */
+  inviteSlug: string | null;
   startedAt: string | null;
   endedAt: string | null;
   createdAt: string;

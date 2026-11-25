@@ -150,13 +150,17 @@ export async function findStreamByRef(ref: string) {
 
 /**
  * دعوت دانشجو به استریم از دیدِ نوع جلسه:
- *  • جلسه‌ی استاد (hostId ≠ null) → «لینک دعوت» خودش دعوت است؛ هر کاربر
- *    واردشده‌ی دارنده‌ی لینک می‌تواند وارد شود (خروج از دعوت دوره/کلاس).
- *  • جلسه‌ی مدیر (hostId = null) → فقط ثبت‌نام دوره‌ی دعوت‌شده یا عضویت
- *    کلاس دعوت‌شده (رفتار همیشگی).
+ *  • جلسه با «لینک دعوت یکتا» (inviteSlug ≠ null) → لینک خودش دعوت است؛ هر
+ *    کاربر واردشده‌ی دارنده‌ی لینک می‌تواند وارد شود. شامل جلسه‌ی استاد
+ *    (hostId ≠ null) و جلسه‌ی «لینک-تنها» مدیر (بدون انتخاب دوره/کلاس).
+ *  • جلسه‌ی مدیر بدون لینک (hostId = null و inviteSlug = null) → فقط
+ *    ثبت‌نام دوره‌ی دعوت‌شده یا عضویت کلاس دعوت‌شده (رفتار همیشگی).
  */
-export function joinByLinkAllowed(stream: { hostId: string | null }): boolean {
-  return stream.hostId !== null;
+export function joinByLinkAllowed(stream: {
+  hostId: string | null;
+  inviteSlug: string | null;
+}): boolean {
+  return stream.hostId !== null || stream.inviteSlug !== null;
 }
 
 /** برچسب فارسی دلیل دعوت کاربر (نمایش در باکس دعوت پنل کاربر) */
@@ -173,7 +177,11 @@ export interface InvitationTargetsInput {
 
 export const MAX_STREAM_INVITATIONS = 60;
 
-/** آماده‌سازی دعوت‌ها: شناسه‌ها را به رکوردهای موجود تبدیل می‌کند */
+/** آماده‌سازی دعوت‌ها: شناسه‌ها را به رکوردهای موجود تبدیل می‌کند
+ *
+ * صفر دعوت نیز مجاز است (کلاس «لینک-تنها»): هیچ کاربری باکس دعوت نمی‌بیند
+ * و ورود فقط با لینک دعوت یکتای جلسه ممکن است — مسیرهای فراخواننده در آن
+ * حالت باید inviteSlug بسازند. */
 export async function prepareInvitations(
   input: InvitationTargetsInput
 ): Promise<
@@ -189,7 +197,8 @@ export async function prepareInvitations(
     MAX_STREAM_INVITATIONS
   );
   if (courseIds.length + classIds.length === 0) {
-    return { ok: false, error: "حداقل یک دوره یا کلاس برای دعوت انتخاب کنید." };
+    // کلاس «لینک-تنها» — بدون باکس دعوت؛ ورود فقط با لینک یکتا
+    return { ok: true, data: [] };
   }
 
   const rows: Prisma.StreamInvitationCreateManyStreamInput[] = [];

@@ -24,6 +24,16 @@ export const OTP_TTL_MS = 5 * 60 * 1000; // اعتبار کد: ۵ دقیقه
 export const OTP_RESEND_MS = 60 * 1000; // فاصله‌ی مجاز بین دو درخواست کد
 export const OTP_MAX_ATTEMPTS = 5; // حداکثر تلاش برای هر کد
 
+/**
+ * هدف‌مندی کد یک‌بارمصرف — هر کد به «هدف مشخصی» صادر و مصرف می‌شود؛
+ * کدِ مسیر ورود کاربر در مسیر دومرحله‌ای مدیر (یا بالعکس) قابل استفاده نیست:
+ *  • user_auth    → ورود/ثبت‌نام کاربر سایت (فرم یکپارچه + مسیر قدیمی user/otp)
+ *  • panel_login  → ورود به پنل کاربر
+ *  • admin_2fa    → مرحله‌ی دوم ورود مدیر
+ *  • admin_phone  → تایید شماره‌ی موبایل «جدید» مدیر پیش از ثبت
+ */
+export type OtpPurpose = "user_auth" | "panel_login" | "admin_2fa" | "admin_phone";
+
 export interface SessionUser {
   id: string;
   firstName: string;
@@ -43,10 +53,10 @@ export function generateOtpCode(): string {
   return String(randomInt(100000, 1000000)); // ۶ رقم
 }
 
-/** آیا برای این شماره همین الان کد فعال و در-دست-ارسال وجود دارد؟ */
-export async function findActiveOtp(phone: string) {
+/** آیا برای این شماره همین الان کدِ فعالِ «همین هدف» در-دست-ارسال وجود دارد؟ */
+export async function findActiveOtp(phone: string, purpose: OtpPurpose) {
   const otp = await db.otpCode.findFirst({
-    where: { phone, consumedAt: null },
+    where: { phone, purpose, consumedAt: null },
     orderBy: { createdAt: "desc" },
   });
   if (!otp) return null;
@@ -66,7 +76,7 @@ export async function deleteActiveOtp(phone: string) {
 }
 
 /** صادرکردن کد جدید برای شماره — نتیجه شامل کد متن‌آشکار فقط برای ارسال است */
-export async function issueOtp(phone: string): Promise<{
+export async function issueOtp(phone: string, purpose: OtpPurpose): Promise<{
   code: string;
   expiresAt: Date;
   resendAvailableAt: Date;
@@ -81,6 +91,7 @@ export async function issueOtp(phone: string): Promise<{
     data: {
       phone,
       codeHash: hashCode(phone, code),
+      purpose,
       expiresAt: new Date(Date.now() + OTP_TTL_MS),
     },
   });
@@ -91,16 +102,70 @@ export async function issueOtp(phone: string): Promise<{
   };
 }
 
-/** بررسی کد — در صورت موفقیت کد مصرف و کاربر برگردانده می‌شود */
+/* ---------------- اتمیک: شمارش تلاش ناموفق و مصرف ---------------- */
+
+/** پیام خطای موقت ذخیره‌سازی — پاسخ ۵۰۳ قابل‌تلاش‌مجدد */
+const OTP_STORAGE_ERROR =
+  "خطای موقت در ذخیره‌سازی؛ لطفاً چند لحظه بعد دوباره تلاش کنید.";
+
+/** نتیجه‌ی ثبت تلاش ناموفق: شمرده شد / سقف پر شد / خطای ذخیره‌سازی */
+type BadAttemptOutcome = "counted" | "exhausted" | "storage-error";
+
+/**
+ * ثبت اتمیکِ یک تلاش ناموفق — فقط تا سقف OTP_MAX_ATTEMPTS شمارش می‌شود؛
+ * خروجی "exhausted" یعنی سقف پر شده (باید ۴۲۹ برگردد). افزایش شرطیِ
+ * updateMany شمارشِ همزمانِ دو درخواست را هم درست نگه می‌دارد.
+ *
+ * «storage-error» یعنی شمارنده ثبت نشد — شمارش بی‌صدا رها نمی‌شود؛
+ * فراخواننده باید پاسخ موقت (۵۰۳) بدهد، نه تایید یا ادامه‌ی جریان.
+ */
+async function recordBadAttempt(otpId: string): Promise<BadAttemptOutcome> {
+  try {
+    const res = await db.otpCode.updateMany({
+      where: { id: otpId, attempts: { lt: OTP_MAX_ATTEMPTS } },
+      data: { attempts: { increment: 1 } },
+    });
+    if (res.count === 0) return "exhausted";
+    return "counted";
+  } catch {
+    return "storage-error";
+  }
+}
+
+/** نتیجه‌ی مصرف کد: مصرف شد / از قبل استفاده شده / خطای ذخیره‌سازی */
+type ConsumeOutcome = "consumed" | "already-used" | "storage-error";
+
+/**
+ * مصرف اتمیک کد — فقط اگر «همین لحظه» مصرف‌نشده و معتبر باشد (count=1).
+ * دو درخواست همزمان با یک کد: فقط اولین موفق می‌شود؛ دومی 400 می‌گیرد.
+ *
+ * «storage-error» یعنی ثبت مصرف ناموفق بود — در این حالت هیچ تایید موفق
+ * یا نشستی صادر نمی‌شود؛ فراخواننده پاسخ موقتِ قابل‌تلاش‌مجدد (۵۰۳)
+ * می‌دهد تا کاربر همان کدِ هنوز‌مصرف‌نشده را کمی بعد دوباره بزند.
+ */
+async function consumeOtpRow(otpId: string): Promise<ConsumeOutcome> {
+  try {
+    const res = await db.otpCode.updateMany({
+      where: { id: otpId, consumedAt: null, expiresAt: { gt: new Date() } },
+      data: { consumedAt: new Date() },
+    });
+    return res.count === 1 ? "consumed" : "already-used";
+  } catch {
+    return "storage-error";
+  }
+}
+
+/** بررسی کد — در صورت موفقیت کد «اتمیک» مصرف و کاربر برگردانده می‌شود */
 export async function verifyOtp(
   phone: string,
   code: string,
-  names: { firstName: string; lastName: string; nationalId?: string | null }
+  names: { firstName: string; lastName: string; nationalId?: string | null },
+  purpose: OtpPurpose
 ): Promise<
   | { ok: true; user: SessionUser }
   | { ok: false; error: string; status: number }
 > {
-  const otp = await findActiveOtp(phone);
+  const otp = await findActiveOtp(phone, purpose);
   if (!otp) {
     return {
       ok: false,
@@ -117,10 +182,18 @@ export async function verifyOtp(
   }
 
   if (hashCode(phone, code) !== otp.codeHash) {
-    await db.otpCode.update({
-      where: { id: otp.id },
-      data: { attempts: { increment: 1 } },
-    });
+    const outcome = await recordBadAttempt(otp.id);
+    if (outcome === "storage-error") {
+      // شمارش ناموفق ثبت نشد — بی‌صدا رها نمی‌شود؛ پاسخ موقت ۵۰۳
+      return { ok: false, status: 503, error: OTP_STORAGE_ERROR };
+    }
+    if (outcome === "exhausted") {
+      return {
+        ok: false,
+        status: 429,
+        error: "تلاش‌های ناموفق زیاد بود؛ کد جدید درخواست دهید.",
+      };
+    }
     return {
       ok: false,
       status: 400,
@@ -151,11 +224,19 @@ export async function verifyOtp(
     nationalId = clean;
   }
 
-  // کد درست — مصرف و حساب کاربری ایجاد/به‌روزرسانی می‌شود
-  await db.otpCode.update({
-    where: { id: otp.id },
-    data: { consumedAt: new Date() },
-  });
+  // کد درست — «اتمیک» مصرف می‌شود؛ رقابت همزمان فقط یک برنده دارد
+  const consumed = await consumeOtpRow(otp.id);
+  if (consumed === "storage-error") {
+    // ثبت مصرف شکست خورد — تایید موفق/نشست صادر نمی‌شود؛ تلاش مجدد مجاز
+    return { ok: false, status: 503, error: OTP_STORAGE_ERROR };
+  }
+  if (consumed !== "consumed") {
+    return {
+      ok: false,
+      status: 400,
+      error: "این کد همین الان استفاده شده است؛ کد جدید درخواست دهید.",
+    };
+  }
 
   const firstName = names.firstName.trim();
   const lastName = names.lastName.trim();
@@ -192,12 +273,13 @@ export async function verifyOtp(
  */
 export async function verifyOtpLogin(
   phone: string,
-  code: string
+  code: string,
+  purpose: OtpPurpose
 ): Promise<
   | { ok: true; user: User }
   | { ok: false; error: string; status: number }
 > {
-  const verified = await verifyOtpOnly(phone, code);
+  const verified = await verifyOtpOnly(phone, code, purpose);
   if (!verified.ok) return verified;
 
   const user = await db.user.findUnique({ where: { phone } });
@@ -209,8 +291,7 @@ export async function verifyOtpLogin(
     };
   }
 
-  // کد درست و حساب موجود — کد مصرف و ورود در آمار ثبت می‌شود
-  await consumeOtp(verified.otpId);
+  // کد درست و حساب موجود — کد (اتمیک، داخل verifyOtpOnly) مصرف شد؛ ورود ثبت می‌شود
   void trackLogin();
 
   return { ok: true, user };
@@ -218,17 +299,19 @@ export async function verifyOtpLogin(
 
 /**
  * بررسیِ خالصِ کد یک‌بارمصرف (بدون ساخت/یافتن هیچ حسابی) — برای مسیرهای
- * غیرکاربری مثل تایید دومرحله‌ای پیامکی ورود مدیر: فقط صحت کد سنجیده
- * می‌شود و مصرف کد (نوشتن consumedAt) فقط پس از تایید نهایی انجام می‌شود.
+ * غیرکاربری مثل دومرحله‌ای مدیر و تایید شماره‌ی جدید. کدِ درست «همین‌جا
+ * اتمیک» مصرف می‌شود (مصرف موفق فقط یک بار ممکن است)؛ فراخواننده پس از
+ * ok=true ادامه‌ی جریان (ساخت نشست و…) را انجام می‌دهد.
  */
 export async function verifyOtpOnly(
   phone: string,
-  code: string
+  code: string,
+  purpose: OtpPurpose
 ): Promise<
-  | { ok: true; otpId: string }
+  | { ok: true }
   | { ok: false; error: string; status: number }
 > {
-  const otp = await findActiveOtp(phone);
+  const otp = await findActiveOtp(phone, purpose);
   if (!otp) {
     return {
       ok: false,
@@ -245,12 +328,18 @@ export async function verifyOtpOnly(
   }
 
   if (hashCode(phone, code) !== otp.codeHash) {
-    await db.otpCode
-      .update({
-        where: { id: otp.id },
-        data: { attempts: { increment: 1 } },
-      })
-      .catch(() => {});
+    const outcome = await recordBadAttempt(otp.id);
+    if (outcome === "storage-error") {
+      // شمارش ناموفق ثبت نشد — بی‌صدا رها نمی‌شود؛ پاسخ موقت ۵۰۳
+      return { ok: false, status: 503, error: OTP_STORAGE_ERROR };
+    }
+    if (outcome === "exhausted") {
+      return {
+        ok: false,
+        status: 429,
+        error: "تلاش‌های ناموفق زیاد بود؛ کد جدید درخواست دهید.",
+      };
+    }
     return {
       ok: false,
       status: 400,
@@ -258,15 +347,20 @@ export async function verifyOtpOnly(
     };
   }
 
-  // کد درست — به فراخواننده سپرده می‌شود تا پس از تایید نهایی مصرفش کند
-  return { ok: true, otpId: otp.id };
-}
-
-/** مصرف کد تاییدشده (پس از تایید نهایی مسیر فراخواننده) */
-export async function consumeOtp(otpId: string): Promise<void> {
-  await db.otpCode
-    .update({ where: { id: otpId }, data: { consumedAt: new Date() } })
-    .catch(() => {});
+  // کد درست — مصرف اتمیک؛ مصرف دوباره (همزمان/متوالی) ممکن نیست
+  const consumed = await consumeOtpRow(otp.id);
+  if (consumed === "storage-error") {
+    // ثبت مصرف شکست خورد — تایید موفق/نشست صادر نمی‌شود؛ تلاش مجدد مجاز
+    return { ok: false, status: 503, error: OTP_STORAGE_ERROR };
+  }
+  if (consumed !== "consumed") {
+    return {
+      ok: false,
+      status: 400,
+      error: "این کد همین الان استفاده شده است؛ کد جدید درخواست دهید.",
+    };
+  }
+  return { ok: true };
 }
 
 /* ---------------- فرم یکپارچه‌ی ورود/ثبت‌نام (تایید شماره) ---------------- */
@@ -291,14 +385,15 @@ export async function verifyPhone(
     firstName?: string;
     lastName?: string;
     nationalId?: string | null;
-  }
+  },
+  purpose: OtpPurpose = "user_auth"
 ): Promise<
   | { ok: true; isNew: false; user: SessionUser }
   | { ok: true; isNew: true; user: SessionUser }
   | { ok: true; isNew: true; pendingToken: string }
   | { ok: false; error: string; status: number }
 > {
-  const otp = await findActiveOtp(phone);
+  const otp = await findActiveOtp(phone, purpose);
   if (!otp) {
     return {
       ok: false,
@@ -315,10 +410,18 @@ export async function verifyPhone(
   }
 
   if (hashCode(phone, code) !== otp.codeHash) {
-    await db.otpCode.update({
-      where: { id: otp.id },
-      data: { attempts: { increment: 1 } },
-    });
+    const outcome = await recordBadAttempt(otp.id);
+    if (outcome === "storage-error") {
+      // شمارش ناموفق ثبت نشد — بی‌صدا رها نمی‌شود؛ پاسخ موقت ۵۰۳
+      return { ok: false, status: 503, error: OTP_STORAGE_ERROR };
+    }
+    if (outcome === "exhausted") {
+      return {
+        ok: false,
+        status: 429,
+        error: "تلاش‌های ناموفق زیاد بود؛ کد جدید درخواست دهید.",
+      };
+    }
     return {
       ok: false,
       status: 400,
@@ -365,11 +468,19 @@ export async function verifyPhone(
     };
   }
 
-  // کد درست — مصرف می‌شود
-  await db.otpCode.update({
-    where: { id: otp.id },
-    data: { consumedAt: new Date() },
-  });
+  // کد درست — مصرف «اتمیک»؛ رقابت همزمان فقط یک برنده دارد
+  const consumed = await consumeOtpRow(otp.id);
+  if (consumed === "storage-error") {
+    // ثبت مصرف شکست خورد — تایید موفق/نشست صادر نمی‌شود؛ تلاش مجدد مجاز
+    return { ok: false, status: 503, error: OTP_STORAGE_ERROR };
+  }
+  if (consumed !== "consumed") {
+    return {
+      ok: false,
+      status: 400,
+      error: "این کد همین الان استفاده شده است؛ کد جدید درخواست دهید.",
+    };
+  }
 
   const existing = await db.user.findUnique({ where: { phone } });
   if (existing) {
@@ -662,17 +773,22 @@ export async function destroyUserSession(req: NextRequest) {
   }
 }
 
-/** پاسخ با کوکی نشست کاربر (secure = استقرار HTTPS از طریق پروکسی) */
+/** پاسخ با کوکی نشست کاربر — تنظیمات پیش‌نمایش/production جدا (مانند مدیر)
+ *  پیش‌نمایشِ HTTPS: sameSite:none+partitioned تا ورود داخل iframe پیش‌نمایش
+ *  کار کند؛ production: lax (کاربردها هم‌مبدأ؛ ریدایرکت درگاه = GET سطح‌بالا) */
 export function withUserCookie(
   res: NextResponse,
   token: string,
   maxAge: number,
   secure = false
 ) {
+  const preview = process.env.NODE_ENV !== "production";
+  const crossSiteIframe = preview && secure;
   res.cookies.set(USER_COOKIE, token, {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: crossSiteIframe ? "none" : "lax",
     secure,
+    partitioned: crossSiteIframe || undefined,
     path: "/",
     maxAge,
   });

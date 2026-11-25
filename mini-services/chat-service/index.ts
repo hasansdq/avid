@@ -29,12 +29,12 @@
  *   activity {conversationId, kind}
  *   typing {conversationId, who}
  */
-import { createServer } from "http";
+import { createServer, type IncomingMessage } from "http";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import { Server } from "socket.io";
+import { Server, type Socket } from "socket.io";
 
 /* ------------------------------------------------------------------ */
 /*  دیتابیس (فقط خواندنی — برای اعتبارسنجی نشست مدیر و مالکیت گفتگو)   */
@@ -230,6 +230,157 @@ function verifyVisitorTicket(
 }
 
 /* ------------------------------------------------------------------ */
+/*  مبداهای مجاز اتصال (بند ۷)                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * اتصال فقط از مبداهای مجاز پذیرفته می‌شود:
+ *  • SITE_URL / ALLOWED_ORIGINS (مبدای رسمی سایت در استقرار)
+ *  • هم‌مبدأ با Host درخواست — یعنی اتصال هم‌مبدأ مرورگر به سایت خودش
+ *    (پشت nginx/gateway که Host را حفظ می‌کند)
+ *  • در محیط توسعه: localhost/127.0.0.1
+ *  • بدون هدر Origin (پروکسی فالبک داخلی، کلاینت غیرمرورگری) مجاز می‌ماند.
+ * مبدأ متفرقه (سایت مهاجم) در همان handshake رد می‌شود.
+ */
+const ALLOWED_ORIGIN_LIST = (() => {
+  const out: string[] = [];
+  for (const key of ["SITE_URL", "ALLOWED_ORIGINS"]) {
+    const raw = process.env[key]?.trim() ?? "";
+    for (const piece of raw.split(",")) {
+      const t = piece.trim();
+      if (!t) continue;
+      try {
+        out.push(new URL(t).origin);
+      } catch {
+        /* نامعتبر — نادیده */
+      }
+    }
+  }
+  return out;
+})();
+
+function normalizeOriginValue(value: string): string {
+  try {
+    const u = new URL(value);
+    const host = `${u.hostname.toLowerCase()}${u.port ? ":" + u.port : ""}`;
+    return `${u.protocol.toLowerCase()}//${host.replace(/:443$/, "").replace(/:80$/, "")}`;
+  } catch {
+    return value;
+  }
+}
+
+function sameHostOrigin(origin: string, hostHeader: string | undefined): boolean {
+  if (!hostHeader) return false;
+  try {
+    const o = new URL(origin);
+    const originHost = `${o.hostname.toLowerCase()}${o.port ? ":" + o.port : ""}`;
+    const requestHost = hostHeader.toLowerCase();
+    return (
+      originHost.replace(/:443$/, "").replace(/:80$/, "") ===
+      requestHost.replace(/:443$/, "").replace(/:80$/, "")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isDevLocalOrigin(origin: string): boolean {
+  if (IS_PRODUCTION) return false;
+  try {
+    const host = new URL(origin).hostname.toLowerCase();
+    return host === "localhost" || host === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
+/** مبدأ اتصال مجاز است؟ (Origin غایب = مجاز — پروکسی فالبک/کلاینت غیرمرورگری) */
+function connectionOriginAllowed(
+  originHeader: string | undefined,
+  hostHeader: string | undefined
+): boolean {
+  if (!originHeader) return true;
+  if (originHeader === "null") return false;
+  const normalized = normalizeOriginValue(originHeader);
+  if (ALLOWED_ORIGIN_LIST.some((a) => normalizeOriginValue(a) === normalized)) {
+    return true;
+  }
+  if (sameHostOrigin(originHeader, hostHeader)) return true;
+  if (isDevLocalOrigin(originHeader)) return true;
+  return false;
+}
+
+/* ------------------------------------------------------------------ */
+/*  محدودیت نرخ رویدادها بر حسب نوع (بند ۷)                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * نرخ‌ها متناسب با نوع رویدادند: سیگنال‌های سبک (typing/activity) شل،
+ * عضویت‌ها باز — سوکت نرمال هیچ‌گاه به سقف نمی‌رسد؛ سوکت هرزنَواز
+ * بی‌صدا خاموش می‌شود.
+ */
+const EVENT_RATES: Record<string, { max: number; windowMs: number }> = {
+  "visitor:subscribe": { max: 30, windowMs: 60_000 },
+  "admin:subscribe": { max: 30, windowMs: 60_000 },
+  "admin:open": { max: 60, windowMs: 60_000 },
+  "admin:leave": { max: 60, windowMs: 60_000 },
+  activity: { max: 60, windowMs: 60_000 },
+  typing: { max: 24, windowMs: 30_000 },
+};
+
+const rateBuckets = new Map<string, { count: number; windowStart: number }>();
+
+function allowEvent(socketId: string, ev: string): boolean {
+  const policy = EVENT_RATES[ev];
+  if (!policy) return true;
+  const key = `${socketId}|${ev}`;
+  const now = Date.now();
+  let bucket = rateBuckets.get(key);
+  if (!bucket || now - bucket.windowStart >= policy.windowMs) {
+    bucket = { count: 0, windowStart: now };
+    rateBuckets.set(key, bucket);
+  }
+  bucket.count += 1;
+  return bucket.count <= policy.max;
+}
+
+function cleanupRateBuckets(socketId: string): void {
+  const prefix = `${socketId}|`;
+  for (const key of rateBuckets.keys()) {
+    if (key.startsWith(prefix)) rateBuckets.delete(key);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  تازگی نشست مدیر روی اتصال باز (بند ۷)                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * نشست مدیر فقط در handshake چک نمی‌شود — در «هر رویداد» با حافظه‌ی
+ * ۳۰ثانیه‌ای دوباره از دیتابیس خوانده می‌شود؛ نشست باطل/منقضی‌شده
+ * (تغییر رمز، خروج، revoke) اتصال باز را همان لحظه می‌بندد.
+ */
+const adminFreshness = new Map<string, { ok: boolean; until: number }>();
+
+function ensureAdminFresh(socket: Socket): boolean {
+  const auth = socket.data.auth as SocketAuth;
+  const token = auth.adminToken;
+  if (!token) return false;
+  const now = Date.now();
+  const cached = adminFreshness.get(token);
+  if (cached && cached.ok && now < cached.until) return true;
+  const ok = isValidAdminSession(token);
+  if (ok) {
+    adminFreshness.set(token, { ok: true, until: now + 30_000 });
+    return true;
+  }
+  adminFreshness.delete(token);
+  auth.admin = false; // نشست باطل — همه‌ی قدرت‌های سوکت بلافاصله قطع
+  socket.disconnect(true);
+  return false;
+}
+
+/* ------------------------------------------------------------------ */
 /*  سرور                                                                */
 /* ------------------------------------------------------------------ */
 
@@ -240,8 +391,36 @@ const io = new Server(httpServer, {
   // (Apache/nginx روی /socket.io/) هر دو به این سرویس می‌رسند.
   path: "/",
   cors: {
-    origin: true, // منبع درخواست بازتاب می‌شود؛ احراز هویت با کوکی/تیکت است
+    // فقط مبداهای مجاز بازتاب داده می‌شوند (بند ۷)؛ هم‌مبدأ CORS لازم ندارد
+    origin: (origin: string | undefined, callback: (err: Error | null, ok?: boolean) => void) => {
+      if (!origin) return callback(null, true);
+      const normalized = origin === "null" ? origin : normalizeOriginValue(origin);
+      const ok =
+        origin !== "null" &&
+        (ALLOWED_ORIGIN_LIST.some((a) => normalizeOriginValue(a) === normalized) ||
+          isDevLocalOrigin(origin));
+      callback(null, ok);
+    },
     methods: ["GET", "POST"],
+    credentials: true,
+  },
+  allowRequest: (
+    req: IncomingMessage,
+    callback: (err: string | null | undefined, success: boolean) => void
+  ) => {
+    // گره‌ی مبدأ در سطح HTTP (بند ۷): درخواست با مبدأ نامجاز پیش از
+    // ساخت نشست engine.io با ۴۰۳ رد می‌شود — مکملِ گره‌ی io.use که
+    // اتصال namespace را می‌بندد. مبدأ غایب (کلاینت غیرمرورگری/GET
+    // هم‌مبدأ) مجاز می‌ماند.
+    const origin = req.headers.origin;
+    const host = req.headers.host;
+    callback(
+      null,
+      connectionOriginAllowed(
+        typeof origin === "string" ? origin : undefined,
+        typeof host === "string" ? host : undefined
+      )
+    );
   },
   pingTimeout: 60000,
   pingInterval: 25000,
@@ -260,13 +439,26 @@ interface TypingPayload {
 /** نتیجه احراز هویت اتصال (از کوکی‌های handshake) */
 interface SocketAuth {
   admin: boolean;
+  adminToken: string | null; // برای تازگیِ نشست در هر رویداد
   visitorToken: string | null;
 }
 
 io.use((socket, next) => {
+  // — گره‌ی مبدأ (بند ۷): سایت متفرقه در همان handshake رد می‌شود —
+  const origin = socket.request.headers.origin;
+  if (
+    !connectionOriginAllowed(
+      typeof origin === "string" ? origin : undefined,
+      socket.request.headers.host
+    )
+  ) {
+    return next(new Error("origin-not-allowed"));
+  }
   const cookies = parseCookies(socket.request.headers.cookie);
+  const adminToken = cookies[ADMIN_COOKIE] ?? null;
   socket.data.auth = {
-    admin: isValidAdminSession(cookies[ADMIN_COOKIE]),
+    admin: isValidAdminSession(adminToken),
+    adminToken,
     visitorToken: cookies[VISITOR_COOKIE] ?? null,
   } satisfies SocketAuth;
   next();
@@ -277,9 +469,13 @@ io.on("connection", (socket) => {
   // گفتگوهایی که این سوکت برایشان عضویت موفق گرفته است
   const authorizedConversations = new Set<string>();
 
-  /** دسترسی مجاز این سوکت به یک گفتگو؟ (مدیر / عضویت قبلی / مالکیت کوکی) */
+  socket.on("disconnect", () => {
+    cleanupRateBuckets(socket.id);
+  });
+
+  /** دسترسی مجاز این سوکت به یک گفتگو؟ (مدیرِ تازه / عضویت / مالکیت کوکی) */
   const canTouchConversation = (conversationId: string): boolean =>
-    auth.admin ||
+    ensureAdminFresh(socket) ||
     authorizedConversations.has(conversationId) ||
     visitorOwnsConversation(auth.visitorToken, conversationId);
 
@@ -287,6 +483,7 @@ io.on("connection", (socket) => {
   socket.on(
     "visitor:subscribe",
     (data: { conversationId?: string; ticket?: string }) => {
+      if (!allowEvent(socket.id, "visitor:subscribe")) return;
       const conversationId = data?.conversationId;
       if (!validId(conversationId)) return;
       // مالکیت: کوکی handshake یا تیکت امضاشده‌ی همین گفتگو
@@ -308,23 +505,27 @@ io.on("connection", (socket) => {
 
   // — پنل مدیریت —
   socket.on("admin:subscribe", () => {
-    if (auth.admin) socket.join("admin");
+    if (!allowEvent(socket.id, "admin:subscribe")) return;
+    if (ensureAdminFresh(socket)) socket.join("admin");
   });
 
   socket.on("admin:open", (data: { conversationId?: string }) => {
-    if (auth.admin && validId(data?.conversationId)) {
+    if (!allowEvent(socket.id, "admin:open")) return;
+    if (ensureAdminFresh(socket) && validId(data?.conversationId)) {
       socket.join(`conv:${data.conversationId}`);
     }
   });
 
   socket.on("admin:leave", (data: { conversationId?: string }) => {
-    if (auth.admin && validId(data?.conversationId)) {
+    if (!allowEvent(socket.id, "admin:leave")) return;
+    if (ensureAdminFresh(socket) && validId(data?.conversationId)) {
       socket.leave(`conv:${data.conversationId}`);
     }
   });
 
   // — سیگنال فعالیت (بعد از ذخیره‌ی موفق پیام از سمت API فراخوانی می‌شود) —
   socket.on("activity", (data: ActivityPayload) => {
+    if (!allowEvent(socket.id, "activity")) return;
     if (!validId(data?.conversationId) || !data?.kind) return;
     if (!canTouchConversation(data.conversationId)) return;
     // به اعضای همان گفتگو (بدون فرستنده)
@@ -335,6 +536,7 @@ io.on("connection", (socket) => {
 
   // — نشانگر تایپ —
   socket.on("typing", (data: TypingPayload) => {
+    if (!allowEvent(socket.id, "typing")) return;
     if (!validId(data?.conversationId) || !data?.who) return;
     if (!canTouchConversation(data.conversationId)) return;
     socket.to(`conv:${data.conversationId}`).emit("typing", data);

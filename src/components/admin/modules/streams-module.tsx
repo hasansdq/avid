@@ -3,9 +3,11 @@
 import * as React from "react";
 import {
   Check,
+  Copy,
   Download,
   ExternalLink,
   GraduationCap,
+  Link2,
   Loader2,
   Pencil,
   Plus,
@@ -53,6 +55,48 @@ interface StreamForm {
   description: string;
   courseIds: Set<string>;
   classIds: Set<string>;
+}
+
+/** آدرس کامل لینک دعوت یکتای کلاس — origin لحظه‌ای مرورگر مدیر */
+function streamInviteUrl(slug: string): string {
+  return `${window.location.origin}/stream/${slug}`;
+}
+
+/** دکمه کپی لینک دعوت کلاس (با آیکون تیک موفقیت) */
+function CopyStreamLinkButton({ slug }: { slug: string }) {
+  const [copied, setCopied] = React.useState(false);
+
+  async function handleCopy() {
+    const url = streamInviteUrl(slug);
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("لینک دعوت کلاس آنلاین کپی شد", { description: url });
+    } catch {
+      toast.error("کپی انجام نشد — آدرس را دستی انتخاب و کپی کنید.", {
+        description: url,
+      });
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="icon"
+      onClick={() => void handleCopy()}
+      aria-label="کپی لینک دعوت کلاس آنلاین"
+      title="کپی لینک دعوت"
+      className="size-8 rounded-lg"
+    >
+      {copied ? (
+        <Check className="size-3.5 text-emerald-600 dark:text-emerald-300" />
+      ) : (
+        <Copy className="size-3.5" />
+      )}
+    </Button>
+  );
 }
 
 /** وضعیت جلسه → نشان */
@@ -178,10 +222,8 @@ export function StreamsModule() {
       toast.error("عنوان کلاس باید بین ۲ تا ۱۲۰ نویسه باشد.");
       return;
     }
-    if (form.courseIds.size + form.classIds.size === 0) {
-      toast.error("حداقل یک دوره یا کلاس برای دعوت انتخاب کنید.");
-      return;
-    }
+    // انتخاب دوره/کلاس اختیاری است — بدون انتخاب، کلاس «لینک-تنها» می‌شود:
+    // باکس دعوتی برای هیچ کاربری نمایش داده نمی‌شود و ورود فقط با لینک است
     const description = form.description.trim().slice(0, 600);
 
     setSaving(true);
@@ -199,13 +241,14 @@ export function StreamsModule() {
         });
         toast.success("کلاس آنلاین ویرایش شد");
       } else {
-        await apiFetch<AdminStreamRow>("/api/admin/streams", {
+        const created = await apiFetch<AdminStreamRow>("/api/admin/streams", {
           method: "POST",
           body,
         });
         toast.success("کلاس آنلاین ایجاد شد", {
-          description:
-            "باکس «دعوت به کلاس» برای کاربران دوره/کلاس‌های انتخاب‌شده نمایان می‌شود.",
+          description: created.inviteSlug
+            ? "کلاس «لینک-تنها» — باکس دعوتی برای هیچ کاربری نمایش داده نمی‌شود؛ ورود فقط با لینک دعوت کارت."
+            : "باکس «دعوت به کلاس» برای کاربران دوره/کلاس‌های انتخاب‌شده نمایان می‌شود.",
         });
       }
       setDialogOpen(false);
@@ -384,11 +427,17 @@ export function StreamsModule() {
                       <Users className="size-3" />
                       {faDigits(s._count.participants)} شرکت‌کننده
                     </span>
+                    {s.invitations.length === 0 ? (
+                      <span className="flex select-none items-center gap-1 rounded-full border border-teal-500/30 bg-teal-500/[0.07] px-2.5 py-0.5 text-[0.65rem] font-black text-teal-700 dark:border-teal-400/25 dark:bg-teal-400/[0.08] dark:text-teal-300">
+                        <Link2 className="size-3" />
+                        فقط با لینک
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               </div>
 
-              {/* دعوت‌ها — چیپ دوره/کلاس */}
+              {/* دعوت‌ها — چیپ دوره/کلاس؛ جلسه‌های «لینک-تنها» دعوتی ندارند */}
               {s.invitations.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
                   {s.invitations.slice(0, 4).map((inv) => (
@@ -423,6 +472,7 @@ export function StreamsModule() {
                   {s.startedAt ? ` — شروع: ${faDate(s.startedAt)}` : ""}
                 </span>
                 <div className="flex items-center gap-1">
+                  {s.inviteSlug ? <CopyStreamLinkButton slug={s.inviteSlug} /> : null}
                   <Button
                     asChild
                     size="sm"
@@ -524,8 +574,9 @@ export function StreamsModule() {
               {editing ? `ویرایش کلاس «${editing.title}»` : "کلاس آنلاین جدید"}
             </DialogTitle>
             <DialogDescription className="leading-6">
-              کاربران دوره‌ها و کلاس‌های انتخاب‌شده به کلاس دعوت می‌شوند — باکس
-              «دعوت به کلاس» در پنل کاربر همان افراد نمایان می‌شود.
+              با انتخاب دوره/کلاس، باکس «دعوت به کلاس» فقط در پنل همان کاربران
+              نمایان می‌شود؛ بدون هیچ انتخابی کلاس «لینک-تنها» می‌شود — بدون
+              باکس دعوت و ورود فقط با لینک.
             </DialogDescription>
           </DialogHeader>
 
@@ -679,6 +730,16 @@ export function StreamsModule() {
                     ) : null}
                   </div>
                 )}
+
+                {/* — بدون انتخاب دوره/کلاس: کلاس «لینک-تنها» — */}
+                {form.courseIds.size + form.classIds.size === 0 ? (
+                  <p className="flex items-start gap-2 rounded-xl border border-teal-500/30 bg-teal-500/[0.06] p-3 text-[0.65rem] font-bold leading-5 text-teal-700 dark:border-teal-400/25 dark:bg-teal-400/[0.07] dark:text-teal-300">
+                    <Link2 className="mt-0.5 size-3.5 shrink-0" />
+                    بدون انتخاب دوره/کلاس، کلاس «لینک-تنها» می‌شود: باکس دعوت
+                    برای هیچ کاربری نمایش داده نمی‌شود و ورود فقط با لینک دعوت
+                    یکتای جلسه (پس از ایجاد، از کارت کپی کنید) ممکن است.
+                  </p>
+                ) : null}
               </div>
             </div>
           ) : null}

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import path from "node:path";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { requireAdmin } from "@/lib/auth";
 import { str, bad } from "@/lib/api-helpers";
 import { recordUploadedFile } from "@/lib/uploaded-files";
 import { sanitizeSection } from "@/lib/gallery-shared";
+import { contentMatchesExt } from "@/lib/file-signature";
+import { sanitizeSvg, sanitizedSvgIsUsable } from "@/lib/svg-sanitize";
 import {
   IMAGES_DIR,
   MEDIA_ROOT,
@@ -186,7 +188,28 @@ export async function POST(req: NextRequest) {
           ? VIDEOS_DIR
           : path.join(MEDIA_ROOT, folder);
     await mkdir(dir, { recursive: true });
-    const size = await saveStreamedFile(file, path.join(dir, name));
+
+    // — اعتبارسنجی محتوای واقعی (magic bytes) — پسوند بس نیست (بند ۸) —
+    // ۶۴ کیلوبایت آغازین برای تشخیص نوع کافی است؛ تعارض = رد.
+    const head = new Uint8Array(await file.slice(0, 64 * 1024).arrayBuffer());
+    if (!contentMatchesExt(ext, head)) {
+      return bad(
+        "محتوای فایل با فرمت اعلام‌شده هم‌خوانی ندارد — فایل خراب یا جعل‌شده است."
+      );
+    }
+
+    let size: number;
+    if (ext === "svg") {
+      // SVG متنی است — کل محتوا پاکسازی و «پاکسازی‌شده» ذخیره می‌شود
+      const safe = sanitizeSvg(await file.text());
+      if (!sanitizedSvgIsUsable(safe)) {
+        return bad("فایل SVG معتبر نیست.");
+      }
+      await writeFile(path.join(dir, name), safe, "utf8");
+      size = Buffer.byteLength(safe, "utf8");
+    } else {
+      size = await saveStreamedFile(file, path.join(dir, name));
+    }
     const url = `/uploads/${folder}/${name}`;
 
     // — ثبت متادیتا در جدول گالری —

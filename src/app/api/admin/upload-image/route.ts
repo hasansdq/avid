@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { bad } from "@/lib/api-helpers";
+import { contentMatchesExt } from "@/lib/file-signature";
 import {
   IMAGES_API_PREFIX,
   IMAGES_DIR,
@@ -55,6 +56,14 @@ export async function POST(req: NextRequest) {
     if (!isImageExt(`x.${ext}`)) {
       return bad(
         "قالب تصویر پشتیبانی نمی‌شود (فرمت‌های مجاز: jpg، png، webp، gif، avif)."
+      );
+    }
+
+    // — اعتبارسنجی محتوای واقعی (magic bytes) — پسوند بس نیست (بند ۸) —
+    const head = new Uint8Array(await file.slice(0, 64 * 1024).arrayBuffer());
+    if (!contentMatchesExt(ext, head)) {
+      return bad(
+        "محتوای فایل با فرمت اعلام‌شده هم‌خوانی ندارد — فایل خراب یا جعل‌شده است."
       );
     }
 

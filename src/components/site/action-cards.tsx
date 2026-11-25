@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { SectionHeading, Reveal } from "@/components/reveal";
-import { EditableText } from "@/components/site/editable-texts";
+import { EditableText, renderGradientText } from "@/components/site/editable-texts";
 
 interface Action {
   href: string;
@@ -94,7 +94,7 @@ export function ActionCards() {
           icon={Compass}
           badge="از کجا شروع کنید؟"
           title={
-            <EditableText k="actions.title">
+            <EditableText k="actions.title" renderText={renderGradientText}>
               <>
                 سه مسیر برای <span className="text-gradient">شروع سریع</span> شما
               </>

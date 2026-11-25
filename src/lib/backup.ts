@@ -1,5 +1,9 @@
 import { db } from "@/lib/db";
 import { faDigits } from "@/lib/fa";
+import {
+  sanitizeTrustHtml,
+  isSafePublicAssetUrl,
+} from "@/lib/html-sanitize";
 
 /**
  * بکاپ و بازیابی داده‌های «آوید» — لایه‌ی منطقی (بدون فایل).
@@ -836,6 +840,63 @@ async function checkForeignKeys(
 }
 
 /* ------------------------------------------------------------------ */
+/*        پاکسازی امنیتی رکوردهای بازیابی‌شده (بند ۹)                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * رکوردهای HTML/آدرس‌دار بازیابی‌شده از فایل بکاپ، همان پاکسازیِ مسیر
+ * پنل را می‌بینند — فایل بکاپ نادرست/دست‌کاری‌شده نمی‌تواند HTML/ایشو
+ * خطرناک (کد نماد، cssText فونت، آدرس لوگو) را مستقیم تزریق کند.
+ */
+
+/** بازسازی امن cssText فونت از نام فایل و خانواده‌ی سالم */
+function safeFontCssText(fileName: string, family: string): string | null {
+  if (!/^[A-Za-z0-9._-]+$/.test(fileName) || fileName.includes("..")) {
+    return null;
+  }
+  const safeFamily = family.replace(/['"{}\\]/g, "").trim().slice(0, 120);
+  if (!safeFamily) return null;
+  const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
+  const format =
+    ext === "woff2" ? "woff2" : ext === "woff" ? "woff" : ext === "ttf" ? "truetype" : "opentype";
+  return `@font-face{font-family:'${safeFamily}';src:url('/uploads/fonts/${fileName}') format('${format}');font-weight:400;font-style:normal;font-display:swap}`;
+}
+
+function sanitizeRestoredRows(payload: BackupPayload): void {
+  const settings = payload.tables.siteSettings;
+  if (Array.isArray(settings)) {
+    for (const row of settings) {
+      const enamad = row.enamadCode;
+      if (typeof enamad === "string" && enamad.trim()) {
+        row.enamadCode = sanitizeTrustHtml(enamad);
+      }
+      const zarinpal = row.zarinpalCode;
+      if (typeof zarinpal === "string" && zarinpal.trim()) {
+        row.zarinpalCode = sanitizeTrustHtml(zarinpal);
+      }
+      const logo = row.logoUrl;
+      if (typeof logo === "string" && logo && !isSafePublicAssetUrl(logo)) {
+        row.logoUrl = "/images/logo.png"; // مقدار پیش‌فرض امن
+      }
+    }
+  }
+
+  const fonts = payload.tables.installedFont;
+  if (Array.isArray(fonts)) {
+    for (const row of fonts) {
+      // cssText فایل معتبر نیست — فقط نام فایل از داخل آن استخراج و با
+      // خانواده‌ی پاکسازی‌شده از نو ساخته می‌شود (بدون @import/javascript)
+      const css = typeof row.cssText === "string" ? row.cssText : "";
+      const m = /url\(\s*['"]?\/uploads\/fonts\/([A-Za-z0-9._-]+)['"]?\s*\)/.exec(css);
+      const family = typeof row.family === "string" ? row.family : "";
+      const rebuilt =
+        m ? safeFontCssText(m[1], family) : null;
+      row.cssText = rebuilt ?? "";
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /*                             بازیابی                                 */
 /* ------------------------------------------------------------------ */
 
@@ -879,6 +940,11 @@ export async function importBackup(
   const restoreSet = new Set(
     Object.keys(effective.tables) as BackupTableKey[]
   );
+
+  // ۰.۵) پاکسازی امنیتی رکوردهای حساس (بند ۹) — مسیر بازیابی بکاپ
+  // نباید از کنارِ اعتبارسنجیِ پنل رد شود: کدهای نماد اعتماد، آدرس لوگو و
+  // cssText فونت‌ها معادلِ امنِ خودشان ساخته می‌شوند.
+  sanitizeRestoredRows(effective);
 
   // ۱) کلیدهای خارجیِ فایل — خطای قطعی، بدون امکان دور زدن (۴۰۰)
   const risks = computeCascadeRisks(restoreSet);

@@ -28,6 +28,7 @@ import { ConfirmDelete } from "@/components/admin/shared/confirm-delete";
 import { EmptyState } from "@/components/admin/shared/empty-state";
 import { ModuleHeader } from "@/components/admin/shared/module-header";
 import { ImageUrlField } from "@/components/admin/shared/image-url-field";
+import { parseChatAvatarMode, type ChatAvatarMode } from "@/lib/chat";
 import { btnGradient, tileGradient } from "@/components/admin/shared/styles";
 import type {
   ChatConversationDetail,
@@ -550,6 +551,118 @@ function ConversationsTab() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  انتخاب نحوه‌ی نمایش تصویر پروفایل چت‌بات (دو حالت)                 */
+/* ------------------------------------------------------------------ */
+
+function AvatarModeSelector({
+  mode,
+  avatar,
+  onChange,
+}: {
+  mode: ChatAvatarMode;
+  avatar: string;
+  onChange: (mode: ChatAvatarMode) => void;
+}) {
+  const options: Array<{
+    value: ChatAvatarMode;
+    title: string;
+    description: string;
+  }> = [
+    {
+      value: "circle",
+      title: "حالت دایره‌ای",
+      description:
+        "همان نمایش کنونی: تصویر با برش مربع ۱:۱ داخل قاب دایره‌ای با حاشیه و سایه نمایش داده می‌شود.",
+    },
+    {
+      value: "custom",
+      title: "حالت دلخواه",
+      description:
+        "تصویر آزاد و بدون قاب: بدون استروک، حاشیه و سایه؛ بدون برش ۱:۱ — اگر تصویر بزرگ باشد فقط ارتفاع به اندازه‌ی پروفایل تنظیم می‌شود و عرض اصل تصویر تغییر نمی‌کند؛ پس‌زمینه‌ی شفاف همان‌گونه شفاف می‌ماند.",
+    },
+  ];
+
+  return (
+    <div
+      role="radiogroup"
+      aria-label="نحوه‌ی نمایش تصویر پروفایل چت‌بات"
+      className="grid gap-3 sm:grid-cols-2"
+    >
+      {options.map((opt) => {
+        const selected = mode === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            onClick={() => onChange(opt.value)}
+            className={cn(
+              "flex flex-col gap-3 rounded-xl border p-4 text-start transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/60",
+              selected
+                ? "border-teal-500/60 bg-teal-500/[0.06] shadow-md shadow-teal-500/10"
+                : "border-border bg-foreground/[0.02] hover:border-foreground/25"
+            )}
+          >
+            <span className="flex items-center justify-between gap-2">
+              <span className="text-sm font-black text-foreground">
+                {opt.title}
+              </span>
+              <span
+                className={cn(
+                  "flex size-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
+                  selected ? "border-teal-500 bg-teal-500" : "border-muted-foreground/40"
+                )}
+                aria-hidden
+              >
+                {selected ? (
+                  <span className="size-1.5 rounded-full bg-white" />
+                ) : null}
+              </span>
+            </span>
+            {/* پیش‌نمایش مصورِ همان حالت با تصویر فعلی چت‌بات */}
+            <span className="flex h-14 items-end gap-2">
+              {opt.value === "circle" ? (
+                avatar.trim() ? (
+                  <img
+                    src={avatar.trim()}
+                    alt=""
+                    className="size-14 rounded-full border-2 border-background object-cover shadow-xl shadow-black/25"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.visibility = "hidden";
+                    }}
+                  />
+                ) : (
+                  <span className="flex size-14 items-center justify-center rounded-full bg-gradient-to-br from-teal-400 to-emerald-600 shadow-xl shadow-teal-500/30">
+                    <MessageSquare className="size-6 text-teal-950" strokeWidth={2.2} />
+                  </span>
+                )
+              ) : avatar.trim() ? (
+                <img
+                  src={avatar.trim()}
+                  alt=""
+                  className="block h-auto max-h-14 w-auto select-none"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.visibility = "hidden";
+                  }}
+                />
+              ) : (
+                <span className="text-[0.65rem] font-bold leading-5 text-muted-foreground">
+                  (بدون تصویر — دکمه‌ی دایره‌ای پیش‌فرض سایت نمایش داده می‌شود)
+                </span>
+              )}
+            </span>
+            <span className="text-[0.68rem] leading-5 text-muted-foreground">
+              {opt.description}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  تب تنظیمات چت‌بات                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -557,6 +670,7 @@ interface ChatSettingsDraft {
   botName: string;
   botTitle: string;
   botAvatar: string;
+  botAvatarMode: ChatAvatarMode;
   welcomeMessage: string;
   autoOpen: boolean;
   isActive: boolean;
@@ -567,6 +681,7 @@ function toDraft(s: ChatSettings): ChatSettingsDraft {
     botName: s.botName,
     botTitle: s.botTitle,
     botAvatar: s.botAvatar,
+    botAvatarMode: parseChatAvatarMode(s.botAvatarMode),
     welcomeMessage: s.welcomeMessage,
     autoOpen: s.autoOpen,
     isActive: s.isActive,
@@ -609,6 +724,7 @@ function BotSettingsTab() {
           botName: draft.botName.trim(),
           botTitle: draft.botTitle.trim(),
           botAvatar: draft.botAvatar.trim(),
+          botAvatarMode: draft.botAvatarMode,
           welcomeMessage: draft.welcomeMessage.trim(),
           autoOpen: draft.autoOpen,
           isActive: draft.isActive,
@@ -633,10 +749,20 @@ function BotSettingsTab() {
           value={draft.botAvatar}
           onChange={(v) => set({ botAvatar: v })}
           section="chat"
-          hint="آدرس تصویر (داخلی مثل /images/chat/bot-avatar.png یا لینک خارجی). این تصویر روی دکمه‌ی شناور چت سایت و سربرگ پنجره‌ی چت نمایش داده می‌شود و با تغییر آن، دکمه‌ی چت سایت هم به‌روز می‌شود. تصویر پیش‌فرض: بیزینس‌من حرفه‌ای."
+          hint="آدرس تصویر (داخلی مثل /images/chat/bot-avatar.png یا لینک خارجی). این تصویر روی دکمه‌ی شناور چت سایت و سربرگ پنجره‌ی چت نمایش داده می‌شود و با تغییر آن، دکمه‌ی چت سایت هم به‌روز می‌شود. تصویر پیش‌فرض: بیزینس‌من حرفه‌ای. نحوه‌ی نمایش تصویر (دایره‌ای یا دلخواه) در گزینه‌ی پایین این فیلد تعیین می‌شود."
           previewClassName="size-20 rounded-2xl"
           previewAlt="پروفایل چت‌بات"
         />
+
+        {/* — نحوه‌ی نمایش تصویر پروفایل (دو حالت) — */}
+        <div className="space-y-2">
+          <Label>نحوه‌ی نمایش تصویر پروفایل چت‌بات</Label>
+          <AvatarModeSelector
+            mode={draft.botAvatarMode}
+            avatar={draft.botAvatar}
+            onChange={(m) => set({ botAvatarMode: m })}
+          />
+        </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
@@ -735,14 +861,25 @@ function BotSettingsTab() {
         >
           <div className="flex items-center gap-3 border-b border-border bg-gradient-to-l from-teal-500/10 to-emerald-500/10 px-3 py-2.5">
             {draft.botAvatar.trim() ? (
-              <img
-                src={draft.botAvatar.trim()}
-                alt={draft.botName || "چت‌بات"}
-                className="size-9 rounded-xl border border-foreground/10 object-cover"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
-                }}
-              />
+              draft.botAvatarMode === "custom" ? (
+                <img
+                  src={draft.botAvatar.trim()}
+                  alt={draft.botName || "چت‌بات"}
+                  className="block h-auto max-h-9 w-auto select-none"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              ) : (
+                <img
+                  src={draft.botAvatar.trim()}
+                  alt={draft.botName || "چت‌بات"}
+                  className="size-9 rounded-xl border border-foreground/10 object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              )
             ) : (
               <span className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-teal-400 to-emerald-600">
                 <Bot className="size-4 text-teal-950" />
@@ -771,6 +908,44 @@ function BotSettingsTab() {
                 سلام، وقتتون بخیر! 👋
               </div>
             </div>
+          </div>
+        </div>
+        {/* — پیش‌نمایش دکمه‌ی شناور (پایین صفحات سایت) در حالتِ انتخابی — */}
+        <div className="mt-5 rounded-2xl border border-border bg-foreground/[0.02] p-4">
+          <p className="mb-3 text-[0.65rem] font-black text-muted-foreground">
+            پیش‌نمایش دکمه‌ی شناور (پایین صفحات سایت)
+          </p>
+          <div dir="ltr" className="flex items-end gap-3">
+            {draft.botAvatar.trim() ? (
+              draft.botAvatarMode === "custom" ? (
+                <img
+                  src={draft.botAvatar.trim()}
+                  alt=""
+                  className="block h-auto max-h-14 w-auto select-none"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.visibility = "hidden";
+                  }}
+                />
+              ) : (
+                <img
+                  src={draft.botAvatar.trim()}
+                  alt=""
+                  className="size-14 rounded-full border-2 border-background object-cover shadow-xl shadow-black/25"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.visibility = "hidden";
+                  }}
+                />
+              )
+            ) : (
+              <span className="flex size-14 items-center justify-center rounded-full bg-gradient-to-br from-teal-400 to-emerald-600 shadow-xl shadow-teal-500/30">
+                <MessageSquare className="size-6 text-teal-950" strokeWidth={2.2} />
+              </span>
+            )}
+            <span className="text-[0.62rem] leading-4 text-muted-foreground">
+              {draft.botAvatarMode === "custom"
+                ? "حالت دلخواه: تصویر بدون قاب/سایه/برش — ارتفاع حداکثر اندازه‌ی پروفایل، عرض اصل تصویر"
+                : "حالت دایره‌ای: قاب دایره‌ای ۱:۱ با حاشیه و سایه"}
+            </span>
           </div>
         </div>
         <p className="mt-3 text-[0.65rem] leading-5 text-muted-foreground">

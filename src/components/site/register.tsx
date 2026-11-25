@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import type { SiteSettings } from "@prisma/client";
 import { SectionHeading, Reveal } from "@/components/reveal";
-import { EditableText } from "@/components/site/editable-texts";
+import { EditableText, renderGradientText } from "@/components/site/editable-texts";
 import { EnrollForm, type PublicCourse } from "@/components/site/enroll-form";
 
 const benefits = [
@@ -34,7 +34,7 @@ export function Register({
           icon={ClipboardList}
           badge="ثبت‌نام در دوره‌ها"
           title={
-            <EditableText k="register.title">
+            <EditableText k="register.title" renderText={renderGradientText}>
               <>
                 جای خود را در دوره‌ها{" "}
                 <span className="text-gradient">رزرو کنید</span>
@@ -54,7 +54,7 @@ export function Register({
           <Reveal>
             <div className="space-y-6">
               <h3 className="text-2xl font-black leading-10 text-foreground md:text-3xl">
-                <EditableText k="register.whyTitle">
+                <EditableText k="register.whyTitle" renderText={renderGradientText}>
                   <>
                     چرا آکادمی{" "}
                     <span className="text-gradient">{settings.siteName}</span>؟

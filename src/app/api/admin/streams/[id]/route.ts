@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
+import { generateStreamInviteSlug } from "@/lib/teacher";
 import { bad, str } from "@/lib/api-helpers";
 import {
   invitationViews,
@@ -69,7 +70,9 @@ export async function GET(req: NextRequest, { params }: Params) {
  *
  *  • status="live"   → شروع جلسه (startedAt در اولین بار ثبت می‌شود)
  *  • status="ended"  → پایان جلسه (endedAt + بستن حضور باقی‌مانده)
- *  • courseIds/classIds (اختیاری) → جایگزینی کامل دعوت‌ها
+ *  • courseIds/classIds (اختیاری) → جایگزینی کامل دعوت‌ها — پاک‌کردن کامل
+ *    دعوت‌ها کلاس را «لینک-تنها» می‌کند: هیچ باکس دعوتی نمایش داده نمی‌شود
+ *    و اگر لینک یکتا ندارد، ساخته می‌شود (ورود فقط برای دارندگان لینک).
  */
 export async function PATCH(req: NextRequest, { params }: Params) {
   try {
@@ -78,6 +81,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (denial) return denial;
 
     const { id } = await params;
+    // جلسه‌ی فعلی برای بررسی inviteSlug هنگام پاک‌کردن دعوت‌ها
+    const current = await db.liveStream.findUnique({
+      where: { id },
+      select: { id: true, inviteSlug: true },
+    });
+    if (!current) return bad("کلاس آنلاین پیدا نشد.", 404);
     const body = (await req.json().catch(() => null)) as Record<
       string,
       unknown
@@ -119,8 +128,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
     // دعوت‌ها فقط تا وقتی جلسه شروع نشده قابل ویرایش‌اند؟ نه — مدیر می‌تواند
     // هر لحظه (حتی وسط جلسه) نفرات بیشگری دعوت کند؛ جایگزینی کامل انجام می‌شود.
-    let preparedData: Prisma.StreamInvitationCreateManyStreamInput[] | null =
-      null;
+    // پاک‌کردن کامل دعوت‌ها هم مجاز است (کلاس «لینک-تنها»).
+    let preparedData: Prisma.StreamInvitationCreateManyStreamInput[] = [];
     if (replacingInvitations) {
       const courseIds = Array.isArray(body?.courseIds)
         ? (body.courseIds as unknown[]).map(String)
@@ -133,14 +142,28 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       preparedData = prepared.data;
     }
 
+    // — پاک‌شدن کامل دعوت‌ها → کلاس «لینک-تنها»: اگر لینک یکتا ندارد،
+    //   ساخته می‌شود تا ورود فقط برای دارندگان لینک ممکن بماند —
+    if (
+      replacingInvitations &&
+      preparedData.length === 0 &&
+      !current.inviteSlug
+    ) {
+      const slug = await generateStreamInviteSlug();
+      if (!slug.ok) return bad(slug.error, 500);
+      data.inviteSlug = slug.slug;
+    }
+
     const stream = await db.liveStream.update({
       where: { id },
       data: {
         ...data,
-        invitations: preparedData
+        invitations: replacingInvitations
           ? {
               deleteMany: {},
-              createMany: { data: preparedData },
+              ...(preparedData.length > 0
+                ? { createMany: { data: preparedData } }
+                : {}),
             }
           : undefined,
       },

@@ -399,6 +399,8 @@ model User {
   taughtCourses Course[]
   taughtClasses ClassRoom[]
   hostedStreams LiveStream[]
+  // — آزمون‌های ساخته‌شده در پنل استاد («ساخت آزمون») —
+  createdExams  Exam[]          @relation("TeacherExams")
   // — واریزهای درآمد استاد (ثبت دستی مدیر) —
   payouts    TeacherPayout[]
 }
@@ -526,8 +528,14 @@ model Exam {
   // bankOriginId شناسه‌ی آزمون اصلی بانک است (فقط برای شمارش برگزاری‌ها؛ بدون کلید خارجی).
   isBankCopy      Boolean  @default(false)
   bankOriginId    String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  // — سازنده‌ی استاد (null = ساخته‌ی مدیر) —
+  // پنل استاد بخش «ساخت آزمون» فقط آزمون‌های creatorId خودش را می‌بیند و
+  // ویرایش می‌کند؛ حذف کاربر سازنده آزمون را رها می‌کند (SetNull) تا دسترس
+  // آزمون در پنل کاربران سالم بماند.
+  creator          User?    @relation("TeacherExams", fields: [creatorId], references: [id], onDelete: SetNull)
+  creatorId        String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   questions       ExamQuestion[]
   attempts        ExamAttempt[]
@@ -535,6 +543,7 @@ model Exam {
   @@index([courseId])
   @@index([classId])
   @@index([isBankCopy])
+  @@index([creatorId])
 }
 
 // سوال آزمون — هشت نوع پشتیبانی‌شده:
@@ -680,12 +689,28 @@ model OtpCode {
   id         String    @id @default(cuid())
   phone      String
   codeHash   String // کد ۶ رقمی هش‌شده
+  // هدف‌مندیِ کد — کدِ صادرشده برای یک هدف فقط در همان هدف مصرف می‌شود
+  // (user_auth: ورود/ثبت‌نام کاربر سایت · panel_login: ورود پنل کاربر ·
+  //  admin_2fa: مرحله‌ی دوم ورود مدیر · admin_phone: تایید شماره‌ی جدید مدیر)
+  purpose    String    @default("general")
   attempts   Int       @default(0) // حداکثر ۵ تلاش برای هر کد
   expiresAt  DateTime
   consumedAt DateTime?
   createdAt  DateTime  @default(now())
 
   @@index([phone, createdAt])
+  @@index([phone, purpose, createdAt])
+}
+
+// شمارنده‌ی پایدارِ محدودیت نرخ درخواست‌ها (حداکثر N تلاش در پنجره‌ی زمانی) —
+// «پایدار» یعنی پس از ری‌استارت هم باقی می‌ماند (همان SQLite موجود؛ بدون
+// وابستگی زیرساختی تازه مثل Redis). کلید = دامنه + حساب/شماره/IP.
+model RateLimitEntry {
+  key         String   @id
+  windowStart DateTime // شروع پنجره‌ی شمارش
+  count       Int      @default(0)
+
+  @@index([windowStart])
 }
 
 // ثبت‌نام نیمه‌کاره — فرم یکپارچه‌ی «ورود/ثبت‌نام»: پس از تایید موفق شماره‌ی
@@ -822,6 +847,12 @@ model ChatSettings {
   botName        String   @default("پشتیبان آوید")
   botTitle       String   @default("پشتیبانی آکادمی آوید")
   botAvatar      String   @default("/images/chat/bot-avatar.png")
+  // نحوه‌ی نمایش «تصویر پروفایل چت‌بات» روی دکمه‌ی شناور پایین صفحات سایت:
+  //   circle = حالت دایره‌ای (رفتار کنونی): برش مربع ۱:۱ داخل قاب دایره با حاشیه/سایه
+  //   custom = حالت دلخواه: تصویر آزاد — بدون قاب/استروک/حاشیه/سایه و بدون برش ۱:۱؛
+  //            ارتفاع حداکثر اندازه‌ی پروفایل و عرضِ اصل تصویر حفظ می‌شود؛
+  //            پس‌زمینه‌ی شفاف همان‌گونه شفاف می‌ماند (رنگ پس‌زمینه اضافه نمی‌شود)
+  botAvatarMode   String   @default("circle") // circle | custom
   welcomeMessage String   @default("سلام 👋 به آکادمی آوید خوش آمدید!\nمن پشتیبان آنلاین آوید هستم. اگر درباره‌ی دوره‌ها، ثبت‌نام یا پرداخت سوالی دارید همین‌جا بنویسید؛ پیام شما مستقیماً به تیم پشتیبانی می‌رسد و سریع پاسخ می‌گیرد.")
   autoOpen       Boolean  @default(true) // نمایش خودکار حباب خوش‌آمدگویی هنگام ورود کاربر به سایت (هر IP یک بار در شبانه‌روز)
   isActive       Boolean  @default(true) // فعال/غیرفعال بودن چت برای بازدیدکنندگان

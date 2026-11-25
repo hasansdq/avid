@@ -4,6 +4,7 @@ import path from "node:path";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
 import { bad, str, float } from "@/lib/api-helpers";
+import { signCertFileUrl, stripCertSig } from "@/lib/cert-files";
 
 /**
  * PATCH  /api/admin/certificates/[id] — ویرایش گواهینامه (معدل، توضیح، جایگزینی فایل)
@@ -71,9 +72,9 @@ export async function PATCH(
     }
 
     if ("fileUrl" in body) {
-      const fileUrl = str(body.fileUrl);
+      const fileUrl = stripCertSig(str(body.fileUrl));
       if (!fileUrl) return bad("آدرس فایل گواهینامه نمی‌تواند خالی باشد.");
-      data.fileUrl = fileUrl;
+      data.fileUrl = fileUrl; // ذخیره‌سازی بدون query — امضا فقط در پاسخ/نمایش است
     }
 
     if (Object.keys(data).length === 0) {
@@ -95,7 +96,9 @@ export async function PATCH(
       await removeLocalFile(existing.fileUrl);
     }
 
-    return NextResponse.json(updated);
+    return NextResponse.json(
+      { ...updated, fileUrl: signCertFileUrl(updated.fileUrl) }
+    );
   } catch (error) {
     console.error("certificate PATCH error:", error);
     return NextResponse.json(

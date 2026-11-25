@@ -170,6 +170,25 @@ rm -rf .db-transfer ./old-custom.db
 > پروکسی شود — بدون این مسیر، اتاق کلاس آنلاین از مرورگر قابل دسترسی
 > نیست و «کلاس آنلاین وصل نمی‌شود» را می‌بینید.
 
+**خودآزمایی مسیرهای سوکت (بعد از تنظیم vhost):**
+
+```bash
+# باید ۲۰۰ و پاسخ engine.io (شامل "sid") برگرداند:
+curl -s "https://دامنه/stream-socket/?EIO=4&transport=polling" | head -c 80
+curl -s "https://دامنه/socket.io/?EIO=4&transport=polling"     | head -c 80
+```
+
+اگر به‌جای پاسخ engine.io صفحه‌ی HTML/404 دیدید، location مسیر مربوطه در
+vhost تنظیم نشده است.
+
+> **پروکسی fallback داخل اپ:** از این نسخه، خود اپ Next.js هم
+> `/stream-socket/` و `/socket.io/` را به سرویس‌های سوکت پاس می‌دهد
+> (`src/lib/socket-proxy.ts`)؛ یعنی حتی اگر location مسیرها در وب‌سرور
+> تنظیم نشده باشد، اتصال با polling برقرار می‌ماند (فقط WebSocket —
+> که برای سیگنالینگ ضروری نیست — بدون location وب‌سرور ممکن نیست).
+> کلاینت نیز اول با polling handshake می‌کند و بعد به WebSocket ارتقا
+> می‌یابد، پس پروکسی‌هایی که `Upgrade` را پاس نمی‌دهند اتصال را نمی‌شکنند.
+
 ---
 
 ## ۴) تنظیمات بعد از اولین ورود
@@ -186,6 +205,33 @@ rm -rf .db-transfer ./old-custom.db
    `gateway=test` در URL به‌تنهایی هیچ پرداختی را موفق ثبت نمی‌کند و تراکنش
    واقعی فقط پس از تأییدِ درگاه ثبت می‌شود.
 4. یک ویدئو با «لینک مستقیم mp4» بسازید و پخش را تست کنید.
+
+### ۴-الف) مبدای رسمی سایت (SITE_URL)
+
+مبدای رسمی سایت را در فایل `.env` روی سرور تنظیم کنید (برای دامنه‌ی اصلی
+آوید):
+
+```env
+SITE_URL=https://amlm.ir
+```
+
+پس از ذخیره، برای اعمال روی همه‌ی سرویس‌ها (وب، چت، استریم):
+
+```bash
+docker compose up -d
+```
+
+این مقدار در سه جا به‌کار می‌رود و تا وقتی تنظیم نشده باشد، این رفتارها به
+هدرهای قابل‌جعل درخواست (Host / X-Forwarded-Host) متکی می‌مانند:
+
+  • آدرس بازگشت درگاه پرداخت (callback) و ریدایرکت‌های پس از پرداخت؛
+  • بررسی CSRF/مبدأ درخواست‌های تغییردهنده‌ی متکی به کوکی نشست؛
+  • گره‌ی مبدأ اتصال سوکت‌های چت و استریم (هم اتصال مستقیم و هم مسیر
+    جایگزین Next.js).
+
+اگر دامنه یا زیردامنه‌ی دیگری هم باید مجاز باشد (مثلاً پنل روی دامنه‌ی
+جدا)، آن را جداگانه در `ALLOWED_ORIGINS` با ویرگول بیاورید. مقدار
+باید با `https://` و بدون اسلش انتهایی باشد.
 
 ---
 
@@ -287,8 +333,8 @@ crontab -e
 | سایت 502 | `docker compose ps` — سرویس web بالاست؟ `docker compose logs web` |
 | web «unhealthy» | `curl 127.0.0.1:3900/api/health` → فیلد `db`؛ خطای دیتابیس؟ والی `avid_db` و لاگ `migrate` |
 | compose درباره CHAT_AUTH_SECRET خطا می‌دهد | `.env` کنار compose.yaml → مقدار `openssl rand -hex 32` |
-| چت وصل نمی‌شود | تنظیم `/socket.io/` در VirtualHost + ماژول `mod_proxy_wstunnel` |
-| کلاس آنلاین وصل نمی‌شود | تنظیم `/stream-socket/` در VirtualHost (نصب جدید: پروکسی به ۳۰۰۵) + ماژول `mod_proxy_wstunnel` |
+| چت وصل نمی‌شود | تنظیم `/socket.io/` در VirtualHost + ماژول `mod_proxy_wstunnel` — بدون آن، اتصال با polling از fallback اپ برقرار می‌ماند (کندتر ولی کارا) |
+| کلاس آنلاین وصل نمی‌شود | تنظیم `/stream-socket/` در VirtualHost (نصب جدید: پروکسی به ۳۰۰۵) + ماژول `mod_proxy_wstunnel` — بدون آن، اتصال با polling از fallback اپ برقرار می‌ماند؛ اگر صفحه روی «اتصال...» ماند، `curl https://دامنه/stream-socket/?EIO=4&transport=polling` را آزمایش کنید (باید پاسخ engine.io با "sid" برگرداند) |
 | خطای مهاجرت | `docker compose logs migrate` — قبل از آن `deploy/backup.sh` (خودِ migrate هم بکاپ می‌گیرد) |
 | رمز مدیر فراموش شده | در `.env`: `ADMIN_FORCE_RESET=1` + `ADMIN_INITIAL_PASSWORD=…` → `docker compose run --rm migrate` → مقدار را 0 برگردانید |
 | آپلود ناموفق | سطح دسترسی والی avid_uploads: `docker compose exec web ls -la public/uploads` |

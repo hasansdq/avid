@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
-import { getChatSettings } from "@/lib/chat";
+import { getChatSettings, parseChatAvatarMode } from "@/lib/chat";
 
 /** GET /api/chat/admin/settings — تنظیمات چت‌بات */
 export async function GET(req: NextRequest) {
@@ -63,6 +63,9 @@ export async function PUT(req: NextRequest) {
         botName,
         botTitle,
         botAvatar,
+        // نحوه‌ی نمایش تصویر پروفایل چت‌بات — دایره‌ای (circle) یا دلخواه (custom)؛
+        // مقدار نامعتبر با اعتبارسنجی به دایره‌ای برمی‌گردد
+        botAvatarMode: parseChatAvatarMode(body?.botAvatarMode),
         welcomeMessage,
         autoOpen: body?.autoOpen === true,
         isActive: body?.isActive === true,

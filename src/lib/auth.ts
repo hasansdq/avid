@@ -26,21 +26,25 @@ export function verifyPassword(password: string, stored: string): boolean {
 /* ---------------- کوکی نشست ---------------- */
 
 /**
- * گزینه‌های یکدست کوکی نشست مدیر.
+ * گزینه‌های یکدست کوکی نشست مدیر — تنظیمات «پیش‌نمایش» و «production» جدا.
  *
- * پشت دروازه‌ی HTTPS کوکی با sameSite:none صادر می‌شود تا در iframe
- * پنل پیش‌نمایش ( زمینه‌ی متفرقه) هم ذخیره و ارسال شود — چون مرورگرهای
- * جدید کوکی‌های lax/strict متفرقه را می‌بندند؛ صفت Partitioned (CHIPS)
- * هم اضافه می‌شود تا حتی با «انسداد کوکی متفرقه» در کروم/فایرفاکس
- * نشست داخل iframe پایدار بماند. در HTTP محلی همان lax امن‌تر است.
+ * پیش‌نمایش (NODE_ENV != production، پشت HTTPS گیت‌وی): sameSite:none +
+ * partitioned تا نشست در iframe پنل پیش‌نمایش (زمینه‌ی متفرقه) هم ذخیره و
+ * ارسال شود — چون مرورگرهای جدید کوکی‌های lax/strict متفرقه را نمی‌فرستند.
+ * production: sameSite:lax — همه‌ی کاربردها هم‌مبدأند (پنل روی دامنه‌ی خود
+ * سایت) و ریدایرکت درگاه پرداخت ناوبری سطح-بالای GET است که lax مجاز
+ * می‌داند؛ کوکی دیگر به سایت‌های متفرقه ارسال نمی‌شود.
+ * در HTTP محلی (توسعه‌ی بدون HTTPS) همان lax امن‌تر است.
  */
 export function sessionCookieOptions(req: NextRequest, maxAge: number) {
   const secure = requestSecure(req);
+  const preview = process.env.NODE_ENV !== "production";
+  const crossSiteIframe = preview && secure;
   return {
     httpOnly: true,
-    sameSite: secure ? ("none" as const) : ("lax" as const),
+    sameSite: crossSiteIframe ? ("none" as const) : ("lax" as const),
     secure,
-    partitioned: secure || undefined,
+    partitioned: crossSiteIframe || undefined,
     maxAge,
     path: "/",
   } satisfies {

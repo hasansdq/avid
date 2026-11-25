@@ -25,7 +25,7 @@ import {
 } from "@/lib/sample-questions";
 import { faDigits } from "@/lib/fa";
 import { SectionHeading, Reveal } from "@/components/reveal";
-import { EditableText } from "@/components/site/editable-texts";
+import { EditableText, renderGradientText } from "@/components/site/editable-texts";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -241,7 +241,7 @@ export function Samples({
           icon={FileQuestion}
           badge="نمونه سوالات"
           title={
-            <EditableText k="samples.title">
+            <EditableText k="samples.title" renderText={renderGradientText}>
               <>
                 نمونه سوالات را{" "}
                 <span className="text-gradient">بررسی کنید</span>

@@ -23,10 +23,18 @@ type SealState = "loading" | "loaded" | "error" | "none";
 /** اگر تصویر بدون پاسخ ماند، بعد از این مدت حالت خطا نشان می‌دهیم (شنونده‌ی load همچنان فعال می‌ماند) */
 const HANG_TIMEOUT_MS = 12_000;
 
-/** href صفحه‌ی تأیید رسمی را از خودِ کد استخراج می‌کند (بدون تغییر کد) */
+/** href صفحه‌ی تأیید رسمی را از خودِ کد استخراج می‌کند (بدون تغییر کد) —
+ *  موجودیت‌های HTML فرارشده decode می‌شوند تا پیوند جایگزین همان مقصد
+ *  لینک رسمی باشد (&amp; → & و …)، نه نشانی‌ای با پارامتر فرارشده. */
 function extractVerifyHref(html: string): string | null {
   const match = /href\s*=\s*["']([^"']+)["']/i.exec(html);
-  return match?.[1] ?? null;
+  if (!match) return null;
+  return match[1]
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
 }
 
 /** رنگ‌بندی بر اساس ارائه‌دهنده‌ی نشان: اینماد (فیروزه‌ای) / زرین‌پال (طلایی) */

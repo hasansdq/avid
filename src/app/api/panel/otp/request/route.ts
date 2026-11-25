@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { findActiveOtp, issueOtp, deleteActiveOtp, OTP_RESEND_MS } from "@/lib/user-auth";
 import { sendOtpSms } from "@/lib/sms";
+import {
+  clientIpOf,
+  hitRate,
+  rateLimited,
+  rateStorageError,
+  RATE_LIMITS,
+} from "@/lib/rate-limit";
 
 /**
  * POST /api/panel/otp/request — درخواست کد ورود به پنل کاربر.
@@ -46,8 +53,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // — محدودیت پایدارِ ارسال کد: به‌ازای شماره و IP —
+    const byPhone = await hitRate(
+      `otp-req:p:${phone}`,
+      RATE_LIMITS.otpRequestPhone
+    );
+    const byIp = await hitRate(
+      `otp-req:ip:${clientIpOf(req)}`,
+      RATE_LIMITS.otpRequestIp
+    );
+    if (byPhone.storageError || byIp.storageError) {
+      // محدودکننده نتوانست شمارش را ذخیره/بخواند — بی‌صدا رها نمی‌شود
+      return rateStorageError();
+    }
+    if (byPhone.exceeded || byIp.exceeded) {
+      const r = byPhone.exceeded ? byPhone : byIp;
+      return rateLimited(r.retryAfterSec);
+    }
+
     // — محدودیت ارسال مجدد (مشابه مسیر ثبت‌نام) —
-    const active = await findActiveOtp(phone);
+    const active = await findActiveOtp(phone, "panel_login");
     if (active && Date.now() - active.createdAt.getTime() < OTP_RESEND_MS) {
       const waitSec = Math.ceil(
         (OTP_RESEND_MS - (Date.now() - active.createdAt.getTime())) / 1000
@@ -60,7 +85,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { code } = await issueOtp(phone);
+    const { code } = await issueOtp(phone, "panel_login");
     const sms = await sendOtpSms(phone, code);
 
     if (!sms.delivered) {

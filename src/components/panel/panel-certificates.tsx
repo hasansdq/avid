@@ -189,12 +189,12 @@ function CertificateCard({
             aria-label={`مشاهده گواهینامه ${cert.courseTitle}`}
             className="relative block h-40 w-32 overflow-hidden rounded-xl border border-foreground/[0.1] bg-foreground/[0.03] dark:border-white/10"
           >
-            <Image
+            {/* گواهینامه خصوصی است — لینک امضاشده (?sig=) — بهینه‌ساز next/image
+                کوئری‌استرینگ را رد می‌کند؛ <img> مستقیم (بدون بهینه‌ساز) سرو می‌شود */}
+            <img
               src={cert.fileUrl}
               alt={`گواهینامه دوره ${cert.courseTitle}`}
-              fill
-              sizes="128px"
-              className="object-contain"
+              className="absolute inset-0 h-full w-full object-contain"
             />
           </button>
         ) : (
@@ -359,13 +359,12 @@ function CertificateDialog({
                 ) : (
                   /* قاب با ارتفاع محدود تا دکمه‌های دانلود بدون پیمایش دیده شوند */
                   <div className="relative h-[60vh] w-full overflow-hidden rounded-xl border border-foreground/[0.1] bg-white p-2 dark:border-white/10">
-                    <Image
+                    {/* لینک امضاشده — <img> مستقیم (بهینه‌ساز کوئری را رد می‌کند) */}
+                    <img
                       src={cert.fileUrl}
                       alt={`گواهینامه دوره ${cert.courseTitle}`}
-                      fill
-                      sizes="(max-width: 768px) 100vw, 700px"
                       onError={() => setImageFailed(true)}
-                      className="object-contain"
+                      className="absolute inset-0 h-full w-full object-contain"
                     />
                   </div>
                 )}

@@ -33,7 +33,7 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { VideoSourcePlayer } from "@/components/site/video-source-player";
 import { LogoMark } from "@/components/admin/shared/logo-mark";
-import { EditableText } from "@/components/site/editable-texts";
+import { EditableText, renderGradientText } from "@/components/site/editable-texts";
 
 /* ------------------------------------------------------------------ */
 /*  ابزارهای مشترک پخش ویدئو — تشخیص منبع از src/lib/video           */
@@ -245,7 +245,7 @@ export function VideosPage() {
             کتابچه‌ی ویدئویی
           </span>
           <h1 className="mt-5 text-3xl font-black leading-[1.25] text-foreground md:text-[2.6rem] md:leading-[1.2]">
-            <EditableText k="videosPage.title">
+            <EditableText k="videosPage.title" renderText={renderGradientText}>
               <>
                 لیست‌های پخش <span className="text-gradient">آموزشی</span> آوید
               </>

@@ -85,6 +85,17 @@ const COLOR_PRESETS: { value: string; label: string }[] = [
   { value: "#1f2937", label: "سرمه‌ای" },
 ];
 
+/* ————————————————————————— افکت‌های تیترها ————————————————————————— */
+
+/**
+ * متن سفارشیِ ویرایشگر مداد را با همان افکت گرادیانِ تیترهای سکشن رندر
+ * می‌کند — صرفِ تغییر متن نباید افکت ظاهری پیشین تیتر را حذف کند
+ * (همان الگوی شمارنده‌های «رشد آکادمی» که افکت روی کل عدد اعمال می‌شود).
+ */
+export function renderGradientText(text: string): React.ReactNode {
+  return <span className="text-gradient">{text}</span>;
+}
+
 /* ————————————————————————— Provider ————————————————————————— */
 
 export function SiteTextsProvider({

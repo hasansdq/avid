@@ -12,7 +12,7 @@ import {
 import type { SiteSettings } from "@prisma/client";
 import { EnrollForm, type PublicCourse } from "@/components/site/enroll-form";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { EditableText } from "@/components/site/editable-texts";
+import { EditableText, renderGradientText } from "@/components/site/editable-texts";
 import { Button } from "@/components/ui/button";
 import { faDigits } from "@/lib/fa";
 
@@ -97,7 +97,7 @@ export function RegisterPage({
               </EditableText>
             </span>
             <h1 className="mt-4 text-3xl font-black leading-[1.3] tracking-tight text-foreground md:text-4xl">
-              <EditableText k="registerPage.title">
+              <EditableText k="registerPage.title" renderText={renderGradientText}>
                 <>
                   ثبت‌نام کنید و به آوید <span className="text-gradient">بپیوندید</span>
                 </>

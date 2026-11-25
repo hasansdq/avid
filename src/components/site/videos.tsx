@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { faDigits } from "@/lib/fa";
 import { SectionHeading, Reveal } from "@/components/reveal";
 import { Button } from "@/components/ui/button";
-import { EditableText } from "@/components/site/editable-texts";
+import { EditableText, renderGradientText } from "@/components/site/editable-texts";
 import {
   Dialog,
   DialogContent,
@@ -167,7 +167,7 @@ export function Videos({
           icon={Film}
           badge="ویدئوهای آموزشی"
           title={
-            <EditableText k="videos.title">
+            <EditableText k="videos.title" renderText={renderGradientText}>
               <>
                 آموزش‌های رایگان را{" "}
                 <span className="text-gradient">تماشا کنید</span>

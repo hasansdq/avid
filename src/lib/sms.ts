@@ -117,6 +117,17 @@ function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) : s;
 }
 
+/**
+ * در production کد واقعی هرگز در لاگ/گزارش‌ها نمی‌نشیند: هر رشته‌ی ۶ رقمی
+ * پیوسته در متن پیام‌های «otp» پیش از ثبت/چاپ ماسک می‌شود (تاریخ‌ها و
+ * مبالغ پیام‌های دستی دست‌نخورده می‌مانند). در محیط توسعه چیزی ماسک
+ * نمی‌شود تا جریان نمایشی قابل تست بماند.
+ */
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+function maskOtpDigits(text: string): string {
+  return IS_PRODUCTION ? text.replace(/\d{6}/g, "******") : text;
+}
+
 /** ثبت گزارش ارسال در SmsLog — هرگز استثنا پرتاب نمی‌کند */
 async function logSms(entry: {
   phone: string;
@@ -131,7 +142,11 @@ async function logSms(entry: {
     await db.smsLog.create({
       data: {
         phone: entry.phone,
-        text: truncate(entry.text, 500),
+        // در production کد واقعی در متنِ ثبت‌شده‌ی پیام‌های otp ماسک می‌شود
+        text: truncate(
+          entry.kind === "otp" ? maskOtpDigits(entry.text) : entry.text,
+          500
+        ),
         kind: entry.kind,
         provider: entry.provider,
         status: entry.delivered ? "sent" : "failed",
@@ -637,9 +652,13 @@ export async function sendSms(
   try {
     const settings = await getSmsSettings();
 
-    // — بدون سرویس متصل: حالت نمایشی —
+    // — بدون سرویس متصل: حالت نمایشی — در production متن (و کد) ماسک چاپ می‌شود
     if (!isSmsConfigured(settings)) {
-      console.log(`[SMS demo] → ${phone}: ${text}`);
+      console.log(
+        `[SMS demo] → ${phone}: ${
+          kind === "otp" ? maskOtpDigits(text) : text
+        }`
+      );
       return demoResult();
     }
 
@@ -701,8 +720,9 @@ export async function sendOtpSms(
       return await sendViaConsole(settings, to, OTP_TEXT(code), "otp");
     }
 
-    // — حالت نمایشی: کد در پاسخ API برگردانده می‌شود —
-    console.log(`[SMS demo] → ${phone}: ${OTP_TEXT(code)}`);
+    // — حالت نمایشی: کد در پاسخ API (فقط محیط توسعه) برمی‌گردد؛ در
+    // production کد در لاگ کنسول هم ماسک می‌شود —
+    console.log(`[SMS demo] → ${phone}: ${maskOtpDigits(OTP_TEXT(code))}`);
     return demoResult();
   } catch (error) {
     console.error("otp sms send error:", error);

@@ -67,6 +67,7 @@ import { apiFetch, toastApiError } from "@/components/admin/api";
 import { ConfirmDelete } from "@/components/admin/shared/confirm-delete";
 import { EmptyState } from "@/components/admin/shared/empty-state";
 import { ImageUrlField } from "@/components/admin/shared/image-url-field";
+import { useUploadUrl } from "@/components/admin/shared/upload-url-context";
 import { ModuleHeader } from "@/components/admin/shared/module-header";
 import { PublishSwitch } from "@/components/admin/shared/publish-switch";
 import {
@@ -170,6 +171,8 @@ function draftToPayload(d: QuestionDraft) {
 
 /* ————————————————— نشان نوع دسترسی ————————————————— */
 
+/** exported — در پنل استاد («ساخت آزمون») هم استفاده می‌شود */
+
 const ACCESS_STYLES: Record<
   ExamAccessType,
   { icon: typeof Globe; className: string }
@@ -196,7 +199,7 @@ const ACCESS_STYLES: Record<
   },
 };
 
-function AccessBadge({ type }: { type: string }) {
+export function AccessBadge({ type }: { type: string }) {
   const key = (ACCESS_TYPES as readonly string[]).includes(type)
     ? (type as ExamAccessType)
     : "open";
@@ -233,6 +236,8 @@ function VideoUrlField({
 }) {
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  // آدرس آپلود از بافت — ادمین/استاد را از هم جدا می‌کند
+  const uploadUrl = useUploadUrl();
 
   async function handleUpload(file: File | undefined) {
     if (!file || uploading) return;
@@ -248,7 +253,7 @@ function VideoUrlField({
       // فیلد kind نمی‌فرستاد و آپلود mp4/webm ناموفق بود.
       body.append("kind", "video");
       body.append("section", "exams");
-      const res = await fetch("/api/admin/upload", { method: "POST", body });
+      const res = await fetch(uploadUrl, { method: "POST", body });
       const data = (await res.json().catch(() => null)) as {
         url?: string;
         error?: string;
@@ -1299,14 +1304,23 @@ export function ExamsModule() {
 
 /* ————————————————— ادیتور سوالات آزمون ————————————————— */
 
-function QuestionsEditor({
+/**
+ * ادیتور سوالات — مشترک بین پنل مدیریت و پنل استاد («ساخت آزمون»).
+ * apiBase مسیر ریشه‌ی API آزمون است:
+ *   • پنل مدیریت → «/api/admin/exams» (پیش‌فرض)
+ *   • پنل استاد  → «/api/teacher/exams»
+ */
+export function QuestionsEditor({
   exam,
   onClose,
   onChanged,
+  apiBase = "/api/admin/exams",
 }: {
   exam: ExamWithStats;
   onClose: () => void;
   onChanged: () => void;
+  /** مسیر ریشه‌ی API آزمون (بدون اسلش پایانی) */
+  apiBase?: string;
 }) {
   const [drafts, setDrafts] = useState<QuestionDraft[] | null>(null);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -1319,7 +1333,7 @@ function QuestionsEditor({
       try {
         const full = await apiFetch<ExamWithStats & {
           questions: ExamQuestion[];
-        }>(`/api/admin/exams/${exam.id}`);
+        }>(`${apiBase}/${exam.id}`);
         if (cancelled) return;
         setDrafts(full.questions.map(draftFromQuestion));
       } catch (error) {
@@ -1417,7 +1431,7 @@ function QuestionsEditor({
     }
     setSaving(true);
     try {
-      await apiFetch(`/api/admin/exams/${exam.id}/questions`, {
+      await apiFetch(`${apiBase}/${exam.id}/questions`, {
         method: "PUT",
         body: JSON.stringify({ questions: drafts.map(draftToPayload) }),
       });
@@ -2163,12 +2177,21 @@ function roundGrade(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-function AttemptsViewer({
+/**
+ * نمایش پاسخ‌برگه‌ها و تصحیح — مشترک بین پنل مدیریت و پنل استاد.
+ * apiBase مسیر ریشه‌ی API آزمون است:
+ *   • پنل مدیریت → «/api/admin/exams» (پیش‌فرض)
+ *   • پنل استاد  → «/api/teacher/exams»
+ */
+export function AttemptsViewer({
   exam,
   onClose,
+  apiBase = "/api/admin/exams",
 }: {
   exam: ExamWithStats;
   onClose: () => void;
+  /** مسیر ریشه‌ی API آزمون (بدون اسلش پایانی) */
+  apiBase?: string;
 }) {
   const [attempts, setAttempts] = useState<AttemptRow[] | null>(null);
   const [questions, setQuestions] = useState<ExamQuestion[] | null>(null);
@@ -2179,9 +2202,9 @@ function AttemptsViewer({
   const load = useCallback(async () => {
     try {
       const [attemptList, full] = await Promise.all([
-        apiFetch<AttemptRow[]>(`/api/admin/exams/${exam.id}/attempts`),
+        apiFetch<AttemptRow[]>(`${apiBase}/${exam.id}/attempts`),
         apiFetch<ExamWithStats & { questions: ExamQuestion[] }>(
-          `/api/admin/exams/${exam.id}`
+          `${apiBase}/${exam.id}`
         ),
       ]);
       setAttempts(attemptList);
@@ -2330,7 +2353,7 @@ function AttemptsViewer({
 
     setGradingId(a.id);
     try {
-      await apiFetch(`/api/admin/exams/${exam.id}/attempts`, {
+      await apiFetch(`${apiBase}/${exam.id}/attempts`, {
         method: "PATCH",
         body: JSON.stringify({
           attemptId: a.id,

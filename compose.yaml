@@ -21,7 +21,8 @@ services:
       DATABASE_URL: file:/app/data/custom.db
       TZ: ${TZ:-Asia/Tehran}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-admin123}
+      # خالی = رمز تصادفی ساخته و در لاگ سرویس migrate چاپ می‌شود (نصب تازه)
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-}
       ADMIN_FORCE_RESET: ${ADMIN_FORCE_RESET:-0}
       BACKUP_DIR: /app/backups
     volumes:
@@ -50,9 +51,17 @@ services:
       NODE_ENV: production
       DATABASE_URL: file:/app/data/custom.db
       TZ: ${TZ:-Asia/Tehran}
+      # مبدای رسمی سایت (بند ۱۰) — آدرس بازگشت درگاه پرداخت از همین مقدار
+      # ساخته می‌شود و دیگر به هدرهای قابل‌جعل درخواست متکی نیست؛ خالی =
+      # هدرهای پروکسی (رفتار پیشین).
+      SITE_URL: ${SITE_URL:-}
+      # مبداهای اضافه‌ی مجاز (CSRF/سوکت) — جداشده با ویرگول؛ خالی = فقط هم‌مبدأ
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       # رمز مشترک امضای تیکت‌های عضویت چت (باید با سرویس chat یکی باشد)
       # — بدون مقدار، compose با پیام خطا متوقف می‌شود (کلید ثابتی وجود ندارد)
       CHAT_AUTH_SECRET: ${CHAT_AUTH_SECRET:?CHAT_AUTH_SECRET is required — set it in .env (openssl rand -hex 32)}
+      # امضای لینک‌های خصوصی گواهینامه (اختیاری — پیش‌فرض همان CHAT_AUTH_SECRET)
+      FILE_SIGN_SECRET: ${FILE_SIGN_SECRET:-}
       # نمایش کد تایید وقتی پیامک واقعی پیکربندی نشده — فقط محیط توسعه؛
       # در production این کد هرگز در پاسخ API برگردانده نمی‌شود
       OTP_DEV_CODE: ${OTP_DEV_CODE:-0}
@@ -82,6 +91,9 @@ services:
       NODE_ENV: production
       DATABASE_URL: file:/app/data/custom.db
       TZ: ${TZ:-Asia/Tehran}
+      # مبداهای مجاز اتصال سوکت (بند ۷) — خالی = فقط هم‌مبدأ با Host درخواست
+      SITE_URL: ${SITE_URL:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       CHAT_AUTH_SECRET: ${CHAT_AUTH_SECRET:?CHAT_AUTH_SECRET is required — set it in .env (openssl rand -hex 32)}
     volumes:
       - avid_db:/app/data
@@ -108,6 +120,9 @@ services:
       NODE_ENV: production
       DATABASE_URL: file:/app/data/custom.db
       TZ: ${TZ:-Asia/Tehran}
+      # مبداهای مجاز اتصال سوکت (بند ۷) — خالی = فقط هم‌مبدأ با Host درخواست
+      SITE_URL: ${SITE_URL:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
     volumes:
       - avid_db:/app/data:ro
     depends_on:

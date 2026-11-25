@@ -10,6 +10,7 @@ import { PwaBootstrap } from "@/components/pwa/pwa-bootstrap";
 import { InstallBanner } from "@/components/pwa/install-banner";
 import { db } from "@/lib/db";
 import { cssTextForKeys } from "@/lib/fonts";
+import { faviconUrlForMetadata } from "@/lib/branding";
 
 /**
  * متادیتای viewport موبایل — رنگ نوار مرورگر (themeColor) برای هر دو
@@ -46,6 +47,22 @@ export async function generateMetadata(): Promise<Metadata> {
   const slogan =
     settings?.slogan ?? "یادگیری هر مهارتی، سرمایه‌ی شما در آینده است";
 
+  // — favicon پویا — لوگوی فعال «تنظیمات سایت»؛ ?v با هر ذخیره عوض می‌شود
+  // تا مرورگر نسخه‌ی تازه را فوراً بگیرد (لوگوی محلی از /api/favicon سرو
+  // می‌شود، لوگوی خارجی مستقیم آدرس‌دهی می‌شود).
+  const logoUrl = settings?.logoUrl?.trim() || "/images/logo.png";
+  const isRemoteLogo = /^https?:\/\//i.test(logoUrl);
+  const isSvgLogo = /\.svg(\?|#|$)/i.test(logoUrl.split("?")[0]);
+  const favicons = await faviconUrlForMetadata().catch(() => null);
+  const dynamicFavicon =
+    favicons?.url ?? "/api/favicon?v=0";
+  // iOS آیکون SVG را نمی‌پذیرد → برای apple در آن حالت آیکون ایستای PNG
+  const appleIcon = isRemoteLogo
+    ? logoUrl
+    : isSvgLogo
+      ? "/images/icons/apple-touch-icon.png"
+      : dynamicFavicon;
+
   return {
     title: `${siteName} | ${tagline}`,
     description: slogan,
@@ -59,7 +76,6 @@ export async function generateMetadata(): Promise<Metadata> {
     ],
     authors: [{ name: `آکادمی ${siteName}` }],
     // — وب‌اپلیکیشن نصب‌شدنی (PWA) روی اندروید/iOS/ویندوز —
-    manifest: "/manifest.webmanifest",
     applicationName: siteName,
     appleWebApp: {
       capable: true,
@@ -67,11 +83,8 @@ export async function generateMetadata(): Promise<Metadata> {
       title: siteName,
     },
     icons: {
-      icon: [
-        { url: "/images/icons/icon-192.png", sizes: "192x192", type: "image/png" },
-        { url: "/images/icons/icon-512.png", sizes: "512x512", type: "image/png" },
-      ],
-      apple: "/images/icons/apple-touch-icon.png",
+      icon: [{ url: dynamicFavicon }],
+      apple: [{ url: appleIcon }],
     },
     openGraph: {
       title: `${siteName} | ${tagline}`,

@@ -13,6 +13,14 @@ import {
   OTP_RESEND_MS,
 } from "@/lib/user-auth";
 import { sendOtpSms } from "@/lib/sms";
+import {
+  clientIpOf,
+  checkRate,
+  hitRate,
+  rateLimited,
+  rateStorageError,
+  RATE_LIMITS,
+} from "@/lib/rate-limit";
 
 /**
  * POST /api/auth/login — مرحله‌ی اول ورود مدیر: نام کاربری + رمز عبور.
@@ -40,8 +48,34 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // — محدودیت پایدارِ شکست‌های ورود: به‌ازای حساب و IP (شمارنده در
+    // دیتابیس مانَدگار است و با ری‌استارت صفر نمی‌شود) — فقط «شکست»
+    // شمرده می‌شود، پس ورود عادی کاربر مدیر مختل نمی‌شود —
+    const keyUser = `admin-login:u:${username.toLowerCase()}`;
+    const keyIp = `admin-login:ip:${clientIpOf(req)}`;
+    const uLim = await checkRate(keyUser, RATE_LIMITS.adminLoginUser);
+    const ipLim = await checkRate(keyIp, RATE_LIMITS.adminLoginIp);
+    if (uLim.storageError || ipLim.storageError) {
+      // محدودکننده نتوانست شمارش را ذخیره/بخواند — بی‌صدا رها نمی‌شود
+      return rateStorageError();
+    }
+    if (uLim.exceeded || ipLim.exceeded) {
+      const r = uLim.exceeded ? uLim : ipLim;
+      return rateLimited(r.retryAfterSec);
+    }
+
     const admin = await db.adminUser.findUnique({ where: { username } });
     if (!admin || !verifyPassword(password, admin.passwordHash)) {
+      // شکست اعتبارنامه — در هر دو شمارنده ثبت می‌شود؛ نتیجه‌ی هر دو
+      // فراخوانی بررسی می‌شود: اگر ثبت شمارنده در دیتابیس شکست خورد
+      // (storageError)، بی‌صدا نادیده گرفته نمی‌شود و پاسخ موقت ۵۰۳
+      // قابل‌تلاش‌مجدد داده می‌شود تا پنجره‌ی brute-force با خطای
+      // ذخیره‌سازی باز نماند (بند ۳).
+      const uHit = await hitRate(keyUser, RATE_LIMITS.adminLoginUser);
+      const iHit = await hitRate(keyIp, RATE_LIMITS.adminLoginIp);
+      if (uHit.storageError || iHit.storageError) {
+        return rateStorageError();
+      }
       return NextResponse.json(
         { error: "نام کاربری یا رمز عبور اشتباه است." },
         { status: 401 }
@@ -58,8 +92,26 @@ export async function POST(req: NextRequest) {
 
     // — تایید دومرحله‌ای فعال → صدور کد پیامکی (بدون ساخت نشست) —
 
+    // محدودیت پایدارِ ارسال کد دومرحله‌ای: به‌ازای شماره و IP
+    const byPhone = await hitRate(
+      `otp-req:p:${admin.phone}`,
+      RATE_LIMITS.otpRequestPhone
+    );
+    const byIp = await hitRate(
+      `otp-req:ip:${clientIpOf(req)}`,
+      RATE_LIMITS.otpRequestIp
+    );
+    if (byPhone.storageError || byIp.storageError) {
+      // محدودکننده نتوانست شمارش را ذخیره/بخواند — بی‌صدا رها نمی‌شود
+      return rateStorageError();
+    }
+    if (byPhone.exceeded || byIp.exceeded) {
+      const r = byPhone.exceeded ? byPhone : byIp;
+      return rateLimited(r.retryAfterSec);
+    }
+
     // محدودیت ارسال مجدد: کد فعالِ همین شماره هنوز در دوره‌ی ۶۰ ثانیه است
-    const active = await findActiveOtp(admin.phone);
+    const active = await findActiveOtp(admin.phone, "admin_2fa");
     if (active && Date.now() - active.createdAt.getTime() < OTP_RESEND_MS) {
       const waitSec = Math.ceil(
         (OTP_RESEND_MS - (Date.now() - active.createdAt.getTime())) / 1000
@@ -72,7 +124,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { code } = await issueOtp(admin.phone);
+    const { code } = await issueOtp(admin.phone, "admin_2fa");
     const sms = await sendOtpSms(admin.phone, code);
 
     // حالت نمایشی (فقط محیط توسعه و فقط وقتی هیچ سرویس پیامکی تنظیم نشده

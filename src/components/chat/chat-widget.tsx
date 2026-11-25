@@ -11,6 +11,7 @@ import {
   useChatSocket,
   type ActivityEvent,
 } from "@/components/chat/use-chat-socket";
+import type { ChatAvatarMode } from "@/lib/chat";
 
 /** نمای یک پیام چت در سمت کاربر */
 export interface ChatMessageView {
@@ -25,6 +26,7 @@ interface PublicChatSettings {
   botName: string;
   botTitle: string;
   botAvatar: string;
+  botAvatarMode: ChatAvatarMode;
   welcomeMessage: string;
   autoOpen: boolean;
   isActive: boolean;
@@ -48,10 +50,12 @@ function BotAvatar({
   src,
   alt,
   className = "size-11",
+  mode = "circle",
 }: {
   src: string;
   alt: string;
   className?: string;
+  mode?: ChatAvatarMode;
 }) {
   const [failed, setFailed] = React.useState(false);
   const trimmed = src.trim();
@@ -66,6 +70,23 @@ function BotAvatar({
         aria-hidden
       >
         <Headset className="size-1/2 text-teal-950" strokeWidth={2} />
+      </span>
+    );
+  }
+
+  // — حالت دلخواه: تصویر آزاد — بدون استروک/حاشیه/سایه، بدون برش ۱:۱؛
+  // ارتفاع حداکثر ارتفاع سربرگ و عرضِ اصل تصویر؛ پس‌زمینه‌ی شفاف شفاف می‌ماند —
+  if (mode === "custom") {
+    return (
+      <span className="flex h-11 shrink-0 items-center justify-center">
+        {/* اندازه‌ی ذاتی تصویر لازم است؛ next/image با fill برش ۱:۱ می‌سازد */}
+        <img
+          src={trimmed}
+          alt={alt}
+          className="block h-auto max-h-11 w-auto select-none"
+          draggable={false}
+          onError={() => setFailed(true)}
+        />
       </span>
     );
   }
@@ -92,7 +113,11 @@ function BotAvatar({
 /* ---------------- آواتار دکمه‌ی شناور (تصویر پروفایل پشتیبان) ---------------- */
 
 /**
- * تصویر پروفایل پشتیبان روی دکمه‌ی دایره‌ای چت —
+ * تصویر پروفایل پشتیبان روی دکمه‌ی شناور پایین صفحات سایت — دو حالت:
+ *  • circle: قاب دایره‌ای ۱:۱ با حاشیه و سایه (نمایشِ پیش‌فرض و همیشگی)
+ *  • custom: تصویر آزاد — بدون استروک/حاشیه/سایه و بدون برش ۱:۱؛ فقط
+ *    ارتفاع حداکثر اندازه‌ی پروفایل (h-14) و عرضِ اصل تصویر حفظ می‌شود؛
+ *    پس‌زمینه‌ی شفاف شفاف می‌ماند (هیچ رنگی به آن داده نمی‌شود).
  * با تغییر «تصویر چت‌بات» در پنل مدیریت، همین دکمه هم به‌روز می‌شود
  * (تنظیمات در هر بارگذاری صفحه از سرور خوانده می‌شود).
  */
@@ -100,10 +125,12 @@ function ChatFabAvatar({
   src,
   alt,
   open,
+  mode = "circle",
 }: {
   src: string;
   alt: string;
   open: boolean;
+  mode?: ChatAvatarMode;
 }) {
   const [failed, setFailed] = React.useState(false);
   const trimmed = src.trim();
@@ -121,6 +148,27 @@ function ChatFabAvatar({
         ) : (
           <MessageCircle className="size-6 text-teal-950" strokeWidth={2.2} />
         )}
+      </span>
+    );
+  }
+
+  // — حالت دلخواه: تصویر آزاد در بدنه‌ی بی‌قاب دکمه —
+  if (mode === "custom") {
+    return (
+      <span className="relative flex h-14 items-center justify-center">
+        {/* اندازه‌ی ذاتی تصویر لازم است؛ next/image با fill برش ۱:۱ می‌سازد */}
+        <img
+          src={trimmed}
+          alt={alt}
+          className="block h-auto max-h-14 w-auto select-none"
+          draggable={false}
+          onError={() => setFailed(true)}
+        />
+        {open ? (
+          <span className="absolute inset-0 flex items-center justify-center bg-teal-950/60">
+            <X className="size-6 text-white" strokeWidth={2.2} />
+          </span>
+        ) : null}
       </span>
     );
   }
@@ -407,6 +455,8 @@ export function ChatWidget() {
   const botName = settings?.botName ?? "پشتیبان";
   const botTitle = settings?.botTitle ?? "پشتیبانی آنلاین";
   const botAvatar = settings?.botAvatar ?? "";
+  const avatarMode: ChatAvatarMode = settings?.botAvatarMode ?? "circle";
+  const isCustomAvatar = avatarMode === "custom";
   const welcomeText = settings?.welcomeMessage?.trim() ?? "";
 
   return (
@@ -425,7 +475,12 @@ export function ChatWidget() {
         >
           {/* سربرگ */}
           <div className="flex items-center gap-3 border-b border-border bg-gradient-to-l from-teal-500/10 to-emerald-500/10 px-4 py-3 dark:border-white/[0.08]">
-            <BotAvatar src={botAvatar} alt={botName} className="size-11" />
+            <BotAvatar
+              src={botAvatar}
+              alt={botName}
+              className="size-11"
+              mode={avatarMode}
+            />
             <div className="min-w-0 flex-1 leading-tight">
               <p className="truncate text-sm font-black text-foreground">
                 {botName}
@@ -558,21 +613,28 @@ export function ChatWidget() {
         </div>
       ) : null}
 
-      {/* — دکمه شناور ثابت (پایین-چپ، با اسکرول حرکت نمی‌کند): تصویر پروفایل پشتیبان — */}
+      {/* — دکمه شناور ثابت (پایین-چپ، با اسکرول حرکت نمی‌کند): تصویر پروفایل پشتیبان —
+          در حالت دایره‌ای قابِ دایره‌ای با مقیاسِ هاور؛ در حالت دلخواه بدنه‌ی
+          بی‌قاب با ابعاد اصل تصویر (فقط ارتفاع محدود به اندازه‌ی پروفایل) — */}
       <button
         type="button"
         onClick={toggleOpen}
         aria-expanded={open}
         aria-label={open ? "بستن چت پشتیبانی" : "گفتگو با پشتیبانی"}
-        className="relative flex size-14 items-center justify-center rounded-full transition-transform duration-200 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/60 focus-visible:ring-offset-2 active:scale-95"
+        className={cn(
+          "relative flex items-center justify-center transition-transform duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/60 focus-visible:ring-offset-2",
+          isCustomAvatar
+            ? "h-14 w-auto active:brightness-90"
+            : "size-14 rounded-full hover:scale-105 active:scale-95"
+        )}
       >
-        {!open ? (
+        {!open && !isCustomAvatar ? (
           <span
             aria-hidden
             className="absolute -inset-1 animate-ping rounded-full bg-teal-400/30 [animation-duration:2.4s]"
           />
         ) : null}
-        <ChatFabAvatar src={botAvatar} alt={botName} open={open} />
+        <ChatFabAvatar src={botAvatar} alt={botName} open={open} mode={avatarMode} />
         {!open && unread > 0 ? (
           <span className="absolute -end-1 -top-1 z-10 flex min-w-5 items-center justify-center rounded-full border-2 border-background bg-red-500 px-1 text-[0.65rem] font-black text-white">
             {unread > 9 ? "۹+" : faDigits(unread)}

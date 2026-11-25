@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSessionUser } from "@/lib/user-auth";
+import { signCertFileUrl } from "@/lib/cert-files";
 
 /**
  * GET /api/panel/certificates — گواهینامه‌های کاربر وارد‌شده.
@@ -34,8 +35,16 @@ export async function GET(req: NextRequest) {
       },
     });
 
+    // فایل گواهینامه خصوصی است — لینک «امضاشده» کوتاه‌عمر صادر می‌شود؛
+    // مسیر دانلود (uploads/certificates) با مالکیت/امضا گره خورده است.
     return NextResponse.json(
-      { certificates },
+      {
+        certificates: certificates.map((c) => ({
+          ...c,
+          fileUrl: signCertFileUrl(c.fileUrl),
+          issuedAt: c.issuedAt.toISOString(),
+        })),
+      },
       { headers: { "Cache-Control": "no-store" } }
     );
   } catch (error) {

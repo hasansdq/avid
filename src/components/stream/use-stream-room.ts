@@ -161,6 +161,13 @@ export function useStreamRoom(
     roleRef.current = role;
   }, [role]);
 
+  /** آینه‌ی publishing برای event handlerها — اعلام دوباره‌ی پخش پس از اتصال مجدد */
+  const publishingRef = useRef(false);
+
+  useEffect(() => {
+    publishingRef.current = publishing;
+  }, [publishing]);
+
   /** رسانه‌ی محلی ناشر (دوربین/میکروفون + صفحه) */
   const localMediaRef = useRef<{
     camStream: MediaStream | null;
@@ -202,13 +209,17 @@ export function useStreamRoom(
           sub.screenStream?.getVideoTracks() ??
           sub.camStream?.getVideoTracks() ??
           [];
+        // استاد «فقط صدا» پخش می‌کند؟ — بدون ویدئو، main فقط صدا می‌شود تا
+        // <video> صدا را پخش کند (در غیر این صورت کلاس بی‌صدا می‌شد).
         const main =
           mainTracks.length > 0
             ? new MediaStream([
                 ...mainTracks,
                 ...(sub.audioTrack ? [sub.audioTrack] : []),
               ])
-            : null;
+            : sub.audioTrack
+              ? new MediaStream([sub.audioTrack])
+              : null;
         const pipTracks = sub.screenStream
           ? (sub.camStream?.getVideoTracks() ?? [])
           : [];
@@ -219,7 +230,8 @@ export function useStreamRoom(
           name: sub.name,
           main,
           pip,
-          state: "live" as const,
+          // trackها رسیده‌اند؟ (رسیده‌های دیرهنگام «connecting» می‌مانند)
+          state: (main || pip ? "live" : "connecting") as "live" | "connecting",
         };
       })
     );
@@ -344,25 +356,14 @@ export function useStreamRoom(
         return;
       }
 
-      setRemotePublishers((prev) => {
-        const others = prev.filter((p) => p.socketId !== from);
-        return [
-          ...others,
-          {
-            socketId: from,
-            userId: null,
-            name: fromName,
-            main: null,
-            pip: null,
-            state: "connecting" as const,
-          },
-        ];
-      });
+      // وضعیت نمایشی را از وضعیت واقعیِ sub بساز — نه placeholder با
+      // main:null. ontrack هم‌زمان با setRemoteDescription زده می‌شود و
+      // trackها از پیش در sub هستند؛ placeholderِ بعدی آنها را پاک می‌کرد و
+      // تصویر استاد هرگز نمایش نمی‌افتاد (علت «اتصال... برای همیشه»).
+      syncPublisherState();
     },
     [emitSignal, syncPublisherState, dropSubscription, subscribeTo]
   );
-
-  /* ———————————— سمت ناشر: offer به بیننده ———————————— */
 
   /** بازسازی کامل اتصال به یک بیننده با کیفیت درخواستی */
   const rebuildViewer = useCallback(
@@ -432,7 +433,14 @@ export function useStreamRoom(
   useEffect(() => {
     const socket = io(SOCKET_URI, {
       path: SOCKET_PATH,
-      transports: ["websocket", "polling"],
+      // «polling» پیش از «websocket»: handshake همیشه با HTTP برقرار می‌شود و
+      // بعد در صورت پشتیبانی پروکسی، به websocket ارتقاا می‌یابد. ترتیب
+      // قبلی (websocket اول) در سرورهایی که Upgrade را پاس نمی‌دهند هرگز
+      // fallback نمی‌کرد و صفحه در «اتصال...» گیر می‌کرد.
+      // tryAllTransports: اگر upgrade/اولین transport شکست خورد، بقیه را
+      // امتحان می‌کند (پیش‌فرض خاموش است).
+      transports: ["polling", "websocket"],
+      tryAllTransports: true,
       reconnection: true,
       reconnectionAttempts: 12,
       reconnectionDelay: 1500,
@@ -474,6 +482,20 @@ export function useStreamRoom(
           for (const pubId of res.room?.publishers ?? []) {
             if (pubId !== socket.id) subscribeTo(pubId);
           }
+
+          // اتصال مجدد (شبکه/اسلیپ مرورگر/HMR): اگر از قبل در حال پخش بودیم،
+          // پخش را در سرویس دوباره اعلام می‌کنیم — publishers سمت سرویس با
+          // قطع سوکت قبلی پاک شده و بدون این اعلام، بیننده‌ها تصویر را
+          // برای همیشه در انتظار می‌مانند.
+          if (
+            publishingRef.current &&
+            (localMediaRef.current.camStream || localMediaRef.current.screenStream)
+          ) {
+            socket.emit("publish", { streamId, active: true });
+            if (roleRef.current === "host") {
+              socket.emit("host:live", { streamId });
+            }
+          }
         }
       );
     };
@@ -488,9 +510,17 @@ export function useStreamRoom(
       }
     });
 
-    socket.on("connect_error", () => {
+    socket.on("connect_error", (err: Error) => {
       setConnStatus("error");
-      setConnError("ارتباط با سرویس کلاس برقرار نشد؛ در حال تلاش مجدد...");
+      const reason = err?.message ? ` (${err.message})` : "";
+      setConnError(
+        `ارتباط با سرویس کلاس برقرار نشد${reason} — در حال تلاش مجدد...`
+      );
+    });
+
+    // تلاش مجدد — وضعیت به «در حال اتصال» برمی‌گردد تا کاربر ببیند تلاش ادامه دارد
+    socket.on("reconnect_attempt", () => {
+      setConnStatus("connecting");
     });
 
     /* — حضور اعضا — */
@@ -700,7 +730,7 @@ export function useStreamRoom(
 
   /* ———————————— انتشار رسانه (استاد/دانشجوی اجازه‌گرفته) ———————————— */
 
-  /** اعلام شروع پخش به اتاق + دیتابیس (برای استاد) */
+  /** اعلام شروع پخش به اتاق + دیتابیس (برای استاد/مدیر) */
   const announcePublishStart = useCallback(() => {
     const socket = socketRef.current;
     if (!socket) return;
@@ -710,8 +740,10 @@ export function useStreamRoom(
       socket.emit("host:live", { streamId });
       setRoomStatus("live");
       setHostOnline(true);
-      void fetch(`/api/admin/streams/${streamId}`, {
-        method: "PATCH",
+      // مسیر مشترک میزبان (مدیر یا استادِ مالک) — وضعیت جلسه در دیتابیس
+      // هم‌زمان درست می‌شود تا جلسات استاد هم «زنده» دیده شوند
+      void fetch(`/api/streams/${streamId}/host-status`, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "live" }),
       }).catch(() => {});
@@ -889,9 +921,11 @@ export function useStreamRoom(
     stopPublishing();
     socketRef.current?.emit("host:ended", { streamId });
     setRoomStatus("ended");
+    // پایان جلسه برای هر دو نقش میزبان (مدیر/استاد) — با بسته‌شدن جلسه،
+    // باکس «دعوت به کلاس» هم بلافاصله از پنل کاربران حذف می‌شود
     try {
-      await fetch(`/api/admin/streams/${streamId}`, {
-        method: "PATCH",
+      await fetch(`/api/streams/${streamId}/host-status`, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "ended" }),
       });

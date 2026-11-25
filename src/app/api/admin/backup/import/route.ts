@@ -5,6 +5,8 @@ import { dirname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import yauzl from "yauzl";
 import type { Entry, ZipFile } from "yauzl";
+import { writeFile } from "node:fs/promises";
+import { sanitizeSvg } from "@/lib/svg-sanitize";
 import { requireAdmin } from "@/lib/auth";
 import { str } from "@/lib/api-helpers";
 import {
@@ -43,6 +45,17 @@ export const dynamic = "force-dynamic";
 
 /** سقف حجم فایل بکاپ قابل بارگذاری (ZIP با ویدئوها) */
 const IMPORT_MAX_BYTES = 512 * 1024 * 1024;
+
+/* — سقف‌های استخراج ZIP (بند ۱۰): بمب‌زیپ/آرشیو داغون دیسک را رد می‌کند — */
+
+/** سقف تعداد فایل‌های استخراج‌شده از ZIP */
+const IMPORT_MAX_FILES = 20_000;
+/** سقف حجم «غیرفشرده‌ی» هر entry */
+const IMPORT_MAX_ENTRY_BYTES = 1024 * 1024 * 1024;
+/** سقف مجموع حجم غیرفشرده‌ی استخراج‌شده */
+const IMPORT_MAX_TOTAL_BYTES = 4 * 1024 * 1024 * 1024;
+/** سقف حجم backup.json (پیش از خواندن در حافظه) */
+const IMPORT_MAX_JSON_BYTES = 64 * 1024 * 1024;
 
 /** ریشه‌ی آپلودها — مقصد بازیابی فایل‌ها از ZIP */
 const UPLOADS_ROOT = resolve(process.cwd(), "public", "uploads");
@@ -192,6 +205,32 @@ export async function POST(req: NextRequest) {
           entries.push(entry);
         }
 
+        // ۱.۵) سقف‌های استخراج (بند ۱۰) — پیش از هر خواندن/نوشتن:
+        //  تعداد فایل، حجم هر entry، و مجموع حجم غیرفشرده — بمب‌زیپ
+        //  (فهرست مرکزی جعلی) و آرشیو داغون دیسک رد می‌شوند.
+        const fileEntries = entries.filter((e) => !e.fileName.endsWith("/"));
+        if (fileEntries.length > IMPORT_MAX_FILES) {
+          return invalid(
+            `تعداد فایل‌های این ZIP بیش از حد مجاز است (حداکثر ${IMPORT_MAX_FILES.toLocaleString("en-US")} فایل).`
+          );
+        }
+        for (const entry of fileEntries) {
+          if (entry.uncompressedSize > IMPORT_MAX_ENTRY_BYTES) {
+            return invalid(
+              "یکی از فایل‌های ZIP بیش از سقف حجم مجاز است — استخراج انجام نشد."
+            );
+          }
+        }
+        const totalUncompressed = fileEntries.reduce(
+          (sum, e) => sum + e.uncompressedSize,
+          0
+        );
+        if (totalUncompressed > IMPORT_MAX_TOTAL_BYTES) {
+          return invalid(
+            "مجموع حجم غیرفشرده‌ی ZIP بیش از سقف مجاز است — استخراج انجام نشد."
+          );
+        }
+
         // ۲) یافتن و اعتبارسنجی backup.json پیش از هر تغییری
         const jsonEntry =
           entries.find((e) => BACKUP_JSON_NAMES.has(e.fileName)) ??
@@ -204,6 +243,12 @@ export async function POST(req: NextRequest) {
         if (!jsonEntry) {
           return invalid(
             "در این ZIP فایل داده‌های بکاپ (backup.json) یافت نشد."
+          );
+        }
+        // backup.json هم سقف حجم مستقل دارد (پیش از خواندن کامل در حافظه)
+        if (jsonEntry.uncompressedSize > IMPORT_MAX_JSON_BYTES) {
+          return invalid(
+            "فایل داده‌های بکاپ (backup.json) بیش از ۶۴ مگابایت است — معتبر نیست."
           );
         }
         const rawJson = await readEntryBytes(zipfile, jsonEntry);
@@ -232,11 +277,20 @@ export async function POST(req: NextRequest) {
           }
           const parts = sanitizeUploadPath(entry.fileName);
           if (!parts) continue; // فقط uploads/** مجاز است
-          await extractEntryTo(
-            zipfile,
-            entry,
-            join(UPLOADS_ROOT, ...parts)
-          );
+          const target = join(UPLOADS_ROOT, ...parts);
+          // SVG بازیابی‌شده همان پاکسازیِ آپلود را می‌بیند (بند ۸) —
+          // مسیر بازیابی نباید فایل مخرب روی دیسک بگذارد.
+          if (entry.fileName.toLowerCase().endsWith(".svg")) {
+            const raw = await readEntryBytes(zipfile, entry);
+            const safe = sanitizeSvg(raw.toString("utf8"));
+            if (/<svg[\s>]/i.test(safe)) {
+              await mkdir(dirname(target), { recursive: true });
+              await writeFile(target, safe, "utf8");
+            }
+            filesRestored += 1;
+            continue;
+          }
+          await extractEntryTo(zipfile, entry, target);
           filesRestored += 1;
         }
 
