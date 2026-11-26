@@ -27,3 +27,4 @@ Caddyfile
 mini-services/**/node_modules
 mini-services/chat-service/*.db
 .DS_Store
+deploy/turn/private

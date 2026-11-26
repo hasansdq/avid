@@ -9,6 +9,8 @@ import {
   userKickedFromStream,
 } from "@/lib/streams";
 
+import { streamIceConfig } from "@/lib/stream-ice";
+
 type Params = { params: Promise<{ id: string }> };
 
 /**
@@ -43,6 +45,7 @@ export async function GET(req: NextRequest, { params }: Params) {
         {
           role: "host",
           canJoin: true,
+          iceConfig: streamIceConfig(`stream:${stream.id}:admin:${admin.id}`),
           stream: {
             id: stream.id,
             title: stream.title,
@@ -53,7 +56,7 @@ export async function GET(req: NextRequest, { params }: Params) {
           },
           me: { name: admin.username },
         },
-        { headers: { "Cache-Control": "no-store" } }
+        { headers: { "Cache-Control": "private, no-store", "Vary": "Cookie" } }
       );
     }
 
@@ -72,7 +75,7 @@ export async function GET(req: NextRequest, { params }: Params) {
             status: stream.status,
           },
         },
-        { headers: { "Cache-Control": "no-store" } }
+        { headers: { "Cache-Control": "private, no-store", "Vary": "Cookie" } }
       );
     }
 
@@ -87,6 +90,7 @@ export async function GET(req: NextRequest, { params }: Params) {
           {
             role: "host",
             canJoin: true,
+          iceConfig: streamIceConfig(`stream:${stream.id}:user:${session.id}`),
             stream: {
               id: stream.id,
               title: stream.title,
@@ -97,7 +101,7 @@ export async function GET(req: NextRequest, { params }: Params) {
             },
             me: { name: `${host.firstName} ${host.lastName}`.trim() },
           },
-          { headers: { "Cache-Control": "no-store" } }
+          { headers: { "Cache-Control": "private, no-store", "Vary": "Cookie" } }
         );
       }
     }
@@ -111,7 +115,7 @@ export async function GET(req: NextRequest, { params }: Params) {
           stream: { id: stream.id, title: stream.title, status: stream.status },
           me: { name: `${session.firstName} ${session.lastName}` },
         },
-        { headers: { "Cache-Control": "no-store" } }
+        { headers: { "Cache-Control": "private, no-store", "Vary": "Cookie" } }
       );
     }
 
@@ -125,7 +129,7 @@ export async function GET(req: NextRequest, { params }: Params) {
           stream: { id: stream.id, title: stream.title, status: stream.status },
           me: { name: `${session.firstName} ${session.lastName}` },
         },
-        { headers: { "Cache-Control": "no-store" } }
+        { headers: { "Cache-Control": "private, no-store", "Vary": "Cookie" } }
       );
     }
 
@@ -146,7 +150,7 @@ export async function GET(req: NextRequest, { params }: Params) {
             },
             me: { name: `${session.firstName} ${session.lastName}` },
           },
-          { headers: { "Cache-Control": "no-store" } }
+          { headers: { "Cache-Control": "private, no-store", "Vary": "Cookie" } }
         );
       }
     }
@@ -155,6 +159,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       {
         role: "student",
         canJoin: true,
+          iceConfig: streamIceConfig(`stream:${stream.id}:user:${session.id}`),
         stream: {
           id: stream.id,
           title: stream.title,
@@ -165,7 +170,7 @@ export async function GET(req: NextRequest, { params }: Params) {
         },
         me: { name: `${session.firstName} ${session.lastName}` },
       },
-      { headers: { "Cache-Control": "no-store" } }
+      { headers: { "Cache-Control": "private, no-store", "Vary": "Cookie" } }
     );
   } catch (error) {
     console.error("stream session GET error:", error);

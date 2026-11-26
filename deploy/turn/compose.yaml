@@ -1,0 +1,17 @@
+# Optional, separate stack. Never changes the avid project's existing volumes.
+name: avid-turn
+services:
+  turn:
+    image: ${COTURN_IMAGE:-coturn/coturn:4.18.0-r0}
+    user: "65534:65534"
+    init: true
+    restart: unless-stopped
+    network_mode: host
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:mode=1777,size=16m
+    volumes:
+      - ./private/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ["-c", "/etc/coturn/turnserver.conf"]

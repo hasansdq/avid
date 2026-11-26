@@ -832,6 +832,7 @@ io.on("connection", (socket: Socket) => {
         from: socket.id,
         fromUserId: auth.userId,
         fromName: auth.name,
+        fromRole: room.members.get(socket.id)?.role,
         kind: data.kind ?? "",
         payload: data.payload ?? null,
       });

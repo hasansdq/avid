@@ -35,6 +35,7 @@ export interface MediaRequest {
 
 /** رسانه‌ی دریافتی از یک ناشر دور — آماده‌ی اتصال به المان‌های ویدئو */
 export interface RemotePublisher {
+  role?: StreamRole;
   /** سوکت ناشر — کلید یکتا */
   socketId: string;
   userId: string | null;
@@ -44,7 +45,8 @@ export interface RemotePublisher {
   /** استریم دوربین ناشر — فقط وقتی هم‌زمان صفحه هم اشتراک شده (PiP) */
   pip: MediaStream | null;
   /** در حال اتصال است؟ */
-  state: "connecting" | "live";
+  state: "connecting" | "live" | "error";
+  error?: string;
 }
 
 /** پاسخ GET /api/streams/[id] — نقش بیننده‌ی فعلی */

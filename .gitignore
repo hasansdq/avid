@@ -70,3 +70,6 @@ db/backups
 /.smoke/
 /examples/
 /--full-page
+
+# TURN shared secret and generated private config
+/deploy/turn/private/

@@ -117,6 +117,23 @@ function VideoTile({
   );
 }
 
+/** Media status is independent of chat/signaling connectivity. */
+function MediaFeedback({ room }: { room: UseStreamRoom }) {
+  const error = room.mediaError || room.remotePublishers.find((p) => p.state === "error")?.error;
+  const connecting = room.remotePublishers.some((p) => p.state === "connecting");
+  if (!error && !connecting) return null;
+  return (
+    <div role={error ? "alert" : "status"}
+      className="absolute left-3 right-3 top-14 z-30 rounded-xl bg-black/80 p-3 text-center text-xs leading-6 text-white">
+      {error || "در انتظار دریافت صدا و تصویر…"}
+      {error ? <button type="button" onClick={() => void room.retryMedia()}
+        className="ms-3 rounded-lg bg-teal-600 px-3 py-1 font-bold text-white">
+        تلاش دوباره برای اتصال رسانه
+      </button> : null}
+    </div>
+  );
+}
+
 /** وضعیت خالی صحنه‌ی ویدئو */
 function StagePlaceholder({
   icon: Icon,
@@ -776,6 +793,7 @@ function LandscapeOverlay({
   // ناشر اصلی: برای دانشجو استاد، برای استاد/مدار دانشجوی اجازه‌گرفته؛
   // بعدِ آن پیش‌نمایش خودِ استاد نمایش داده می‌شود.
   const hostPublisher =
+    room.remotePublishers.find((p) => p.role === "host") ??
     room.remotePublishers.find((p) => p.main) ??
     room.remotePublishers[0] ??
     null;
@@ -807,6 +825,7 @@ function LandscapeOverlay({
         }
       >
         <div className="relative size-full bg-black" onClick={handleStageTap}>
+          <MediaFeedback room={room} />
           {/* — ویدئوی اصلی — */}
           {hostPublisher?.main ? (
             <VideoTile
@@ -1072,6 +1091,7 @@ function VideoStage({
   // از اتاق پاک نشده) رسانه‌ای ندارد و نباید تصویر اصلی را بخواباند؛ سپس
   // اولین ناشر؛ بقیه (دانشجویان اجازه‌گرفته) در نوار پایین می‌روند.
   const hostPublisher =
+    room.remotePublishers.find((p) => p.role === "host") ??
     room.remotePublishers.find((p) => p.main) ??
     room.remotePublishers[0] ??
     null;
@@ -1082,6 +1102,7 @@ function VideoStage({
   const stageBody = (
     <>
       {/* — ویدئوی اصلی: استاد — */}
+      <MediaFeedback room={room} />
       {hostPublisher?.main ? (
         <VideoTile
           stream={hostPublisher.main}
