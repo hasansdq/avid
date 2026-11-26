@@ -43,8 +43,6 @@ static-auth-secret={secret}
 min-port=49160
 max-port=49200
 no-tls
-no-dtls
-no-cli
 no-multicast-peers
 no-tcp-relay
 user-quota=128
