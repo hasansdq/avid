@@ -104,3 +104,25 @@ docker compose -f deploy/turn/compose.yaml logs --tail=40 turn
 اجراهای بعدی Compose TURN هم آن را تکرار کنید تا image به Docker Hub برنگردد.
 این انتخاب به Compose اصلی آوید یا کلید TURN دست نمی‌زند. اگر GHCR نیز
 قابل‌دسترسی نباشد، خروجی همان pull را برای بررسی مسیر شبکه نگه دارید.
+
+## خطای اجرای turnserver: Operation not permitted (exit 126)
+
+باینری رسمی Coturn با file capability نوع `CAP_NET_BIND_SERVICE=ep` ساخته
+شده است. حذف همهٔ capabilityها بدون برگرداندن این مورد، ممکن است اجرای خود
+باینری را پیش از خواندن کانفیگ متوقف کند. Compose اصلاح‌شده همچنان غیرروت،
+با filesystem فقط‌خواندنی و `no-new-privileges` اجرا می‌شود؛ از بین capabilityها
+فقط `NET_BIND_SERVICE` مجاز است. نیازی به privileged یا دسترسی root نیست.
+
+image پیش‌فرض اکنون همان نسخهٔ ثابت از رجیستری رسمی Quay است که روی VPS
+قابل دریافت بود. پس از دریافت اصلاحات، کانتینر TURN را recreate کنید؛ این
+تغییر Compose اصلی آوید یا secret موجود را تغییر نمی‌دهد:
+
+```bash
+git pull --ff-only origin main
+COTURN_IMAGE=quay.io/coturn/coturn:4.18.0-r0 docker compose -f deploy/turn/compose.yaml up -d --force-recreate --pull never
+docker compose -f deploy/turn/compose.yaml logs --tail=40 turn
+```
+
+اگر image محلی موجود نیست، ابتدا همان image را pull کنید. در این محیط
+بررسی، Docker موجود نبود؛ رفع خطای اجرا باید از روی وضعیت و لاگ VPS
+تأیید شود و سپس فایروال/انتقال رسانه آزمایش شود.
