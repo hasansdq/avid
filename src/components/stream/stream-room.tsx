@@ -1,5 +1,7 @@
 "use client";
 
+import { bindMediaPlayback } from "./media-playback";
+
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -55,46 +57,17 @@ function VideoTile({
   label?: string;
 }) {
   const ref = React.useRef<HTMLVideoElement>(null);
-
+  const playback = React.useRef<ReturnType<typeof bindMediaPlayback> | null>(null);
+  const [audioBlocked, setAudioBlocked] = React.useState(false);
   React.useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    if (el.srcObject !== stream) el.srcObject = stream;
-    if (!stream) return;
-
-    // پخش خودکار: مرورگر بدون تعامل کاربر اجازه‌ی «با صدا» پخش نمی‌دهد؛
-    // در آن حالت اول بی‌صدا پخش می‌شود و با اولین کلیک/لمس، صدا وصل می‌شود
-    // (الگوی استاندارد پخش زنده — وگرنه تصویر استاد سیاه می‌ماند).
-    let gesture: (() => void) | null = null;
-
-    const armGesture = () => {
-      gesture = () => {
-        el.muted = muted;
-        void el.play().catch(() => {});
-      };
-      window.addEventListener("click", gesture, { once: true });
-      window.addEventListener("touchstart", gesture, { once: true });
-    };
-
-    if (el.muted && !muted) {
-      // بی‌صدایی از اتصال قبلی (بازسازی MediaStream بعد از رسیده‌های دیرهنگام)
-      // — پخش را ادامه بده و همچنان منتظر اولین تعامل برای وصل صدا بمان
-      void el.play().catch(() => {});
-      armGesture();
-    } else {
-      el.play().catch(() => {
-        if (el.muted) return;
-        el.muted = true;
-        el.play().catch(() => {});
-        armGesture();
-      });
-    }
-
+    const element = ref.current;
+    if (!element || !stream) return;
+    const controller = bindMediaPlayback(element, stream,
+      muted || stream.getAudioTracks().length === 0, setAudioBlocked);
+    playback.current = controller;
     return () => {
-      if (gesture) {
-        window.removeEventListener("click", gesture);
-        window.removeEventListener("touchstart", gesture);
-      }
+      controller.dispose();
+      if (playback.current === controller) playback.current = null;
     };
   }, [stream, muted]);
 
@@ -108,6 +81,12 @@ function VideoTile({
         className="size-full object-contain"
         dir="ltr"
       />
+      {audioBlocked && !muted ? (
+        <button type="button" onClick={() => playback.current?.play()}
+          className="absolute left-2 top-2 z-20 rounded-lg bg-teal-600 px-3 py-2 text-xs font-bold text-white">
+          فعال‌کردن صدای کلاس
+        </button>
+      ) : null}
       {label ? (
         <span className="absolute bottom-1.5 start-1.5 max-w-[85%] truncate rounded-lg bg-black/60 px-2 py-0.5 text-[0.6rem] font-bold text-white backdrop-blur-sm">
           {label}

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
+import { applySenderQuality, canRetuneQuality } from "./sender-quality";
 import { EarlyIce, PeerSession, receivedMedia, parseStreamIce } from "./peer-session";
 
 /**
@@ -23,33 +24,6 @@ const SOCKET_PATH =
 interface IceConfiguration extends RTCConfiguration {
   turnConfigured: boolean;
   expiresAt: number;
-}
-
-/** سقف بیت‌ریت هر کیفیت — کلید «بهینه برای سرعت کم» */
-const BITRATE_BY_QUALITY: Record<string, number> = {
-  full: 600_000,
-  low: 250_000,
-  audio: 40_000,
-};
-
-async function applyBitrate(
-  pc: RTCPeerConnection,
-  quality: string
-): Promise<void> {
-  const max = BITRATE_BY_QUALITY[quality] ?? 600_000;
-  for (const sender of pc.getSenders()) {
-    if (!sender.track || sender.track.kind !== "video") continue;
-    try {
-      const params = sender.getParameters();
-      if (!params.encodings || params.encodings.length === 0) {
-        params.encodings = [{}];
-      }
-      params.encodings[0].maxBitrate = max;
-      await sender.setParameters(params);
-    } catch {
-      /* بهترین تلاش — بعضی مرورگرها قبل از مذاکره اجازه نمی‌دهند */
-    }
-  }
 }
 
 /** قید ویدئوی کم‌مصرف استاد — 480p@15fps (پهنای باند محدود کلاس آنلاین) */
@@ -437,7 +411,7 @@ export function useStreamRoom(
     }
   }, [ensureRtcConfig, dropSubscription, emitSignal, mediaFailure, syncPublisherState]);
 
-  const rebuildViewer = useCallback(async (viewerSocketId: string, quality: QualityMode) => {
+  const rebuildViewer = useCallback(async (viewerSocketId: string, quality: QualityMode, retuneOnly = false) => {
     const epoch = (viewerEpochs.current.get(viewerSocketId) ?? 0) + 1;
     viewerEpochs.current.set(viewerSocketId, epoch);
     const lifetime = roomEpoch.current;
@@ -445,6 +419,14 @@ export function useStreamRoom(
       const config = await ensureRtcConfig();
       if (lifetime !== roomEpoch.current || viewerEpochs.current.get(viewerSocketId) !== epoch) return;
       const old = viewersRef.current.get(viewerSocketId);
+      if (retuneOnly && old && canRetuneQuality(old.pc, old.quality, quality, [
+        ...(localMediaRef.current.camStream?.getTracks() ?? []),
+        ...(localMediaRef.current.screenStream?.getVideoTracks() ?? []),
+      ]) && await applySenderQuality(old.pc, quality)) {
+        if (viewersRef.current.get(viewerSocketId) === old) old.quality = quality;
+        return;
+      }
+      if (lifetime !== roomEpoch.current || viewerEpochs.current.get(viewerSocketId) !== epoch) return;
       if (old) {
         old.session.close();
         earlyIceRef.current.retire(`${viewerSocketId}:${old.session.id}`);
@@ -474,7 +456,7 @@ export function useStreamRoom(
       // Send SDP before bitrate work so candidate events never have to wait on it.
       emitSignal(viewerSocketId, "offer", { sdp: pc.localDescription, sessionId: id,
         quality, meta: { cam: camStream?.id ?? null, screen: screenStream?.id ?? null } });
-      await applyBitrate(pc, quality);
+      await applySenderQuality(pc, quality);
     } catch (error) {
       if (lifetime === roomEpoch.current && viewerEpochs.current.get(viewerSocketId) === epoch)
         mediaFailure("create-offer", error);
@@ -706,7 +688,10 @@ export function useStreamRoom(
           const payload = data.payload as { sdp?: RTCSessionDescriptionInit; sessionId?: string } | null;
           if (entry && entry.pc.signalingState === "have-local-offer" && payload?.sdp?.type === "answer" &&
               (!payload.sessionId || payload.sessionId === entry.session.id)) {
-            void entry.session.setRemote(payload.sdp).catch((error) => mediaFailure("accept-answer", error));
+            void entry.session.setRemote(payload.sdp).then(async () => {
+              if (viewersRef.current.get(data.from) === entry)
+                await applySenderQuality(entry.pc, entry.quality);
+            }).catch((error) => mediaFailure("accept-answer", error));
           }
         } else if (data.kind === "ice") {
           const parsed = parseStreamIce(data.payload);
@@ -729,7 +714,7 @@ export function useStreamRoom(
           data.quality === "low" || data.quality === "audio"
             ? data.quality
             : "full";
-        void rebuildViewer(data.viewerSocketId, q);
+        void rebuildViewer(data.viewerSocketId, q, true);
       }
     );
 
@@ -951,25 +936,17 @@ export function useStreamRoom(
   );
 
   /** تغییر کیفیت دریافت — اشتراک‌ها با کیفیت نو دوباره ساخته می‌شوند */
-  const setQuality = useCallback(
-    (mode: QualityMode) => {
-      qualityRef.current = mode;
-      setQualityState(mode);
-      for (const pubId of Array.from(subsRef.current.keys())) {
-        dropSubscription(pubId);
-      }
-      const socket = socketRef.current;
-      if (!socket || !socket.connected) return;
-      for (const p of remotePublishers) {
-        socket.emit("subscribe-request", {
-          streamId,
-          publisherId: p.socketId,
-          quality: mode,
-        });
-      }
-    },
-    [streamId, remotePublishers, dropSubscription]
-  );
+  const setQuality = useCallback((mode: QualityMode) => {
+    if (qualityRef.current === mode) return;
+    qualityRef.current = mode;
+    setQualityState(mode);
+    const socket = socketRef.current;
+    if (!socket?.connected) return;
+    // Keep receiving audio while the publisher adjusts bitrate or negotiates a new offer.
+    for (const [publisherId] of knownPublishersRef.current) {
+      socket.emit("subscribe-request", { streamId, publisherId, quality: mode });
+    }
+  }, [streamId]);
 
   const requestMedia = useCallback(() => {
     socketRef.current?.emit("media:request", { streamId });
