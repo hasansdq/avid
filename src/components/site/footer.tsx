@@ -18,6 +18,7 @@ import {
 import type { Course, NavLink, SiteSettings } from "@prisma/client";
 import { faDigits } from "@/lib/fa";
 import { anchorProps } from "@/lib/nav-links";
+import { normalizeZarinpalBadgeUrl } from "@/lib/trust-seals";
 import { TrustSeal } from "@/components/site/trust-seal";
 import { EditableText } from "@/components/site/editable-texts";
 
@@ -89,7 +90,7 @@ export function Footer({
                   width={44}
                   height={44}
                   onError={() => setLogoFailed(true)}
-                  className="size-11 rounded-2xl border border-foreground/10 bg-background object-cover shadow-lg"
+                  className="size-11 object-contain"
                 />
               ) : (
                 <span className="flex size-11 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-emerald-600 shadow-lg shadow-teal-500/20">
@@ -113,13 +114,14 @@ export function Footer({
 
             {/* نمادهای اعتماد — طبق درخواست، زیر متن معرفی؛ زرین‌پال سمت
                 راست اینماد (در RTL، فرزند اول flex در سمت راست قرار می‌گیرد).
-                کدهای رسمی عیناً رندر می‌شوند و تا بارگذاری تصویر/در خطا، نشان
-                جایگزین دیده می‌شود تا جای لوگو هیچ‌وقت خالی نماند. */}
+                کدهای رسمی عیناً رندر می‌شوند؛ فقط URL لوگوی زرین‌پالِ مُرده
+                (www.zarinpal.com/badges/… → 404) به آدرس رسمیِ زنده‌ی CDN
+                اصلاح می‌شود تا لوگو نمایش داده شود. */}
             {settings.zarinpalCode || settings.enamadCode ? (
               <div className="mt-5 flex flex-wrap items-center gap-3">
                 {settings.zarinpalCode ? (
                   <TrustSeal
-                    html={settings.zarinpalCode}
+                    html={normalizeZarinpalBadgeUrl(settings.zarinpalCode)}
                     tone="amber"
                     fallbackLabel="زرین‌پال"
                     provider="زرین‌پال"

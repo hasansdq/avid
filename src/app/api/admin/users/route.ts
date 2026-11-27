@@ -13,9 +13,11 @@ import {
  * GET /api/admin/users — فهرست کاربران سایت با آمار ثبت‌نام و اقساط.
  *
  * پارامترها:
- *  • q      — جست‌وجو در نام/نام خانوادگی/شماره (contains)
- *  • status — all | active | blocked
- *  • page   — شماره‌ی صفحه (۱ مبنا؛ ۲۰ کاربر در هر صفحه)
+ *  • q        — جست‌وجو در نام/نام خانوادگی/شماره (contains)
+ *  • status   — all | active | blocked
+ *  • payments — all (پیش‌فرض) | has → فقط کاربرانی که پرداخت یا قسطی دارند
+ *              (برای ماژول «پرداختی‌ها»)
+ *  • page     — شماره‌ی صفحه (۱ مبنا؛ ۲۰ کاربر در هر صفحه)
  *
  * پاسخ: { users: (User + نقش + شمار کلاس + آمار اقساط)[], total, page, pageCount }
  *
@@ -42,6 +44,7 @@ export async function GET(req: NextRequest) {
     const sp = req.nextUrl.searchParams;
     const q = str(sp.get("q") ?? "").slice(0, 80);
     const status = str(sp.get("status") ?? "all");
+    const payments = str(sp.get("payments") ?? "all");
     const page = Math.max(1, parseInt(sp.get("page") ?? "1", 10) || 1);
 
     const where: Prisma.UserWhereInput = {};
@@ -56,6 +59,14 @@ export async function GET(req: NextRequest) {
     }
     if (status === "active" || status === "blocked") {
       where.status = status;
+    }
+    // فقط کاربران دارای پرداخت (نقدی) یا اقساط — ماژول «پرداختی‌ها»
+    if (payments === "has") {
+      where.enrollments = {
+        some: {
+          OR: [{ paymentAmount: { not: null } }, { installments: { some: {} } }],
+        },
+      };
     }
 
     const total = await db.user.count({ where });

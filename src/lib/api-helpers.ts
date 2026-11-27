@@ -9,6 +9,7 @@ import {
   sanitizeTrustHtml,
   isSafePublicAssetUrl,
 } from "@/lib/html-sanitize";
+import { normalizeZarinpalBadgeUrl } from "@/lib/trust-seals";
 
 /* ---------------- ابزارهای تبدیل و اعتبارسنجی ---------------- */
 
@@ -450,6 +451,8 @@ const SETTING_STRING_FIELDS = [
   "slogan",
   "heroDescription",
   "logoUrl",
+  // favicon اختصاصی (آیکون تب مرورگر) — خالی یعنی همان لوگو
+  "faviconUrl",
   "contactPhone",
   "contactEmail",
   "address",
@@ -497,9 +500,12 @@ export function parseSettings(
           return "کلید فونت انتخاب‌شده معتبر نیست یا فونت نصب نشده است.";
         }
       }
-      // لوگو/تصویر آدرس — فقط مسیر محلی، http(s) یا data:image (بند ۹)
-      if (field === "logoUrl" && !isSafePublicAssetUrl(value)) {
-        return "آدرس لوگو معتبر نیست — باید مسیر محلی یا http(s) باشد.";
+      // لوگو/favicon/تصویر آدرس — فقط مسیر محلی، http(s) یا data:image (بند ۹)
+      if (
+        (field === "logoUrl" || field === "faviconUrl") &&
+        !isSafePublicAssetUrl(value)
+      ) {
+        return "آدرس لوگو/favicon معتبر نیست — باید مسیر محلی یا http(s) باشد.";
       }
       // کد نمادهای اعتماد: پاکسازی لیست‌سفید (بند ۹) — تَگ/ویژگی غیرمجاز،
       // on*، javascript: و طرح‌های غیرHTTPS حذف می‌شوند؛ اسکریپت «رسمی» اینماد/
@@ -507,12 +513,18 @@ export function parseSettings(
       // اعتماد همچنان کار کند. سپس ارجاع به دامنه‌ی رسمی لازم است (قاعده‌ی
       // پیشین حفظ شده — کد بی‌ارجاع رد می‌شود).
       if ((field === "enamadCode" || field === "zarinpalCode") && value) {
-        const sanitized = sanitizeTrustHtml(value);
+        let sanitized = sanitizeTrustHtml(value);
         if (field === "enamadCode" && !/enamad\.ir/i.test(sanitized)) {
           return "کد اینماد معتبر نیست — باید به trustseal.enamad.ir اشاره کند.";
         }
-        if (field === "zarinpalCode" && !/zarinpal/i.test(sanitized)) {
-          return "کد زرین‌پال معتبر نیست — باید به zarinpal.com اشاره کند.";
+        if (field === "zarinpalCode") {
+          if (!/zarinpal/i.test(sanitized)) {
+            return "کد زرین‌پال معتبر نیست — باید به zarinpal.com اشاره کند.";
+          }
+          // خوددرمانی: URL لوگوی مُرده‌ی قدیمی زرین‌پال
+          // (www.zarinpal.com/badges/trustLogo/1.svg → 404) به آدرس رسمیِ
+          // زنده‌ی CDN مطابق مستندات فعلی زرین‌پال اصلاح می‌شود
+          sanitized = normalizeZarinpalBadgeUrl(sanitized);
         }
         data[field] = sanitized;
         continue;

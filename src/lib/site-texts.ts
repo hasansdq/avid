@@ -25,6 +25,39 @@ export const SITE_TEXT_MAX_LEN = 600;
 export const SITE_TEXT_FONT_MIN = 8;
 export const SITE_TEXT_FONT_MAX = 120;
 
+/* ————————————————————————— واکنش‌گرایی به تفکیک دستگاه ————————————————————————— */
+
+/**
+ * کلاس‌های دستگاهِ ویرایشگر مدادی — اندازه فونت و نمایش/مخفی‌بودن هر
+ * جایگاه متن می‌تواند برای هر دستگاه جداگانه تنظیم شود:
+ *   • دسکتاپ: عرض ≥ ۱۰۲۴px
+ *   • تبلت:   عرض ۷۶۸–۱۰۲۳px
+ *   • موبایل: عرض زیر ۷۶۸px
+ */
+export const SITE_TEXT_DEVICES = ["desktop", "tablet", "mobile"] as const;
+export type SiteTextDevice = (typeof SITE_TEXT_DEVICES)[number];
+
+/** نام فارسی هر کلاس دستگاه (برچسب‌های رابط کاربری) */
+export const SITE_TEXT_DEVICE_LABELS: Record<SiteTextDevice, string> = {
+  desktop: "دسکتاپ",
+  tablet: "تبلت",
+  mobile: "موبایل",
+};
+
+/** نام فیلد اندازه فونت هر دستگاه در SiteText */
+export const SITE_TEXT_DEVICE_SIZE_FIELDS: Record<SiteTextDevice, string> = {
+  desktop: "fontSize",
+  tablet: "fontSizeTablet",
+  mobile: "fontSizeMobile",
+};
+
+/** نام فیلد مخفی‌بودن هر دستگاه در SiteText */
+export const SITE_TEXT_DEVICE_HIDDEN_FIELDS: Record<SiteTextDevice, string> = {
+  desktop: "hiddenDesktop",
+  tablet: "hiddenTablet",
+  mobile: "hiddenMobile",
+};
+
 export interface SiteTextSlotInfo {
   /** کلید یکتای جایگاه متن (id رکورد SiteText) */
   key: string;

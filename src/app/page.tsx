@@ -109,7 +109,12 @@ export default async function Home() {
       color: row.color,
       fontKey: row.fontKey,
       fontSize: row.fontSize,
+      fontSizeTablet: row.fontSizeTablet ?? null,
+      fontSizeMobile: row.fontSizeMobile ?? null,
       hidden: row.hidden,
+      hiddenDesktop: row.hiddenDesktop ?? false,
+      hiddenTablet: row.hiddenTablet ?? false,
+      hiddenMobile: row.hiddenMobile ?? false,
     };
   }
 

@@ -239,14 +239,14 @@ function CertificateCard({
             <span
               className={cn(
                 "tabular-nums",
-                cert.grade >= 17
+                cert.grade >= 85
                   ? "text-emerald-600 dark:text-emerald-300"
-                  : cert.grade >= 10
+                  : cert.grade >= 50
                     ? "text-teal-600 dark:text-teal-300"
                     : "text-amber-600 dark:text-amber-300"
               )}
             >
-              معدل: {faDigits(cert.grade)} از {faDigits(20)}
+              معدل: {faDigits(cert.grade)} از {faDigits(100)}
             </span>
           ) : null}
         </div>
@@ -567,7 +567,7 @@ export function CertificateSheet({
           </p>
           <p className="mx-auto mt-2 max-w-md text-[0.7rem] leading-6 font-semibold text-slate-600 sm:text-sm">
             دوره‌ی آموزشی «{cert.courseTitle}» را در این آکادمی
-            {cert.grade !== null && cert.grade !== undefined && cert.grade >= 10
+            {cert.grade !== null && cert.grade !== undefined && cert.grade >= 50
               ? " با موفقیت "
               : " "}
             گذرانده است.
@@ -587,7 +587,7 @@ export function CertificateSheet({
             </span>
             <span className="rounded-lg border border-teal-600/40 bg-teal-600/[0.06] px-3 py-1 text-sm font-black tabular-nums text-teal-800 sm:text-base">
               {cert.grade !== null && cert.grade !== undefined
-                ? `${faDigits(cert.grade)} از ${faDigits(20)}`
+                ? `${faDigits(cert.grade)} از ${faDigits(100)}`
                 : "—"}
             </span>
           </div>

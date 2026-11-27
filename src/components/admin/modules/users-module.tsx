@@ -10,7 +10,6 @@ import {
   ClipboardList,
   Eye,
   GraduationCap,
-  Hourglass,
   IdCard,
   Inbox,
   Loader2,
@@ -54,15 +53,8 @@ import { apiFetch, toastApiError } from "@/components/admin/api";
 import { ConfirmDelete } from "@/components/admin/shared/confirm-delete";
 import { EmptyState } from "@/components/admin/shared/empty-state";
 import { InstallmentsDialog } from "@/components/admin/shared/installments-dialog";
-import { UserPaymentsDialog } from "@/components/admin/shared/user-payments-dialog";
 import { TeacherPaymentsDialog } from "@/components/admin/shared/teacher-payments-dialog";
 import { ModuleHeader } from "@/components/admin/shared/module-header";
-import {
-  InstallmentsOverviewStats,
-  RecentPaidSection,
-  RemainingSection,
-  useInstallmentsOverview,
-} from "@/components/admin/shared/installments-overview";
 import { StatusBadge } from "@/components/admin/shared/status-badge";
 import { TableSkeleton } from "@/components/admin/shared/table-skeleton";
 import { btnGradient, tileGradient } from "@/components/admin/shared/styles";
@@ -1215,7 +1207,6 @@ export function UsersModule() {
 
   /* — دیالوگ‌های کاربر/استاد مشترک — */
   const [detailUser, setDetailUser] = useState<User | null>(null);
-  const [paymentsUser, setPaymentsUser] = useState<User | null>(null);
   /* — دیالوگ دوتابی «پرداختی‌ها و اقساط» استاد — تب درآمد/شبا/واریزی مخصوص اساتید — */
   const [teacherPaymentsUser, setTeacherPaymentsUser] = useState<User | null>(null);
   const [editUser, setEditUser] = useState<User | null>(null);
@@ -1352,10 +1343,11 @@ export function UsersModule() {
     }
   }
 
-  /** باز کردن مدیریت اقساط از داخل دیالوگ‌های کاربر */
+  /** باز کردن مدیریت اقساط از داخل دیالوگ‌های کاربر —
+   * وضعیت اقساط و پرداختی‌ها در ماژول «پرداختی‌ها» مدیریت می‌شود؛ اینجا فقط
+   * از پروفایل/دیالوگ استاد برای ویرایش طرح قسط‌ها دسترسی هست. */
   function manageInstallments(enrollment: EnrollmentWithInstallments) {
     setDetailUser(null);
-    setPaymentsUser(null);
     setInstallmentsTarget({ id: enrollment.id, title: enrollment.course });
   }
 
@@ -1393,19 +1385,6 @@ export function UsersModule() {
           )}
         >
           <LogIn className="size-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size={compact ? "icon" : "default"}
-          onClick={() => setPaymentsUser(user)}
-          aria-label={`پرداختی‌ها و اقساط ${displayName(user)}`}
-          title="پرداختی‌ها و اقساط"
-          className={cn(
-            compact ? "size-8" : "size-10 rounded-xl",
-            "text-violet-600 hover:bg-violet-500/10 hover:text-violet-700 dark:text-violet-300 dark:hover:text-violet-200"
-          )}
-        >
-          <Wallet className="size-4" />
         </Button>
         <Button
           variant="ghost"
@@ -1480,14 +1459,11 @@ export function UsersModule() {
   const showSkeleton = loading && !users;
   const showEmpty = !showSkeleton && users !== null && users.length === 0;
 
-  // نمای کلی اقساط — پرداخت‌های اخیر و کل اقساط باقیمانده
-  const overview = useInstallmentsOverview();
-
   return (
     <div className="space-y-6">
       <ModuleHeader
         title="مدیریت کاربران"
-        description="کاربران ثبت‌نام‌شده‌ی سایت، وضعیت حساب و اقساط آنها، اساتید آکادمی"
+        description="کاربران ثبت‌نام‌شده‌ی سایت، وضعیت حساب و اساتید آکادمی — اقساط و پرداختی‌ها در ماژول «پرداختی‌ها»"
       >
         <Badge
           variant="outline"
@@ -1497,33 +1473,9 @@ export function UsersModule() {
         </Badge>
       </ModuleHeader>
 
-      {/* — خلاصه‌ی وضعیت اقساط (سربرگ + کارت‌های آماری) — ثابت بالای تب‌ها — */}
-      <InstallmentsOverviewStats
-        data={overview.data}
-        loading={overview.loading}
-        refreshing={overview.refreshing}
-        onRefresh={() => overview.reload(true)}
-      />
-
-      {/* — تب‌های ماژول: اقساط پرداخت‌شده‌ی اخیر / اقساط باقیمانده / لیست کاربران / اساتید — */}
-      <Tabs defaultValue="recent-paid" dir="rtl" className="gap-5">
+      {/* — تب‌های ماژول: لیست کاربران / اساتید — */}
+      <Tabs defaultValue="users" dir="rtl" className="gap-5">
         <TabsList className="glass h-auto w-full flex-wrap justify-start gap-1 rounded-2xl p-1.5 sm:w-auto">
-          <TabsTrigger
-            value="recent-paid"
-            className="flex-none gap-2 rounded-xl px-3.5 py-2 text-xs font-bold"
-          >
-            <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-300" />
-            اقساط پرداخت‌شده‌ی اخیر
-            <TabPill count={overview.data?.recentPaid.length} tone="emerald" />
-          </TabsTrigger>
-          <TabsTrigger
-            value="remaining"
-            className="flex-none gap-2 rounded-xl px-3.5 py-2 text-xs font-bold"
-          >
-            <Hourglass className="size-4 shrink-0 text-amber-600 dark:text-amber-300" />
-            همه‌ی اقساط باقیمانده کاربران
-            <TabPill count={overview.data?.remaining.length} tone="amber" />
-          </TabsTrigger>
           <TabsTrigger
             value="users"
             className="flex-none gap-2 rounded-xl px-3.5 py-2 text-xs font-bold"
@@ -1541,19 +1493,6 @@ export function UsersModule() {
             <TabPill count={teachersTotal} tone="emerald" />
           </TabsTrigger>
         </TabsList>
-
-        {/* — تب «اقساط پرداخت‌شده‌ی اخیر» — */}
-        <TabsContent value="recent-paid">
-          <RecentPaidSection data={overview.data} />
-        </TabsContent>
-
-        {/* — تب «همه‌ی اقساط باقیمانده کاربران» — */}
-        <TabsContent value="remaining">
-          <RemainingSection
-            data={overview.data}
-            onChanged={() => overview.reload(true)}
-          />
-        </TabsContent>
 
         {/* — تب «لیست کاربران»: فیلترها + جدول/کارت‌ها + صفحه‌بندی — */}
         <TabsContent value="users" className="space-y-5">
@@ -1655,7 +1594,6 @@ export function UsersModule() {
                       <TableRow>
                         <TableHead>کاربر</TableHead>
                         <TableHead>ثبت‌نام‌ها</TableHead>
-                        <TableHead>اقساط</TableHead>
                         <TableHead>وضعیت حساب</TableHead>
                         <TableHead>تاریخ عضویت</TableHead>
                         <TableHead className="text-left">عملیات</TableHead>
@@ -1667,7 +1605,6 @@ export function UsersModule() {
                           u.status in ACCOUNT_STATUS
                             ? ACCOUNT_STATUS[u.status]
                             : ACCOUNT_STATUS.active;
-                        const instTotal = u.installmentPaid + u.installmentPending;
                         return (
                           <TableRow key={u.id}>
                             <TableCell className="max-w-44">
@@ -1714,29 +1651,6 @@ export function UsersModule() {
                               </span>
                             </TableCell>
                             <TableCell>
-                              {instTotal > 0 ? (
-                                <div className="space-y-0.5">
-                                  <p className="whitespace-nowrap text-xs font-bold tabular-nums text-foreground">
-                                    {faDigits(u.installmentPaid)}
-                                    <span className="text-muted-foreground">
-                                      {" "}
-                                      / {faDigits(instTotal)}
-                                    </span>
-                                  </p>
-                                  {u.installmentTotalAmount > 0 ? (
-                                    <p className="whitespace-nowrap text-[0.6rem] font-medium tabular-nums text-muted-foreground">
-                                      {faAmount(u.installmentPaidAmount)} از{" "}
-                                      {faAmount(u.installmentTotalAmount)} تومان
-                                    </p>
-                                  ) : null}
-                                </div>
-                              ) : (
-                                <span className="text-xs text-muted-foreground/50">
-                                  —
-                                </span>
-                              )}
-                            </TableCell>
-                            <TableCell>
                               <span
                                 className={cn(
                                   "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[0.65rem] font-bold",
@@ -1775,7 +1689,6 @@ export function UsersModule() {
                     u.status in ACCOUNT_STATUS
                       ? ACCOUNT_STATUS[u.status]
                       : ACCOUNT_STATUS.active;
-                  const instTotal = u.installmentPaid + u.installmentPending;
                   return (
                     <article key={u.id} className="glass space-y-3 rounded-2xl p-4">
                       <div className="flex items-start gap-3">
@@ -1832,18 +1745,6 @@ export function UsersModule() {
                         <span className="rounded-full bg-foreground/[0.05] px-2.5 py-1 tabular-nums text-foreground">
                           {faDigits(u.enrollmentsCount)} ثبت‌نام
                         </span>
-                        {instTotal > 0 ? (
-                          <span className="rounded-full bg-foreground/[0.05] px-2.5 py-1 tabular-nums text-muted-foreground">
-                            اقساط {faDigits(u.installmentPaid)} از {faDigits(instTotal)}
-                            {u.installmentTotalAmount > 0
-                              ? ` · ${faAmount(u.installmentPaidAmount)} تومان`
-                              : ""}
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-foreground/[0.05] px-2.5 py-1 text-muted-foreground">
-                            بدون اقساط
-                          </span>
-                        )}
                       </div>
 
                       <div className="border-t border-foreground/[0.07] pt-3 dark:border-white/[0.07]">
@@ -1915,20 +1816,6 @@ export function UsersModule() {
         </TabsContent>
       </Tabs>
 
-      {/* — دیالوگ پرداختی‌ها و اقساط کاربر (تب کاربران) — */}
-      <UserPaymentsDialog
-        user={paymentsUser}
-        open={!!paymentsUser}
-        onOpenChange={(o) => {
-          if (!o) setPaymentsUser(null);
-        }}
-        onManageInstallments={manageInstallments}
-        onChanged={() => {
-          void load();
-          overview.reload(true);
-        }}
-      />
-
       {/* — دیالوگ دوتابی پرداختی‌ها و اقساط استاد (تب اساتید):
           تب ۱ پرداختی‌ها/اقساط + تب ۲ درآمد استاد و شبا و واریزها — */}
       <TeacherPaymentsDialog
@@ -1941,7 +1828,6 @@ export function UsersModule() {
         onChanged={() => {
           void load();
           void loadTeachers();
-          overview.reload(true);
         }}
       />
 
@@ -1978,7 +1864,6 @@ export function UsersModule() {
         onOpenChange={setAddOpen}
         onSaved={() => {
           void load();
-          overview.reload(true);
         }}
       />
 
@@ -2001,7 +1886,6 @@ export function UsersModule() {
         }}
         onSaved={() => {
           void load();
-          overview.reload(true);
         }}
       />
 
@@ -2014,7 +1898,7 @@ export function UsersModule() {
         }}
       />
 
-      {/* — دیالوگ مدیریت اقساط (از پروفایل کاربر باز می‌شود) — */}
+      {/* — دیالوگ مدیریت اقساط (از پروفایل کاربر یا دیالوگ استاد باز می‌شود) — */}
       {installmentsTarget ? (
         <InstallmentsDialog
           enrollmentId={installmentsTarget.id}
@@ -2025,7 +1909,6 @@ export function UsersModule() {
           }}
           onChanged={() => {
             void load();
-            overview.reload(true);
           }}
         />
       ) : null}

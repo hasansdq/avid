@@ -25,6 +25,7 @@ import {
   ShieldCheck,
   Type,
   Users,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 import type { ComponentType } from "react";
@@ -41,6 +42,7 @@ import { SamplesModule } from "./samples-module";
 import { TestimonialsModule } from "./testimonials-module";
 import { EnrollmentsModule } from "./enrollments-module";
 import { PaymentModule } from "./payment-module";
+import { PaymentsModule } from "./payments-module";
 import { UsersModule } from "./users-module";
 import { ClassesModule } from "./classes-module";
 import { SmsModule } from "./sms-module";
@@ -151,9 +153,17 @@ export const MODULES: AdminModule[] = [
     component: PaymentModule,
   },
   {
+    key: "payments",
+    label: "پرداختی‌ها",
+    description:
+      "پرداخت‌های نقدی، وضعیت اقساط کاربران و اقساط باقیمانده — تسویه‌ی دستی و مدیریت پرداخت‌های هر کاربر",
+    icon: Wallet,
+    component: PaymentsModule,
+  },
+  {
     key: "users",
     label: "مدیریت کاربران",
-    description: "کاربران سایت، وضعیت حساب و اقساط آنها",
+    description: "کاربران سایت، وضعیت حساب و اساتید آکادمی",
     icon: Users,
     component: UsersModule,
   },
@@ -245,7 +255,7 @@ export const NAV_CATEGORIES: NavCategory[] = [
     key: "users-signup",
     label: "کاربران و ثبت‌نام",
     icon: BookUser,
-    items: ["users", "classes", "enrollments"],
+    items: ["users", "payments", "classes", "enrollments"],
   },
   {
     key: "connections",

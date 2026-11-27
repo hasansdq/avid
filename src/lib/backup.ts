@@ -4,6 +4,7 @@ import {
   sanitizeTrustHtml,
   isSafePublicAssetUrl,
 } from "@/lib/html-sanitize";
+import { normalizeZarinpalBadgeUrl } from "@/lib/trust-seals";
 
 /**
  * بکاپ و بازیابی داده‌های «آوید» — لایه‌ی منطقی (بدون فایل).
@@ -872,11 +873,16 @@ function sanitizeRestoredRows(payload: BackupPayload): void {
       }
       const zarinpal = row.zarinpalCode;
       if (typeof zarinpal === "string" && zarinpal.trim()) {
-        row.zarinpalCode = sanitizeTrustHtml(zarinpal);
+        // پاکسازی + خوددرمانیِ URL لوگوی مُرده‌ی قدیمی زرین‌پال (→ CDN رسمی)
+        row.zarinpalCode = normalizeZarinpalBadgeUrl(sanitizeTrustHtml(zarinpal));
       }
       const logo = row.logoUrl;
       if (typeof logo === "string" && logo && !isSafePublicAssetUrl(logo)) {
         row.logoUrl = "/images/logo.png"; // مقدار پیش‌فرض امن
+      }
+      const favicon = row.faviconUrl;
+      if (typeof favicon === "string" && favicon && !isSafePublicAssetUrl(favicon)) {
+        row.faviconUrl = ""; // خالی = بازگشت به لوگوی سایت (پیش‌فرض امن)
       }
     }
   }

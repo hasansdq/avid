@@ -17,7 +17,8 @@ import {
 /**
  * ویرایشگر ظاهری مدادی — ذخیره/بازگردانی متن‌های قابل‌ویرایش صفحه‌ی اول.
  *
- * POST  : upsert رکورد SiteText برای یک جایگاه متن (متن/رنگ/فونت/اندازه/مخفی).
+ * POST  : upsert رکورد SiteText برای یک جایگاه متن
+ *         (متن/رنگ/فونت/اندازه به تفکیک دسکتاپ-تبلت-موبایل/مخفی‌سازی مجزای هر دستگاه).
  *         متن و فونتِ دو جایگاه هیرو در SiteSettings (slogan و heroDescription
  *         و sloganFont) آینه می‌شوند تا با ماژول «تنظیمات سایت» همگام بمانند.
  *         عددهای شمارنده‌ی «رشد آکادمی در یک نگاه» (stats.students و
@@ -97,34 +98,105 @@ export async function POST(req: NextRequest) {
   }
 
   // — اندازه فونت (پیکسل) — خالی/صفر = پیش‌فرض قطعه؛ خارج از بازه = خطا
+  // هر دستگاه (دسکتاپ/تبلت/موبایل) جداگانه و با همان بازه‌ی اعتبارسنجی؛
+  // خالیِ تبلت/موبایل یعنی «همان اندازه‌ی دسکتاپ» (رندر از fontSize ارث می‌برد).
+  const parseDeviceFontSize = (raw: unknown): number | null | "invalid" => {
+    if (raw === null || raw === undefined || raw === "" || raw === 0) {
+      return null;
+    }
+    const n = normalizeSiteTextFontSize(raw);
+    if (n === null) return "invalid";
+    return n;
+  };
+
   let fontSize: number | null;
   if ("fontSize" in body) {
-    const raw = body.fontSize;
-    if (raw === null || raw === undefined || raw === "" || raw === 0) {
-      fontSize = null;
-    } else {
-      const n = normalizeSiteTextFontSize(raw);
-      if (n === null) {
-        return bad(
-          `اندازه فونت باید بین ${SITE_TEXT_FONT_MIN} تا ${SITE_TEXT_FONT_MAX} پیکسل باشد.`
-        );
-      }
-      fontSize = n;
+    const parsed = parseDeviceFontSize(body.fontSize);
+    if (parsed === "invalid") {
+      return bad(
+        `اندازه فونت دسکتاپ باید بین ${SITE_TEXT_FONT_MIN} تا ${SITE_TEXT_FONT_MAX} پیکسل باشد.`
+      );
     }
+    fontSize = parsed;
   } else {
     fontSize = existing?.fontSize ?? null;
   }
 
-  // — نمایش/مخفی برای کاربران —
+  let fontSizeTablet: number | null;
+  if ("fontSizeTablet" in body) {
+    const parsed = parseDeviceFontSize(body.fontSizeTablet);
+    if (parsed === "invalid") {
+      return bad(
+        `اندازه فونت تبلت باید بین ${SITE_TEXT_FONT_MIN} تا ${SITE_TEXT_FONT_MAX} پیکسل باشد.`
+      );
+    }
+    fontSizeTablet = parsed;
+  } else {
+    fontSizeTablet = existing?.fontSizeTablet ?? null;
+  }
+
+  let fontSizeMobile: number | null;
+  if ("fontSizeMobile" in body) {
+    const parsed = parseDeviceFontSize(body.fontSizeMobile);
+    if (parsed === "invalid") {
+      return bad(
+        `اندازه فونت موبایل باید بین ${SITE_TEXT_FONT_MIN} تا ${SITE_TEXT_FONT_MAX} پیکسل باشد.`
+      );
+    }
+    fontSizeMobile = parsed;
+  } else {
+    fontSizeMobile = existing?.fontSizeMobile ?? null;
+  }
+
+  // — نمایش/مخفی برای کاربران (سراسری) —
   const hidden =
     "hidden" in body
       ? body.hidden === true || body.hidden === "true"
       : (existing?.hidden ?? false);
 
+  // — نمایش/مخفی به تفکیک دستگاه (دسکتاپ/تبلت/موبایل) —
+  const parseDeviceHidden = (raw: unknown, fallback: boolean): boolean =>
+    raw === true || raw === "true" ? true : raw === false || raw === "false" ? false : fallback;
+  const hiddenDesktop =
+    "hiddenDesktop" in body
+      ? parseDeviceHidden(body.hiddenDesktop, false)
+      : (existing?.hiddenDesktop ?? false);
+  const hiddenTablet =
+    "hiddenTablet" in body
+      ? parseDeviceHidden(body.hiddenTablet, false)
+      : (existing?.hiddenTablet ?? false);
+  const hiddenMobile =
+    "hiddenMobile" in body
+      ? parseDeviceHidden(body.hiddenMobile, false)
+      : (existing?.hiddenMobile ?? false);
+
   const row = await db.siteText.upsert({
     where: { key },
-    update: { text, color, fontKey, fontSize, hidden },
-    create: { key, text, color, fontKey, fontSize, hidden },
+    update: {
+      text,
+      color,
+      fontKey,
+      fontSize,
+      fontSizeTablet,
+      fontSizeMobile,
+      hidden,
+      hiddenDesktop,
+      hiddenTablet,
+      hiddenMobile,
+    },
+    create: {
+      key,
+      text,
+      color,
+      fontKey,
+      fontSize,
+      fontSizeTablet,
+      fontSizeMobile,
+      hidden,
+      hiddenDesktop,
+      hiddenTablet,
+      hiddenMobile,
+    },
   });
 
   // — آینه‌سازی در تنظیمات سایت (همگام‌سازی با ماژول «تنظیمات سایت») —

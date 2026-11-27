@@ -46,6 +46,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { apiFetch, toastApiError } from "@/components/admin/api";
 import {
   buildZarinpalCode,
+  normalizeZarinpalBadgeUrl,
   zarinpalDisplayValue,
 } from "@/lib/trust-seals";
 import { ConfirmDelete } from "@/components/admin/shared/confirm-delete";
@@ -558,11 +559,11 @@ export function HeaderFooterModule({ setActive }: ModuleProps) {
     zarinpalSaved !== null &&
     zarinpalDraft.trim() !== zarinpalDisplayValue(zarinpalSaved);
 
-  /** کد پیش‌نمایش زرین‌پال — از دامنه ساخته می‌شود؛ کد خام عیناً */
+  /** کد پیش‌نمایش زرین‌پال — از دامنه ساخته می‌شود؛ کد خام با اصلاحِ URL لوگوی مُرده */
   const zarinpalPreviewCode = (() => {
     const input = (zarinpalDraft ?? "").trim();
     if (!input) return "";
-    if (/<[a-z!/]/i.test(input)) return input;
+    if (/<[a-z!/]/i.test(input)) return normalizeZarinpalBadgeUrl(input);
     return buildZarinpalCode(input) ?? "";
   })();
 
@@ -883,7 +884,9 @@ export function HeaderFooterModule({ setActive }: ModuleProps) {
         );
         return;
       }
-      code = input;
+      // خوددرمانی: URL لوگوی مُرده‌ی قدیمی (www.zarinpal.com/badges/… → 404)
+      // به آدرس رسمیِ زنده‌ی CDN اصلاح می‌شود؛ لینک trustPage دست‌نخورده است
+      code = normalizeZarinpalBadgeUrl(input);
     } else {
       const built = buildZarinpalCode(input);
       if (built === null) {

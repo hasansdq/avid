@@ -29,6 +29,8 @@ interface PublicChatSettings {
   botAvatarMode: ChatAvatarMode;
   welcomeMessage: string;
   autoOpen: boolean;
+  /** ثانیه‌های نمایش حباب خوش‌آمدگویی تا مخفی‌شدن خودکار (۰ = بدون) */
+  welcomeAutoHideSeconds: number;
   isActive: boolean;
 }
 
@@ -262,10 +264,15 @@ export function ChatWidget() {
   // نمایش خودکار «حباب» خوش‌آمدگویی (پنجره‌ی چت باز نمی‌شود) —
   // سرور فقط برای نخستین بازدید هر IP در هر شبانه‌روز مجاز می‌داند.
   const [welcomeVisible, setWelcomeVisible] = React.useState(false);
+  /* فاز خروج انیمیت‌دار حباب: پس از پایان انیمیشن از DOM حذف می‌شود */
+  const [welcomeLeaving, setWelcomeLeaving] = React.useState(false);
 
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const typingTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingEmit = React.useRef(0);
+  /* تایمر مخفی‌شدن خودکار + تایمر حذف پس از انیمیشن خروج حباب خوش‌آمدگویی */
+  const welcomeHideTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const welcomeUnmountTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* — بارگذاری اولیه — */
   React.useEffect(() => {
@@ -369,6 +376,67 @@ export function ChatWidget() {
     return [];
   }, [messages, settings, conversationId]);
 
+  /* — خروج انیمیت‌دار حباب خوش‌آمدگویی — */
+  const clearWelcomeTimers = React.useCallback(() => {
+    if (welcomeHideTimer.current) {
+      clearTimeout(welcomeHideTimer.current);
+      welcomeHideTimer.current = null;
+    }
+    if (welcomeUnmountTimer.current) {
+      clearTimeout(welcomeUnmountTimer.current);
+      welcomeUnmountTimer.current = null;
+    }
+  }, []);
+
+  const startWelcomeLeave = React.useCallback(() => {
+    if (welcomeUnmountTimer.current) return; // در حال خروج است
+    if (welcomeHideTimer.current) {
+      clearTimeout(welcomeHideTimer.current);
+      welcomeHideTimer.current = null;
+    }
+    setWelcomeLeaving(true);
+    welcomeUnmountTimer.current = setTimeout(() => {
+      welcomeUnmountTimer.current = null;
+      setWelcomeVisible(false);
+      setWelcomeLeaving(false);
+    }, 450);
+  }, []);
+
+  /*
+   * مخفی‌شدن خودکار حباب خوش‌آمدگویی پس از «welcomeAutoHideSeconds» ثانیه
+   * (۰ = بدون مخفی‌شدن خودکار) — با انیمیشن خروج؛ تایمر با هر تعامل کاربر
+   * (باز کردن چت یا بستن دستی) لغو می‌شود.
+   */
+  React.useEffect(() => {
+    if (!welcomeVisible || welcomeLeaving) return;
+    const seconds = settings?.welcomeAutoHideSeconds ?? 7;
+    if (!Number.isFinite(seconds) || seconds <= 0) return;
+    welcomeHideTimer.current = setTimeout(
+      () => startWelcomeLeave(),
+      seconds * 1000
+    );
+    return () => {
+      if (welcomeHideTimer.current) {
+        clearTimeout(welcomeHideTimer.current);
+        welcomeHideTimer.current = null;
+      }
+    };
+  }, [
+    welcomeVisible,
+    welcomeLeaving,
+    settings?.welcomeAutoHideSeconds,
+    startWelcomeLeave,
+  ]);
+
+  /* پاک‌سازی تایمرها هنگام حذف کامل ویجت */
+  React.useEffect(
+    () => () => {
+      if (welcomeHideTimer.current) clearTimeout(welcomeHideTimer.current);
+      if (welcomeUnmountTimer.current) clearTimeout(welcomeUnmountTimer.current);
+    },
+    []
+  );
+
   /* چت غیرفعال است؟ (بعد از همه‌ی هوک‌ها تا ترتیب رندر ثابت بماند) */
   if (settings && !settings.isActive) return null;
 
@@ -376,12 +444,16 @@ export function ChatWidget() {
     setOpen((v) => !v);
     setUnread(0);
     setError(null);
-    // با باز شدن پنل، حباب خوش‌آمدگویی کنار می‌رود
+    // با باز شدن پنل، حباب خوش‌آمدگویی کنار می‌رود (تایمرها هم پاک می‌شوند)
+    clearWelcomeTimers();
+    setWelcomeLeaving(false);
     setWelcomeVisible(false);
   };
 
   /* کلیک روی «ادامه چت»: حباب بسته و پنجره‌ی کامل چت باز می‌شود */
   const openWelcomeChat = () => {
+    clearWelcomeTimers();
+    setWelcomeLeaving(false);
     setWelcomeVisible(false);
     setUnread(0);
     setError(null);
@@ -389,7 +461,8 @@ export function ChatWidget() {
   };
 
   /* بستن دستی حباب خوش‌آمدگویی */
-  const dismissWelcome = () => setWelcomeVisible(false);
+  /* بستن دستی حباب خوش‌آمدگویی — با همان انیمیشن خروج خودکار */
+  const dismissWelcome = () => startWelcomeLeave();
 
   const handleInputChange = (value: string) => {
     setInput(value);
@@ -572,16 +645,21 @@ export function ChatWidget() {
 
       {/* — حباب خوش‌آمدگویی خودکار (پنجره‌ی کامل چت باز نمی‌شود) — */}
       {!open && welcomeVisible && welcomeText ? (
-        <div className="chat-pop flex w-[min(20rem,calc(100vw-2rem))] flex-col items-start gap-2.5">
+        <div
+          className={cn(
+            "chat-pop flex w-[min(20rem,calc(100vw-2rem))] flex-col items-start gap-2.5",
+            welcomeLeaving && "chat-pop-out"
+          )}
+        >
           {/* حباب حاوی پیام خوش‌آمدگویی */}
           <div
             dir="rtl"
-            className="relative w-full rounded-2xl rounded-bl-md border border-border bg-background/95 p-3.5 pl-9 pr-4 shadow-xl shadow-black/20 backdrop-blur-xl dark:border-white/10 dark:bg-[#050b09]/95"
+            className="relative w-full rounded-2xl rounded-bl-md border-2 border-teal-600/70 bg-background/95 p-3.5 pl-9 pr-4 shadow-xl shadow-black/25 backdrop-blur-xl dark:border-teal-400/55 dark:bg-[#0a1512]/95"
           >
             {/* دنباله‌ی حباب به سمت تصویر پشتیبان (پایین-چپ) */}
             <span
               aria-hidden
-              className="absolute -bottom-[6px] left-4 size-3.5 rotate-45 rounded-[3px] border-b border-r border-border bg-background dark:border-white/10 dark:bg-[#050b09]"
+              className="absolute -bottom-[6.5px] left-4 size-3.5 rotate-45 rounded-[3px] border-b-2 border-r-2 border-teal-600/70 bg-background dark:border-teal-400/55 dark:bg-[#0a1512]"
             />
             {/* بستن دستی حباب */}
             <button

@@ -15,6 +15,8 @@ model SiteSettings {
   slogan                String   @default("یادگیری هر مهارتی، سرمایه‌ی شما در آینده است")
   heroDescription       String   @default("در آکادمی آوید، از هوش مصنوعی تا برنامه‌نویسی کودکان، با پروژه‌های واقعی و پشتیبانی متخصص‌ها مهارت بسازید و آینده شغلی خود را تضمین کنید.")
   logoUrl               String   @default("/images/logo.png")
+  // — favicon اختصاصی (آیکون تب مرورگر) — خالی یعنی همان لوگوی سایت استفاده می‌شود
+  faviconUrl            String   @default("")
   studentsCount         Int      @default(270)
   completedCoursesCount Int      @default(13)
   rating                Float    @default(4.9)
@@ -58,8 +60,18 @@ model SiteText {
   text      String? // متن سفارشی؛ خالی/null = متن پیش‌فرض قطعه
   color     String? // رنگ متن (هگز مثل #0d9488)؛ null = رنگ پیش‌فرض قالب
   fontKey   String? // کلید فونت از رجیستری InstalledFont؛ null = فونت پیش‌فرض قطعه
-  fontSize  Int? // اندازه فونت (پیکسل)؛ null = اندازه‌ی پیش‌فرض قطعه
-  hidden    Boolean  @default(false) // مخفی برای کاربران عادی (مدیر همچنان می‌بیند)
+  fontSize  Int? // اندازه فونت دسکتاپ (پیکسل)؛ null = اندازه‌ی پیش‌فرض قطعه
+  hidden    Boolean  @default(false) // مخفی برای کاربران عادی در همه‌ی دستگاه‌ها (مدیر همچنان می‌بیند)
+
+  // — واکنش‌گرایی به تفکیک دستگاه (ویرایشگر مدادی) —
+  // اندازه‌ی تبلت/موبایل: null = همان اندازه‌ی دسکتاپ (fontSize)
+  fontSizeTablet Int? // اندازه فونت تبلت (۷۶۸ تا ۱۰۲۳ پیکسل عرض)
+  fontSizeMobile Int? // اندازه فونت موبایل (زیر ۷۶۸ پیکسل عرض)
+
+  // مخفی‌سازی مجزا در هر دستگاه: فقط برای کاربران عادیِ همان دستگاه (مدیر همیشه می‌بیند)
+  hiddenDesktop Boolean @default(false) // مخفی در دسکتاپ (عرض ≥۱۰۲۴)
+  hiddenTablet  Boolean @default(false) // مخفی در تبلت (۷۶۸–۱۰۲۳)
+  hiddenMobile  Boolean @default(false) // مخفی در موبایل (زیر ۷۶۸)
   updatedAt DateTime @updatedAt
 }
 
@@ -485,7 +497,7 @@ model Certificate {
   course      Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
   courseId    String?
   courseTitle String   @default("") // تصویر لحظه‌ای عنوان دوره
-  grade       Float? // معدل ثبت‌شده هنگام صدور (۰ تا ۲۰)
+  grade       Float? // معدل ثبت‌شده هنگام صدور (۰ تا ۱۰۰)
   note        String   @default("") // توضیح/عنوان اختیاری روی گواهینامه
   // فایل آپلودشده‌ی گواهینامه (PDF یا تصویر) — /uploads/certificates/...؛
   // خالی یعنی گواهینامه‌ی بدون فایل (نمایش برگه‌ی سیستمی قابل چاپ در پنل کاربر)
@@ -855,6 +867,9 @@ model ChatSettings {
   botAvatarMode   String   @default("circle") // circle | custom
   welcomeMessage String   @default("سلام 👋 به آکادمی آوید خوش آمدید!\nمن پشتیبان آنلاین آوید هستم. اگر درباره‌ی دوره‌ها، ثبت‌نام یا پرداخت سوالی دارید همین‌جا بنویسید؛ پیام شما مستقیماً به تیم پشتیبانی می‌رسد و سریع پاسخ می‌گیرد.")
   autoOpen       Boolean  @default(true) // نمایش خودکار حباب خوش‌آمدگویی هنگام ورود کاربر به سایت (هر IP یک بار در شبانه‌روز)
+  // ثانیه‌های نمایش حباب خوش‌آمدگویی تا مخفی‌شدن خودکارِ انیمیت‌دار؛
+  // ۰ = بدون مخفی‌شدن خودکار (حباب می‌ماند تا کاربر ببندد) — قابل ویرایش در ماژول «مدیریت چت» پنل مدیر
+  welcomeAutoHideSeconds Int     @default(7)
   isActive       Boolean  @default(true) // فعال/غیرفعال بودن چت برای بازدیدکنندگان
   updatedAt      DateTime @updatedAt
 }

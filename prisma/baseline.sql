@@ -6,6 +6,7 @@ CREATE TABLE "SiteSettings" (
     "slogan" TEXT NOT NULL DEFAULT 'یادگیری هر مهارتی، سرمایه‌ی شما در آینده است',
     "heroDescription" TEXT NOT NULL DEFAULT 'در آکادمی آوید، از هوش مصنوعی تا برنامه‌نویسی کودکان، با پروژه‌های واقعی و پشتیبانی متخصص‌ها مهارت بسازید و آینده شغلی خود را تضمین کنید.',
     "logoUrl" TEXT NOT NULL DEFAULT '/images/logo.png',
+    "faviconUrl" TEXT NOT NULL DEFAULT '',
     "studentsCount" INTEGER NOT NULL DEFAULT 270,
     "completedCoursesCount" INTEGER NOT NULL DEFAULT 13,
     "rating" REAL NOT NULL DEFAULT 4.9,
@@ -35,6 +36,11 @@ CREATE TABLE "SiteText" (
     "fontKey" TEXT,
     "fontSize" INTEGER,
     "hidden" BOOLEAN NOT NULL DEFAULT false,
+    "fontSizeTablet" INTEGER,
+    "fontSizeMobile" INTEGER,
+    "hiddenDesktop" BOOLEAN NOT NULL DEFAULT false,
+    "hiddenTablet" BOOLEAN NOT NULL DEFAULT false,
+    "hiddenMobile" BOOLEAN NOT NULL DEFAULT false,
     "updatedAt" DATETIME NOT NULL
 );
 
@@ -564,6 +570,7 @@ CREATE TABLE "ChatSettings" (
     "welcomeMessage" TEXT NOT NULL DEFAULT 'سلام 👋 به آکادمی آوید خوش آمدید!
 من پشتیبان آنلاین آوید هستم. اگر درباره‌ی دوره‌ها، ثبت‌نام یا پرداخت سوالی دارید همین‌جا بنویسید؛ پیام شما مستقیماً به تیم پشتیبانی می‌رسد و سریع پاسخ می‌گیرد.',
     "autoOpen" BOOLEAN NOT NULL DEFAULT true,
+    "welcomeAutoHideSeconds" INTEGER NOT NULL DEFAULT 7,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "updatedAt" DATETIME NOT NULL
 );

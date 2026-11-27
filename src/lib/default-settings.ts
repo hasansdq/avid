@@ -9,6 +9,8 @@ export const DEFAULT_SETTINGS: SiteSettings = {
   heroDescription:
     "در آکادمی آوید، از هوش مصنوعی تا برنامه‌نویسی کودکان، با پروژه‌های واقعی و پشتیبانی متخصص‌ها مهارت بسازید و آینده شغلی خود را تضمین کنید.",
   logoUrl: "/images/logo.png",
+  // favicon اختصاصی — خالی یعنی همان لوگو در تب مرورگر استفاده می‌شود
+  faviconUrl: "",
   studentsCount: 270,
   completedCoursesCount: 13,
   rating: 4.9,

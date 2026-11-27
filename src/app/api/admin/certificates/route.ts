@@ -14,7 +14,7 @@ import { signCertFileUrl, stripCertSig } from "@/lib/cert-files";
  *  · fileUrl الزامی است: آدرس فایل آپلودشده (PDF یا تصویر) از
  *    POST /api/admin/upload با kind=certificate.
  *  · برای هر کاربر در هر دوره فقط یک گواهینامه مجاز است (تکرار → خطا).
- *  · grade اختیاری ۰ تا ۲۰ و note توضیح کوتاه اختیاری است.
+ *  · grade اختیاری ۰ تا ۱۰۰ و note توضیح کوتاه اختیاری است.
  */
 
 /** کد رهگیری یکتا — AVD-XXXXXXXX */
@@ -115,13 +115,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // — معدل اختیاری ۰ تا ۲۰ —
+    // — معدل اختیاری ۰ تا ۱۰۰ —
     let grade: number | null = null;
     const rawGrade = body.grade;
     if (rawGrade !== null && rawGrade !== undefined && String(rawGrade).trim() !== "") {
       grade = float(rawGrade, -1);
-      if (grade < 0 || grade > 20) {
-        return bad("معدل باید عددی بین ۰ تا ۲۰ باشد.");
+      if (grade < 0 || grade > 100) {
+        return bad("معدل باید عددی بین ۰ تا ۱۰۰ باشد.");
       }
       grade = Math.round(grade * 100) / 100;
     }

@@ -1,4 +1,4 @@
-import type { Metadata, Viewport } from "next";
+import type { Metadata } from "next";
 import { Vazirmatn } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
@@ -12,17 +12,11 @@ import { db } from "@/lib/db";
 import { cssTextForKeys } from "@/lib/fonts";
 import { faviconUrlForMetadata } from "@/lib/branding";
 
-/**
- * متادیتای viewport موبایل — رنگ نوار مرورگر (themeColor) برای هر دو
- * حالت روشن/تیره سیستم. مؤلفه‌ی ThemeColorMeta داخل ThemeProvider این
- * مقدار را به‌صورت پویا با تمِ درون‌سایتی همگام می‌کند.
- */
-export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f5faf8" },
-    { media: "(prefers-color-scheme: dark)", color: "#04080a" },
-  ],
-};
+// رنگ نوار مرورگر (themeColor) فقط از طریق ThemeColorMeta در ThemeProvider
+// رندر می‌شود (متای React — همگام با تم درون‌سایتی). متای ایستای
+// viewport.themeColor حذف شد: حذفِ دستیِ آن متاهای متعلق به React در
+// ThemeColorMeta قدیمی باعث گره‌های یتیم و کرش removeChild در
+// ناوبریِ نرم (next/link) بین صفحات می‌شد.
 
 // تمام صفحات پویا رندر می‌شوند — محتوای سایت (تنظیمات، دوره‌ها، منوها و…)
 // از دیتابیس خوانده می‌شود و باید بلافاصله پس از تغییر در پنل مدیریت
@@ -47,21 +41,15 @@ export async function generateMetadata(): Promise<Metadata> {
   const slogan =
     settings?.slogan ?? "یادگیری هر مهارتی، سرمایه‌ی شما در آینده است";
 
-  // — favicon پویا — لوگوی فعال «تنظیمات سایت»؛ ?v با هر ذخیره عوض می‌شود
-  // تا مرورگر نسخه‌ی تازه را فوراً بگیرد (لوگوی محلی از /api/favicon سرو
-  // می‌شود، لوگوی خارجی مستقیم آدرس‌دهی می‌شود).
-  const logoUrl = settings?.logoUrl?.trim() || "/images/logo.png";
-  const isRemoteLogo = /^https?:\/\//i.test(logoUrl);
-  const isSvgLogo = /\.svg(\?|#|$)/i.test(logoUrl.split("?")[0]);
+  // — favicon پویا — favicon اختصاصی «تنظیمات سایت» (یا در نبود آن، لوگو)؛
+  // ?v با هر ذخیره عوض می‌شود تا مرورگر نسخه‌ی تازه را فوراً بگیرد
+  // (فایل محلی از /api/favicon سرو می‌شود، فایل خارجی مستقیم آدرس‌دهی می‌شود).
   const favicons = await faviconUrlForMetadata().catch(() => null);
-  const dynamicFavicon =
-    favicons?.url ?? "/api/favicon?v=0";
+  const dynamicFavicon = favicons?.url ?? "/api/favicon?v=0";
   // iOS آیکون SVG را نمی‌پذیرد → برای apple در آن حالت آیکون ایستای PNG
-  const appleIcon = isRemoteLogo
-    ? logoUrl
-    : isSvgLogo
-      ? "/images/icons/apple-touch-icon.png"
-      : dynamicFavicon;
+  const appleIcon =
+    favicons?.remote ??
+    (favicons?.isSvg ? "/images/icons/apple-touch-icon.png" : dynamicFavicon);
 
   return {
     title: `${siteName} | ${tagline}`,

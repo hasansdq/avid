@@ -1007,14 +1007,14 @@ function CertCard({
           <span
             className={cn(
               "tabular-nums",
-              cert.grade >= 17
+              cert.grade >= 85
                 ? "text-emerald-600 dark:text-emerald-300"
-                : cert.grade >= 10
+                : cert.grade >= 50
                   ? "text-teal-600 dark:text-teal-300"
                   : "text-amber-600 dark:text-amber-300"
             )}
           >
-            معدل: {faGrade(cert.grade)} از {faDigits(20)}
+            معدل: {faGrade(cert.grade)} از {faDigits(100)}
           </span>
         ) : null}
       </div>

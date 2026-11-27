@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Copy,
   Check,
@@ -10,8 +10,10 @@ import {
   Plus,
   RefreshCw,
   School,
+  Search,
   Trash2,
   UserMinus,
+  UserPlus,
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -35,6 +37,42 @@ import { btnGradient } from "@/components/admin/shared/styles";
 import type { ClassMemberRow, ClassRoomWithCount } from "@/components/admin/types";
 import { faDate, faDigits } from "@/lib/fa";
 import { cn } from "@/lib/utils";
+
+/** کاربرِ خلاصه برای نتایج جست‌وجوی «افزودن عضو» (GET /api/admin/users) */
+interface UserLite {
+  id: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  nationalId?: string | null;
+  status: string;
+}
+
+/** خلاصه‌ی پاسخ افزودن گروهی (POST /api/admin/classes/[id]/members) */
+interface AddBulkResult {
+  added: number;
+  existing: number;
+  notFound: string[];
+}
+
+/** تبدیل ارقام فارسی/عربی به انگلیسی */
+function faToEnDigits(s: string): string {
+  return s.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)));
+}
+
+/**
+ * تجزیه‌ی ورودیِ افزودن گروهی — هر خط/کاما/فاصله یک شماره؛
+ * ارقام فارسی پذیرفته می‌شود؛ خروجی: معتبرها + نامعتبرها.
+ */
+function parseBulkPhones(raw: string): { valid: string[]; invalid: string[] } {
+  const tokens = faToEnDigits(raw)
+    .split(/[\s,،؛;\n\r\t]+/)
+    .map((t) => t.replace(/[\s-]/g, ""))
+    .filter(Boolean);
+  const valid = [...new Set(tokens.filter((t) => /^09\d{9}$/.test(t)))];
+  const invalid = tokens.filter((t) => !/^09\d{9}$/.test(t));
+  return { valid, invalid };
+}
 
 /** ساختار فرم ایجاد/ویرایش کلاس */
 interface ClassForm {
@@ -148,6 +186,17 @@ export function ClassesModule() {
   const [members, setMembers] = useState<ClassMemberRow[] | null>(null);
   const [membersLoading, setMembersLoading] = useState(false);
 
+  // — افزودن عضو (تکی/گروهی) — فقط نقش مدیر (API مدیر؛ استاد دسترسی ندارد) —
+  const [addMode, setAddMode] = useState<"single" | "bulk">("single");
+  const [userQuery, setUserQuery] = useState("");
+  const [userResults, setUserResults] = useState<UserLite[] | null>(null);
+  const [userSearching, setUserSearching] = useState(false);
+  const [addingUserId, setAddingUserId] = useState<string | null>(null);
+  const [bulkInput, setBulkInput] = useState("");
+  const [bulkSaving, setBulkSaving] = useState(false);
+  /** جلوگیری از پاسخِ دیرهنگامِ جست‌وجوی قبلی ( AbortController per query) */
+  const searchSeq = useRef(0);
+
   const load = useCallback(async () => {
     try {
       setLoading(true);
@@ -259,6 +308,11 @@ export function ClassesModule() {
     setMembersClass(c);
     setMembers(null);
     setMembersLoading(true);
+    // ریست حالتِ افزودن عضو در هر باز شدن
+    setAddMode("single");
+    setUserQuery("");
+    setUserResults(null);
+    setBulkInput("");
     try {
       const data = await apiFetch<{ classTitle: string; members: ClassMemberRow[] }>(
         `/api/admin/classes/${c.id}/members`
@@ -269,6 +323,104 @@ export function ClassesModule() {
       setMembersClass(null);
     } finally {
       setMembersLoading(false);
+    }
+  }
+
+  /** نوسازی بی‌درنگ لیست اعضا و شمارنده‌ها پس از افزودن (بدون اسپینر) */
+  async function refreshMembers() {
+    if (!membersClass) return;
+    try {
+      const data = await apiFetch<{ classTitle: string; members: ClassMemberRow[] }>(
+        `/api/admin/classes/${membersClass.id}/members`
+      );
+      setMembers(data.members);
+      const count = data.members.length;
+      setMembersClass({ ...membersClass, _count: { members: count } });
+      setClasses(
+        (prev) =>
+          prev?.map((c) =>
+            c.id === membersClass.id ? { ...c, _count: { members: count } } : c
+          ) ?? prev
+      );
+    } catch (error) {
+      toastApiError(error);
+    }
+  }
+
+  /** جست‌وجوی کاربران برای افزودن تکی — با ۳۵۰ms debounce */
+  useEffect(() => {
+    if (!membersClass || addMode !== "single") return;
+    const q = userQuery.trim();
+    if (q.length < 2) {
+      setUserResults(null);
+      setUserSearching(false);
+      return;
+    }
+    const seq = ++searchSeq.current;
+    setUserSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const data = await apiFetch<{ users: UserLite[] }>(
+          `/api/admin/users?q=${encodeURIComponent(q)}`
+        );
+        if (seq !== searchSeq.current) return; // جست‌وجوی قدیمی — رد
+        setUserResults(data.users);
+      } catch {
+        if (seq === searchSeq.current) setUserResults(null);
+      } finally {
+        if (seq === searchSeq.current) setUserSearching(false);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [userQuery, membersClass, addMode]);
+
+  /** افزودن تکی — انتخاب از نتایج جست‌وجو */
+  async function handleAddSingle(u: UserLite) {
+    if (!membersClass || addingUserId) return;
+    setAddingUserId(u.id);
+    try {
+      await apiFetch(`/api/admin/classes/${membersClass.id}/members`, {
+        method: "POST",
+        body: JSON.stringify({ userId: u.id }),
+      });
+      toast.success(`${u.firstName} ${u.lastName} به کلاس اضافه شد`);
+      setUserResults((prev) => prev?.filter((r) => r.id !== u.id) ?? prev);
+      await refreshMembers();
+    } catch (error) {
+      toastApiError(error);
+    } finally {
+      setAddingUserId(null);
+    }
+  }
+
+  /** افزودن گروهی — لیست شماره موبایل از textarea */
+  async function handleAddBulk() {
+    if (!membersClass || bulkSaving) return;
+    const { valid } = parseBulkPhones(bulkInput);
+    if (valid.length === 0) {
+      toast.error("حداقل یک شماره موبایل معتبر (۱۱ رقمی با ۰۹…) وارد کنید.");
+      return;
+    }
+    setBulkSaving(true);
+    try {
+      const res = await apiFetch<AddBulkResult>(
+        `/api/admin/classes/${membersClass.id}/members`,
+        { method: "POST", body: JSON.stringify({ phones: valid }) }
+      );
+      const parts = [`${faDigits(res.added)} نفر به کلاس اضافه شد`];
+      if (res.existing > 0) parts.push(`${faDigits(res.existing)} نفر از قبل عضو بود`);
+      toast.success(parts.join("، "));
+      if (res.notFound.length > 0) {
+        toast.warning(`شماره بدون کاربر ثبت‌شده: ${res.notFound.join("، ")}`, {
+          description: "ابتدا کاربر را از ماژول «کاربران و ثبت‌نام» بسازید.",
+        });
+      }
+      if (res.added > 0) setBulkInput("");
+      await refreshMembers();
+    } catch (error) {
+      toastApiError(error);
+    } finally {
+      setBulkSaving(false);
     }
   }
 
@@ -317,7 +469,7 @@ export function ClassesModule() {
     <div className="space-y-6">
       <ModuleHeader
         title="کلاس‌ها"
-        description="تعریف کلاس‌ها با لینک دعوت یکتا — کاربران با کلیک روی لینک و تکمیل فرم ثبت‌نام عضو می‌شوند؛ تعداد کلاس‌های هر کاربر محدودیتی ندارد."
+        description="تعریف کلاس‌ها با لینک دعوت یکتا — کاربران با کلیک روی لینک و تکمیل فرم ثبت‌نام عضو می‌شوند؛ مدیر می‌تواند از دیالوگ «اعضا» کاربران را تکی (جست‌وجو) یا گروهی (لیست شماره) مستقیم اضافه کند. تعداد کلاس‌های هر کاربر محدودیتی ندارد."
       >
         <Button onClick={openCreate} className={`rounded-xl ${btnGradient}`}>
           <Plus className="size-4" />
@@ -335,7 +487,7 @@ export function ClassesModule() {
         <EmptyState
           icon={School}
           title="هنوز کلاسی تعریف نشده است"
-          description="کلاس بسازید و لینک دعوت یکتای آن را با کاربران به اشتراک بگذارید — عضویت فقط از طریق همان لینک انجام می‌شود."
+          description="کلاس بسازید و لینک دعوت یکتای آن را با کاربران به اشتراک بگذارید — یا از دیالوگ «اعضا» به‌صورت مستقیم (تکی/گروهی) عضو اضافه کنید."
         >
           <Button onClick={openCreate} size="sm" className={`rounded-xl ${btnGradient}`}>
             <Plus className="size-4" />
@@ -630,10 +782,196 @@ export function ClassesModule() {
             </DialogTitle>
             <DialogDescription>
               {membersClass
-                ? `${faDigits(membersClass._count.members)} نفر از طریق لینک دعوت عضو این کلاس شده‌اند.`
+                ? `${faDigits(membersClass._count.members)} نفر عضو این کلاس هستند (از طریق لینک دعوت یا افزودن مستقیم توسط مدیر).`
                 : "اعضای کلاس"}
             </DialogDescription>
           </DialogHeader>
+
+          {/* ————— افزودن عضو (تکی/گروهی) — فقط نقش مدیر ————— */}
+          <div className="rounded-xl border border-border bg-foreground/[0.02] p-3 dark:bg-white/[0.02]">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="flex items-center gap-1.5 text-xs font-black text-foreground">
+                <UserPlus className="size-4 text-teal-600 dark:text-teal-300" />
+                افزودن کاربر به کلاس
+              </p>
+              <div
+                role="tablist"
+                aria-label="روش افزودن عضو"
+                className="flex items-center rounded-lg border border-border bg-background p-0.5"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={addMode === "single"}
+                  onClick={() => setAddMode("single")}
+                  className={cn(
+                    "rounded-md px-3 py-1 text-[0.7rem] font-black transition-colors",
+                    addMode === "single"
+                      ? "bg-gradient-to-l from-teal-400 to-emerald-600 text-teal-950 shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  تکی (جست‌وجو)
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={addMode === "bulk"}
+                  onClick={() => setAddMode("bulk")}
+                  className={cn(
+                    "rounded-md px-3 py-1 text-[0.7rem] font-black transition-colors",
+                    addMode === "bulk"
+                      ? "bg-gradient-to-l from-teal-400 to-emerald-600 text-teal-950 shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  گروهی (شماره‌ها)
+                </button>
+              </div>
+            </div>
+
+            {addMode === "single" ? (
+              <div className="mt-3 space-y-2">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={userQuery}
+                    onChange={(e) => setUserQuery(e.target.value)}
+                    placeholder="نام یا شماره موبایل کاربر را جست‌وجو کنید..."
+                    className="h-10 rounded-xl ps-9 text-sm"
+                    autoComplete="off"
+                    aria-label="جست‌وجوی کاربر برای افزودن به کلاس"
+                  />
+                </div>
+
+                {userSearching ? (
+                  <p className="flex items-center gap-1.5 px-1 text-[0.7rem] font-bold text-muted-foreground">
+                    <Loader2 className="size-3.5 animate-spin" />
+                    در حال جست‌وجو...
+                  </p>
+                ) : userResults ? (
+                  (() => {
+                    // اعضای فعلی از نتایج حذف می‌شوند (بدون افزودن تکراری)
+                    const memberIds = new Set(
+                      (members ?? []).map((m) => m.user.id)
+                    );
+                    const candidates = userResults.filter(
+                      (u) => !memberIds.has(u.id)
+                    );
+                    if (candidates.length === 0) {
+                      return (
+                        <p className="px-1 text-[0.7rem] font-bold text-muted-foreground">
+                          کاربر دیگری یافت نشد — نتایج فعلی یا عضو کلاس هستند یا
+                          وجود ندارند.
+                        </p>
+                      );
+                    }
+                    return (
+                      <ul className="max-h-44 space-y-1.5 overflow-y-auto pe-1">
+                        {candidates.map((u) => (
+                          <li
+                            key={u.id}
+                            className="flex items-center gap-2.5 rounded-lg border border-border bg-background p-2"
+                          >
+                            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground/[0.06] text-xs font-black dark:bg-white/[0.06]">
+                              {u.firstName.charAt(0)}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-xs font-bold text-foreground">
+                                {u.firstName} {u.lastName}
+                                {u.status === "blocked" ? (
+                                  <span className="ms-1.5 rounded-full border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 text-[0.55rem] font-black text-red-600 dark:text-red-300">
+                                    مسدود
+                                  </span>
+                                ) : null}
+                              </p>
+                              <p className="truncate text-[0.65rem] text-muted-foreground">
+                                <span dir="ltr">{faDigits(u.phone)}</span>
+                              </p>
+                            </div>
+                            <Button
+                              size="sm"
+                              onClick={() => void handleAddSingle(u)}
+                              disabled={addingUserId !== null}
+                              className="h-8 rounded-lg bg-gradient-to-l from-teal-400 to-emerald-600 px-3 text-[0.65rem] font-black text-teal-950 hover:opacity-90"
+                            >
+                              {addingUserId === u.id ? (
+                                <Loader2 className="size-3.5 animate-spin" />
+                              ) : (
+                                <UserPlus className="size-3.5" />
+                              )}
+                              افزودن
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                    );
+                  })()
+                ) : (
+                  <p className="px-1 text-[0.7rem] leading-5 text-muted-foreground">
+                    حداقل ۲ نویسه بنویسید — جست‌وجو در نام، نام خانوادگی، شماره
+                    موبایل و کد ملی کاربران.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="mt-3 space-y-2">
+                <Textarea
+                  value={bulkInput}
+                  onChange={(e) => setBulkInput(e.target.value)}
+                  placeholder={"شماره موبایل کاربران — هر شماره در یک خط:\n09123456789\n09151112233"}
+                  className="min-h-24 rounded-xl text-sm leading-6"
+                  dir="ltr"
+                  aria-label="لیست شماره موبایل برای افزودن گروهی"
+                />
+                {(() => {
+                  const { valid, invalid } = parseBulkPhones(bulkInput);
+                  if (!bulkInput.trim()) return null;
+                  return (
+                    <p className="text-[0.7rem] leading-5 font-bold">
+                      <span className="text-emerald-600 dark:text-emerald-300">
+                        {faDigits(valid.length)} شماره معتبر
+                      </span>
+                      {invalid.length > 0 ? (
+                        <>
+                          {" — "}
+                          <span className="text-red-600 dark:text-red-300">
+                            {faDigits(invalid.length)} نامعتبر
+                          </span>
+                        </>
+                      ) : null}
+                      {valid.length > 0 ? (
+                        <>
+                          {" — "}
+                          <span className="text-muted-foreground">
+                            فقط کاربرانِ ثبت‌شده با این شماره‌ها اضافه می‌شوند.
+                          </span>
+                        </>
+                      ) : null}
+                    </p>
+                  );
+                })()}
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => void handleAddBulk()}
+                    disabled={bulkSaving || parseBulkPhones(bulkInput).valid.length === 0}
+                    className="h-9 rounded-xl bg-gradient-to-l from-teal-400 to-emerald-600 px-4 text-xs font-black text-teal-950 hover:opacity-90"
+                  >
+                    {bulkSaving ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <UserPlus className="size-4" />
+                    )}
+                    افزودن گروهی
+                  </Button>
+                  <p className="text-[0.65rem] leading-4 text-muted-foreground">
+                    ارقام فارسی هم پذیرفته می‌شود؛ حداکثر ۱۰۰ شماره در هر درخواست.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
 
           {membersLoading ? (
             <div className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-foreground/15 py-10 text-sm font-bold text-muted-foreground">

@@ -4,9 +4,12 @@ import * as React from "react";
 import {
   EyeOff,
   Loader2,
+  Monitor,
   Pencil,
   RotateCcw,
   Save,
+  Smartphone,
+  Tablet,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -32,9 +35,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { FontStylesheets } from "@/components/font-loader";
 import {
   findSiteTextSlot,
+  SITE_TEXT_DEVICE_LABELS,
+  SITE_TEXT_DEVICES,
   SITE_TEXT_MAX_LEN,
   SITE_TEXT_FONT_MAX,
   SITE_TEXT_FONT_MIN,
+  type SiteTextDevice,
 } from "@/lib/site-texts";
 import { cn } from "@/lib/utils";
 
@@ -53,9 +59,32 @@ export interface SiteTextRowValue {
   text: string | null;
   color: string | null;
   fontKey: string | null;
+  /** اندازه فونت دسکتاپ (پیکسل)؛ null = پیش‌فرض قالب */
   fontSize: number | null;
+  /** اندازه فونت تبلت (۷۶۸–۱۰۲۳)؛ null = همان دسکتاپ */
+  fontSizeTablet: number | null;
+  /** اندازه فونت موبایل (زیر ۷۶۸)؛ null = همان دسکتاپ */
+  fontSizeMobile: number | null;
   hidden: boolean;
+  /** مخفی فقط در دسکتاپ/تبلت/موبایل برای کاربران عادی (مدیر همیشه می‌بیند) */
+  hiddenDesktop: boolean;
+  hiddenTablet: boolean;
+  hiddenMobile: boolean;
 }
+
+/** مقدار پیش‌فرض ردیف بدون هیچ سفارشی‌سازی */
+export const EMPTY_SITE_TEXT_ROW: SiteTextRowValue = {
+  text: null,
+  color: null,
+  fontKey: null,
+  fontSize: null,
+  fontSizeTablet: null,
+  fontSizeMobile: null,
+  hidden: false,
+  hiddenDesktop: false,
+  hiddenTablet: false,
+  hiddenMobile: false,
+};
 
 interface SiteTextsContextValue {
   /** آیا بیننده‌ی فعلی سایت مدیر است */
@@ -154,13 +183,7 @@ export function SiteTextsProvider({
     (key: string, resetText: string) => {
       setRows((prev) => ({
         ...prev,
-        [key]: {
-          text: resetText,
-          color: null,
-          fontKey: null,
-          fontSize: null,
-          hidden: false,
-        },
+        [key]: { ...EMPTY_SITE_TEXT_ROW, text: resetText },
       }));
     },
     []
@@ -224,11 +247,27 @@ export function EditableText({
   const isAdmin = ctx?.isAdmin ?? false;
   const editable = ctx?.editable ?? false;
 
+  // — مخفی‌سازی به تفکیک دستگاه: دسکتاپ ≥1024 / تبلت 768–1023 / موبایل <768 —
+  // برای مدیرِ در حال ویرایش (مداد روشن) متن همیشه دیده می‌شود و به‌جای
+  // کلاس مخفی‌کننده، نشان/راهنمای «مخفی در …» می‌گیرد.
+  const deviceHidden = row
+    ? {
+        desktop: row.hiddenDesktop,
+        tablet: row.hiddenTablet,
+        mobile: row.hiddenMobile,
+      }
+    : { desktop: false, tablet: false, mobile: false };
+  const hiddenDeviceLabels = SITE_TEXT_DEVICES.filter(
+    (d) => deviceHidden[d]
+  ).map((d) => SITE_TEXT_DEVICE_LABELS[d]);
+  const anyDeviceHidden = hiddenDeviceLabels.length > 0;
+  const showDeviceHiddenClasses = anyDeviceHidden && !editable;
+
   // متن مخفی فقط برای مدیر (کم‌رنگ) رندر می‌شود؛ کاربر عادی هیچ نمی‌بیند
   if (hidden && !isAdmin) return null;
 
   const customText = row?.text ?? null;
-  const style: React.CSSProperties = {};
+  const style: React.CSSProperties & Record<string, string> = {};
   if (row?.color) style.color = row.color;
   if (row?.fontKey) {
     const stack = ctx?.fontStackFor(row.fontKey);
@@ -239,7 +278,16 @@ export function EditableText({
     // اندازه‌ی فونت روی متغیر CSS هم منتشر می‌شود تا استایل‌های واکنش‌گرای سایت
     // (مثل کاهش ۲۰٪ اسلوگان هیرو در موبایل) بتوانند نسبت به آن محاسبه شوند —
     // inline font-size با !important در media query موبایل قابل‌تغییر است.
-    (style as Record<string, string>)["--st-size"] = `${row.fontSize}px`;
+    style["--st-size"] = `${row.fontSize}px`;
+  }
+  // — اندازه‌ی فونت به تفکیک دستگاه — متغیر CSS + پرچم data تا قاعده‌ی
+  // واکنش‌گرای globals.css فقط برای همین عنصر و فقط در بازه‌ی همان دستگاه
+  // اعمال شود (explicit موبایل/تبلت جایگزین اندازه‌ی دسکتاپ می‌شود).
+  if (row?.fontSizeTablet != null) {
+    style["--st-size-tablet"] = `${row.fontSizeTablet}px`;
+  }
+  if (row?.fontSizeMobile != null) {
+    style["--st-size-mobile"] = `${row.fontSizeMobile}px`;
   }
 
   const content =
@@ -251,12 +299,23 @@ export function EditableText({
 
   const hiddenTitle = hidden
     ? "این متن برای کاربران مخفی است — با مداد قابل نمایش مجدد است"
-    : undefined;
+    : anyDeviceHidden
+      ? `مخفی برای کاربرانِ ${hiddenDeviceLabels.join(" و ")} — با مداد قابل تنظیم است`
+      : undefined;
 
   if (!editable) {
     return (
       <span
-        className={cn("site-text-value", hidden && isAdmin && "opacity-60", className)}
+        data-st-size-tablet={row?.fontSizeTablet != null ? "" : undefined}
+        data-st-size-mobile={row?.fontSizeMobile != null ? "" : undefined}
+        className={cn(
+          "site-text-value",
+          (hidden || anyDeviceHidden) && isAdmin && "opacity-60",
+          showDeviceHiddenClasses && row?.hiddenDesktop && "lg:hidden",
+          showDeviceHiddenClasses && row?.hiddenTablet && "md:max-lg:hidden",
+          showDeviceHiddenClasses && row?.hiddenMobile && "max-md:hidden",
+          className
+        )}
         style={style}
         title={hiddenTitle}
       >
@@ -269,22 +328,24 @@ export function EditableText({
 
   return (
     <span
+      data-st-size-tablet={row?.fontSizeTablet != null ? "" : undefined}
+      data-st-size-mobile={row?.fontSizeMobile != null ? "" : undefined}
       className={cn(
         "site-text-value relative inline-block",
-        hidden && "opacity-60",
+        (hidden || anyDeviceHidden) && "opacity-60",
         className
       )}
       style={style}
       title={hiddenTitle}
     >
       {content}
-      {hidden ? (
+      {hidden || anyDeviceHidden ? (
         <span
           aria-hidden
           className="absolute -top-2.5 start-[-4px] z-40 inline-flex items-center gap-1 rounded-full bg-rose-500 px-2 py-px text-[0.55rem] font-black text-white shadow-md shadow-rose-500/30"
         >
           <EyeOff className="size-2.5" strokeWidth={2.5} />
-          مخفی
+          {hidden ? "مخفی" : `مخفی در ${hiddenDeviceLabels.join("+")}`}
         </span>
       ) : null}
       <button
@@ -327,7 +388,13 @@ function SiteTextEditorDialog({
   const [color, setColor] = React.useState("");
   const [fontKey, setFontKey] = React.useState("");
   const [fontSize, setFontSize] = React.useState("");
+  const [fontSizeTablet, setFontSizeTablet] = React.useState("");
+  const [fontSizeMobile, setFontSizeMobile] = React.useState("");
   const [hidden, setHidden] = React.useState(false);
+  const [hiddenDesktop, setHiddenDesktop] = React.useState(false);
+  const [hiddenTablet, setHiddenTablet] = React.useState(false);
+  const [hiddenMobile, setHiddenMobile] = React.useState(false);
+  const [previewDevice, setPreviewDevice] = React.useState<SiteTextDevice>("desktop");
   const [saving, setSaving] = React.useState(false);
   const [resetting, setResetting] = React.useState(false);
   const [error, setError] = React.useState("");
@@ -339,7 +406,17 @@ function SiteTextEditorDialog({
     setColor(row?.color ?? "");
     setFontKey(row?.fontKey ?? "");
     setFontSize(row?.fontSize != null ? String(row.fontSize) : "");
+    setFontSizeTablet(
+      row?.fontSizeTablet != null ? String(row.fontSizeTablet) : ""
+    );
+    setFontSizeMobile(
+      row?.fontSizeMobile != null ? String(row.fontSizeMobile) : ""
+    );
     setHidden(row?.hidden ?? false);
+    setHiddenDesktop(row?.hiddenDesktop ?? false);
+    setHiddenTablet(row?.hiddenTablet ?? false);
+    setHiddenMobile(row?.hiddenMobile ?? false);
+    setPreviewDevice("desktop");
     setSaving(false);
     setResetting(false);
     setError("");
@@ -350,11 +427,31 @@ function SiteTextEditorDialog({
     [fonts, fontKey]
   );
 
+  // اندازه‌ی مؤثر دستگاه انتخاب‌شده در پیش‌نمایش — خالی = ارث از دسکتاپ
+  const previewSizeForDevice = (device: SiteTextDevice): number | null => {
+    const base = fontSize.trim() ? Number(fontSize) : null;
+    if (device === "tablet") {
+      const t = fontSizeTablet.trim() ? Number(fontSizeTablet) : null;
+      return t ?? base;
+    }
+    if (device === "mobile") {
+      const m = fontSizeMobile.trim() ? Number(fontSizeMobile) : null;
+      return m ?? base;
+    }
+    return base;
+  };
+
+  const deviceHiddenState: Record<SiteTextDevice, boolean> = {
+    desktop: hiddenDesktop,
+    tablet: hiddenTablet,
+    mobile: hiddenMobile,
+  };
+
   const previewStyle: React.CSSProperties = {
     ...(color ? { color } : {}),
     ...(fontStack ? { fontFamily: fontStack } : {}),
-    ...(fontSize && Number(fontSize) > 0
-      ? { fontSize: `${Number(fontSize)}px` }
+    ...(previewSizeForDevice(previewDevice)
+      ? { fontSize: `${previewSizeForDevice(previewDevice)}px` }
       : {}),
   };
 
@@ -372,7 +469,12 @@ function SiteTextEditorDialog({
           color,
           fontKey,
           fontSize: fontSize.trim() ? Number(fontSize) : 0,
+          fontSizeTablet: fontSizeTablet.trim() ? Number(fontSizeTablet) : 0,
+          fontSizeMobile: fontSizeMobile.trim() ? Number(fontSizeMobile) : 0,
           hidden,
+          hiddenDesktop,
+          hiddenTablet,
+          hiddenMobile,
         }),
       });
       const data = (await res.json().catch(() => null)) as {
@@ -381,7 +483,12 @@ function SiteTextEditorDialog({
           color: string | null;
           fontKey: string | null;
           fontSize: number | null;
+          fontSizeTablet: number | null;
+          fontSizeMobile: number | null;
           hidden: boolean;
+          hiddenDesktop: boolean;
+          hiddenTablet: boolean;
+          hiddenMobile: boolean;
         };
         error?: string;
       } | null;
@@ -393,7 +500,12 @@ function SiteTextEditorDialog({
         color: data.row.color,
         fontKey: data.row.fontKey,
         fontSize: data.row.fontSize,
+        fontSizeTablet: data.row.fontSizeTablet ?? null,
+        fontSizeMobile: data.row.fontSizeMobile ?? null,
         hidden: data.row.hidden,
+        hiddenDesktop: data.row.hiddenDesktop ?? false,
+        hiddenTablet: data.row.hiddenTablet ?? false,
+        hiddenMobile: data.row.hiddenMobile ?? false,
       });
       toast.success("متن با موفقیت ذخیره شد");
       onDismiss();
@@ -441,7 +553,12 @@ function SiteTextEditorDialog({
     (row?.color ?? null) !== null ||
     (row?.fontKey ?? null) !== null ||
     (row?.fontSize ?? null) !== null ||
-    (row?.hidden ?? false);
+    (row?.fontSizeTablet ?? null) !== null ||
+    (row?.fontSizeMobile ?? null) !== null ||
+    (row?.hidden ?? false) ||
+    (row?.hiddenDesktop ?? false) ||
+    (row?.hiddenTablet ?? false) ||
+    (row?.hiddenMobile ?? false);
 
   const busy = saving || resetting;
 
@@ -545,91 +662,194 @@ function SiteTextEditorDialog({
             </div>
           </div>
 
-          {/* — فونت و اندازه — */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="st-font">فونت</Label>
-              <Select
-                value={fontKey || "__default"}
-                onValueChange={(v) => setFontKey(v === "__default" ? "" : v)}
-              >
-                <SelectTrigger id="st-font" className="w-full">
-                  <SelectValue placeholder="پیش‌فرض قطعه" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__default">پیش‌فرض قطعه‌ی سایت</SelectItem>
-                  {fonts.map((f) => (
-                    <SelectItem
-                      key={f.key}
-                      value={f.key}
-                      style={{ fontFamily: f.stack }}
-                    >
-                      {f.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-[0.7rem] leading-5 text-muted-foreground">
-                فونت‌های نصب‌شده‌ی سایت (ماژول «فونت‌ها»).
-              </p>
-            </div>
+          {/* — فونت — */}
+          <div className="space-y-2">
+            <Label htmlFor="st-font">فونت</Label>
+            <Select
+              value={fontKey || "__default"}
+              onValueChange={(v) => setFontKey(v === "__default" ? "" : v)}
+            >
+              <SelectTrigger id="st-font" className="w-full">
+                <SelectValue placeholder="پیش‌فرض قطعه" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__default">پیش‌فرض قطعه‌ی سایت</SelectItem>
+                {fonts.map((f) => (
+                  <SelectItem
+                    key={f.key}
+                    value={f.key}
+                    style={{ fontFamily: f.stack }}
+                  >
+                    {f.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[0.7rem] leading-5 text-muted-foreground">
+              فونت‌های نصب‌شده‌ی سایت (ماژول «فونت‌ها») — در همه‌ی دستگاه‌ها اعمال می‌شود.
+            </p>
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="st-size">اندازه فونت (پیکسل)</Label>
-              <div className="flex items-center gap-2">
+          {/* — اندازه فونت به تفکیک دستگاه — */}
+          <div className="space-y-2">
+            <Label>اندازه فونت به تفکیک دستگاه (پیکسل)</Label>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1 text-muted-foreground">
+                  <Monitor className="size-3.5" />
+                  <span className="text-[0.68rem] font-bold">دسکتاپ</span>
+                </div>
                 <Input
-                  id="st-size"
                   type="number"
                   min={SITE_TEXT_FONT_MIN}
                   max={SITE_TEXT_FONT_MAX}
                   value={fontSize}
                   onChange={(e) => setFontSize(e.target.value)}
                   placeholder="پیش‌فرض"
-                  className="h-9 w-full"
+                  aria-label="اندازه فونت دسکتاپ"
+                  className="h-9 text-center tabular-nums"
                 />
-                {fontSize ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setFontSize("")}
-                    className="h-9 shrink-0 rounded-lg px-3 text-xs"
-                  >
-                    پیش‌فرض
-                  </Button>
-                ) : null}
               </div>
-              <p className="text-[0.7rem] leading-5 text-muted-foreground">
-                بین {SITE_TEXT_FONT_MIN} تا {SITE_TEXT_FONT_MAX} پیکسل؛ خالی =
-                اندازه‌ی واکنش‌گرای قالب.
-              </p>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1 text-muted-foreground">
+                  <Tablet className="size-3.5" />
+                  <span className="text-[0.68rem] font-bold">تبلت</span>
+                </div>
+                <Input
+                  type="number"
+                  min={SITE_TEXT_FONT_MIN}
+                  max={SITE_TEXT_FONT_MAX}
+                  value={fontSizeTablet}
+                  onChange={(e) => setFontSizeTablet(e.target.value)}
+                  placeholder="= دسکتاپ"
+                  aria-label="اندازه فونت تبلت"
+                  className="h-9 text-center tabular-nums"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1 text-muted-foreground">
+                  <Smartphone className="size-3.5" />
+                  <span className="text-[0.68rem] font-bold">موبایل</span>
+                </div>
+                <Input
+                  type="number"
+                  min={SITE_TEXT_FONT_MIN}
+                  max={SITE_TEXT_FONT_MAX}
+                  value={fontSizeMobile}
+                  onChange={(e) => setFontSizeMobile(e.target.value)}
+                  placeholder="= دسکتاپ"
+                  aria-label="اندازه فونت موبایل"
+                  className="h-9 text-center tabular-nums"
+                />
+              </div>
             </div>
+            <p className="text-[0.7rem] leading-5 text-muted-foreground">
+              بین {SITE_TEXT_FONT_MIN} تا {SITE_TEXT_FONT_MAX} پیکسل — دسکتاپ
+              خالی = اندازه‌ی واکنش‌گرای قالب؛ تبلت/موبایل خالی = همان اندازه‌ی
+              دسکتاپ. دامنه‌ها: موبایل زیر ۷۶۸، تبلت ۷۶۸ تا ۱۰۲۳، دسکتاپ از ۱۰۲۴ پیکسل.
+            </p>
           </div>
 
           {/* — نمایش/مخفی — */}
-          <div className="flex items-center justify-between gap-4 rounded-xl border border-border bg-foreground/[0.02] p-3.5">
-            <div className="min-w-0">
-              <Label htmlFor="st-visible" className="cursor-pointer">
-                نمایش این متن برای کاربران
-              </Label>
-              <p className="mt-1 text-[0.7rem] leading-5 text-muted-foreground">
-                با خاموش کردن، این متن فقط برای شما (مدیر) کم‌رنگ دیده می‌شود.
-              </p>
+          <div className="space-y-3 rounded-xl border border-border bg-foreground/[0.02] p-3.5">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <Label htmlFor="st-visible" className="cursor-pointer">
+                  نمایش این متن برای کاربران
+                </Label>
+                <p className="mt-1 text-[0.7rem] leading-5 text-muted-foreground">
+                  خاموش = مخفی در همه‌ی دستگاه‌ها (فقط شما کم‌رنگ می‌بینید).
+                </p>
+              </div>
+              <Switch
+                id="st-visible"
+                checked={!hidden}
+                onCheckedChange={(v) => setHidden(!v)}
+                aria-label="نمایش این متن برای کاربران"
+              />
             </div>
-            <Switch
-              id="st-visible"
-              checked={!hidden}
-              onCheckedChange={(v) => setHidden(!v)}
-              aria-label="نمایش این متن برای کاربران"
-            />
+
+            {/* — نمایش به تفکیک دستگاه — */}
+            <div
+              className={cn(
+                "grid grid-cols-3 gap-2 rounded-lg border border-border/60 bg-background/50 p-2.5 transition-opacity",
+                hidden && "opacity-40"
+              )}
+            >
+              {(
+                [
+                  { device: "desktop", icon: Monitor, off: hiddenDesktop, set: setHiddenDesktop },
+                  { device: "tablet", icon: Tablet, off: hiddenTablet, set: setHiddenTablet },
+                  { device: "mobile", icon: Smartphone, off: hiddenMobile, set: setHiddenMobile },
+                ] as const
+              ).map(({ device, icon: Icon, off, set }) => (
+                <label
+                  key={device}
+                  className={cn(
+                    "flex cursor-pointer flex-col items-center gap-1.5 rounded-lg px-1 py-2 text-center transition-colors",
+                    !off && "bg-teal-500/[0.07]"
+                  )}
+                >
+                  <span className="flex items-center gap-1 text-muted-foreground">
+                    <Icon className="size-3.5" />
+                    <span className="text-[0.68rem] font-bold">
+                      {SITE_TEXT_DEVICE_LABELS[device]}
+                    </span>
+                  </span>
+                  <Switch
+                    checked={!off}
+                    disabled={hidden}
+                    onCheckedChange={(v) => set(!v)}
+                    aria-label={`نمایش متن در ${SITE_TEXT_DEVICE_LABELS[device]}`}
+                    className="scale-90"
+                  />
+                  <span className="text-[0.6rem] leading-4 text-muted-foreground">
+                    {off ? "مخفی در این دستگاه" : "نمایش"}
+                  </span>
+                </label>
+              ))}
+            </div>
+            <p className="text-[0.7rem] leading-5 text-muted-foreground">
+              مخفی‌سازی مجزا در هر دستگاه — مثلاً فقط در موبایل پنهان شود؛ شما
+              همیشه در همه‌ی حالت‌ها می‌بینید.
+            </p>
           </div>
 
-          {/* — پیش‌نمایش زنده — */}
+          {/* — پیش‌نمایش زنده (به تفکیک دستگاه) — */}
           <div className="space-y-2">
-            <Label>پیش‌نمایش</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label>پیش‌نمایش</Label>
+              <div className="flex items-center gap-1 rounded-full border border-border bg-foreground/[0.03] p-0.5">
+                {SITE_TEXT_DEVICES.map((device) => {
+                  const Icon =
+                    device === "desktop" ? Monitor : device === "tablet" ? Tablet : Smartphone;
+                  return (
+                    <button
+                      key={device}
+                      type="button"
+                      onClick={() => setPreviewDevice(device)}
+                      aria-pressed={previewDevice === device}
+                      title={`پیش‌نمایش ${SITE_TEXT_DEVICE_LABELS[device]}`}
+                      className={cn(
+                        "flex items-center gap-1 rounded-full px-2.5 py-1 text-[0.65rem] font-bold transition-all",
+                        previewDevice === device
+                          ? "bg-teal-500 text-teal-950 shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      <Icon className="size-3" />
+                      {SITE_TEXT_DEVICE_LABELS[device]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <div className="flex min-h-16 items-center justify-center overflow-hidden rounded-xl border border-dashed border-foreground/15 bg-foreground/[0.02] px-4 py-3 text-center">
               <span
-                className="max-w-full break-words leading-8"
+                className={cn(
+                  "max-w-full break-words leading-8",
+                  (hidden || deviceHiddenState[previewDevice]) && "opacity-40"
+                )}
                 style={previewStyle}
               >
                 {text.trim() ||
@@ -637,6 +857,12 @@ function SiteTextEditorDialog({
                   "پیش‌نمایش متن در اینجا نمایش داده می‌شود"}
               </span>
             </div>
+            {(hidden || deviceHiddenState[previewDevice]) && (
+              <p className="text-center text-[0.65rem] font-bold text-rose-600 dark:text-rose-400">
+                در حالت «{SITE_TEXT_DEVICE_LABELS[previewDevice]}» برای کاربران
+                مخفی است
+              </p>
+            )}
           </div>
 
           {error ? (
@@ -666,7 +892,7 @@ function SiteTextEditorDialog({
             variant="outline"
             onClick={handleReset}
             disabled={busy || (!hasAnyCustom && !row)}
-            title="بازگردانی متن، رنگ، فونت، اندازه و نمایشِ این جایگاه به پیش‌فرض"
+            title="بازگردانی متن، رنگ، فونت، اندازه‌ها و نمایش (همه‌ی دستگاه‌ها) به پیش‌فرض"
             className="h-10 flex-1 rounded-xl border-rose-500/40 text-rose-600 hover:bg-rose-500/10 hover:text-rose-700 dark:text-rose-300 sm:flex-none"
           >
             {resetting ? (

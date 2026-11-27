@@ -64,8 +64,8 @@ export async function PATCH(
         data.grade = null;
       } else {
         const grade = float(raw, -1);
-        if (grade < 0 || grade > 20) {
-          return bad("معدل باید عددی بین ۰ تا ۲۰ باشد.");
+        if (grade < 0 || grade > 100) {
+          return bad("معدل باید عددی بین ۰ تا ۱۰۰ باشد.");
         }
         data.grade = Math.round(grade * 100) / 100;
       }

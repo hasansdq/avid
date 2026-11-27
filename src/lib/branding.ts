@@ -12,9 +12,11 @@ import { db } from "@/lib/db";
 
 export interface Branding {
   logoUrl: string;
+  /** favicon اختصاصی (آیکون تب مرورگر) — خالی یعنی همان لوگو */
+  faviconUrl: string;
   siteName: string;
   tagline: string;
-  /** کلید کش‌شکن — با هر تغییر لوگو/تنظیمات عوض می‌شود */
+  /** کلید کش‌شکن — با هر تغییر لوگو/favicon/تنظیمات عوض می‌شود */
   version: string;
 }
 
@@ -26,14 +28,23 @@ export async function getBranding(): Promise<Branding> {
 
   return {
     logoUrl: settings?.logoUrl?.trim() || "/images/logo.png",
+    faviconUrl: settings?.faviconUrl?.trim() || "",
     siteName: settings?.siteName?.trim() || "آوید",
     tagline: settings?.tagline?.trim() || "آکادمی مهارت‌های آینده",
-    // نسخه از روی آدرس لوگو + زمان آخرین ذخیره — تغییر هرکدام = URL تازه
-    version: `${settings?.updatedAt?.getTime() ?? 0}-${settings?.logoUrl ?? ""}`
+    // نسخه از روی آدرس لوگو/favicon + زمان آخرین ذخیره — تغییر هرکدام = URL تازه
+    version: `${settings?.updatedAt?.getTime() ?? 0}-${settings?.logoUrl ?? ""}-${settings?.faviconUrl ?? ""}`
       .replace(/[^a-z0-9-]/gi, "")
       .slice(0, 40)
       .toLowerCase(),
   };
+}
+
+/**
+ * favicon مؤثر — favicon اختصاصی «تنظیمات سایت»؛ اگر خالی باشد همان لوگو.
+ * (پس از آپلود favicon اختصاصی، تب مرورگر دقیقاً همان را نشان می‌دهد.)
+ */
+export function effectiveFaviconUrl(branding: Branding): string {
+  return branding.faviconUrl || branding.logoUrl;
 }
 
 /** پسوند Lowercase‌شده‌ی لوگو (بدون نقطه) — برای انتخاب MIME درست */
@@ -79,8 +90,8 @@ export interface LogoFile {
 }
 
 /**
- * نقشه‌برداری «آدرس لوگو» به فایل روی دیسک —
- *  • /uploads/**              → public/uploads/**
+ * نقشه‌برداری «آدرس لوگو/favicon» به فایل روی دیسک —
+ *  • /uploads/**              → public/uploads/** (عین همان مسیر)
  *  • /api/media/images/<name> → public/uploads/images/<name>
  *  • /images/** و /fonts/**…   → همان فایل استاتیک داخل public
  *  • آدرس خارجی (http/https)   → null (سرو از طریق ریدایرکت)
@@ -95,10 +106,10 @@ export function resolveLocalLogo(logoUrl: string): LogoFile | null {
 
   if (url.startsWith("/api/media/images/")) {
     rel = `uploads/images/${url.slice("/api/media/images/".length)}`;
-  } else if (url.startsWith("/uploads/")) {
-    rel = url.slice("/uploads/".length);
   } else if (url.startsWith("/")) {
-    rel = url.slice(1); // /images/logo.png → images/logo.png
+    // /uploads/images/x.png → uploads/images/x.png (عین مسیر داخل public)
+    // /images/logo.png      → images/logo.png
+    rel = url.slice(1);
   }
   if (!rel) return null;
 
@@ -139,29 +150,31 @@ export function fileWebStream(abs: string): ReadableStream<Uint8Array> {
 /** برای متادیتا: آدرس favicon پویا (محلی یا خارجی) + نسخه‌ی کش‌شکن */
 export async function faviconUrlForMetadata(): Promise<{
   url: string;
+  /** آدرس خام خارجی — وقتی favicon از CDN بیرونی می‌آید؛ در غیر این صورت null */
+  remote: string | null;
   isSvg: boolean;
 }> {
   const branding = await getBranding();
-  const isRemote = /^https?:\/\//i.test(branding.logoUrl);
-  const isSvg = logoExt(branding.logoUrl) === "svg";
-  if (isRemote) return { url: branding.logoUrl, isSvg };
+  const favicon = effectiveFaviconUrl(branding);
+  const remote = /^https?:\/\//i.test(favicon) ? favicon : null;
+  const isSvg = logoExt(favicon) === "svg";
   return {
-    url: `/api/favicon?v=${branding.version || "0"}`,
+    url: remote ?? `/api/favicon?v=${branding.version || "0"}`,
+    remote,
     isSvg,
   };
 }
 
-/** آیکون‌های مانیفست PWA — پویا از روی لوگوی تنظیمات */
+/** آیکون‌های مانیفست PWA — پویا از favicon/لوگوی تنظیمات */
 export async function manifestIcons(): Promise<
   { src: string; sizes: string; type: string; purpose: "any" | "maskable" }[]
 > {
   const branding = await getBranding();
-  const isRemote = /^https?:\/\//i.test(branding.logoUrl);
-  const ext = logoExt(branding.logoUrl) || "png";
+  const favicon = effectiveFaviconUrl(branding);
+  const isRemote = /^https?:\/\//i.test(favicon);
+  const ext = logoExt(favicon) || "png";
   const type = imageMimeForExt(ext);
-  const src = isRemote
-    ? branding.logoUrl
-    : `/api/favicon?v=${branding.version || "0"}`;
+  const src = isRemote ? favicon : `/api/favicon?v=${branding.version || "0"}`;
   return [
     { src, sizes: "192x192", type, purpose: "any" },
     { src, sizes: "512x512", type, purpose: "any" },

@@ -78,7 +78,7 @@ function Logo({ settings }: { settings: SiteSettings }) {
           width={44}
           height={44}
           onError={() => setLogoFailed(true)}
-          className="size-11 rounded-2xl border border-foreground/10 bg-background object-cover shadow-lg"
+          className="size-11 object-contain"
         />
       ) : (
         <span className="relative flex size-11 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-emerald-600 shadow-lg shadow-teal-500/25">

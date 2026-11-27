@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import Image from "next/image";
 import {
   Clock,
@@ -22,8 +23,7 @@ import {
   isCourseType,
   type CourseType,
 } from "@/lib/course-theme";
-import { faDigits, scrollToSection } from "@/lib/fa";
-import { useEnrollStore } from "@/lib/store";
+import { faDigits } from "@/lib/fa";
 import type { PublicAvailabilityMap } from "@/lib/availability";
 import { SectionHeading, Reveal } from "@/components/reveal";
 import { EditableText, renderGradientText } from "@/components/site/editable-texts";
@@ -56,11 +56,9 @@ const FILTERS: { key: CourseFilter; label: string }[] = [
 function CourseCard({
   course,
   availability,
-  onEnroll,
 }: {
   course: Course;
   availability?: PublicAvailabilityMap;
-  onEnroll: (title: string) => void;
 }) {
   const theme = getCourseTheme(course.theme);
   const typeMeta = isCourseType(course.type)
@@ -223,30 +221,36 @@ function CourseCard({
               </span>
             )}
           </div>
-          <Button
-            onClick={() => onEnroll(course.title)}
-            disabled={full}
-            size="sm"
-            aria-disabled={full}
-            className={cn(
-              "h-10 shrink-0 rounded-xl px-5 text-xs font-black transition-all",
-              full
-                ? "cursor-not-allowed bg-red-500/10 text-red-600 hover:bg-red-500/10 dark:bg-red-400/10 dark:text-red-300 dark:hover:bg-red-400/10"
-                : "bg-gradient-to-l from-teal-400 to-emerald-500 text-teal-950 shadow-lg shadow-teal-500/25 hover:shadow-teal-400/40 hover:brightness-105 dark:from-teal-300 dark:to-emerald-400"
-            )}
-          >
-            {full ? (
-              <>
-                <XCircle className="size-3.5" />
-                ظرفیت تکمیل
-              </>
-            ) : (
-              <>
+          {/* دکمه‌ی ثبت‌نام — لینک مستقیم به صفحه‌ی ثبت‌نام (/register)
+              با پیش‌انتخاب همین دوره (?course=عنوان)؛ دوره‌ی تکمیل قفل است */}
+          {full ? (
+            <Button
+              disabled
+              size="sm"
+              aria-disabled
+              className={cn(
+                "h-10 shrink-0 cursor-not-allowed rounded-xl px-5 text-xs font-black transition-all",
+                "bg-red-500/10 text-red-600 hover:bg-red-500/10 dark:bg-red-400/10 dark:text-red-300 dark:hover:bg-red-400/10"
+              )}
+            >
+              <XCircle className="size-3.5" />
+              ظرفیت تکمیل
+            </Button>
+          ) : (
+            <Button
+              asChild
+              size="sm"
+              className="h-10 shrink-0 rounded-xl bg-gradient-to-l from-teal-400 to-emerald-500 px-5 text-xs font-black text-teal-950 shadow-lg shadow-teal-500/25 transition-all hover:shadow-teal-400/40 hover:brightness-105 dark:from-teal-300 dark:to-emerald-400"
+            >
+              <Link
+                href={`/register?course=${encodeURIComponent(course.title)}`}
+                aria-label={`ثبت‌نام در دوره ${course.title}`}
+              >
                 ثبت‌نام
                 <ArrowLeft className="size-3.5 transition-transform group-hover:-translate-x-0.5" />
-              </>
-            )}
-          </Button>
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
     </article>
@@ -254,7 +258,6 @@ function CourseCard({
 }
 
 export function Courses({ courses }: { courses: Course[] }) {
-  const setSelectedCourse = useEnrollStore((s) => s.setSelectedCourse);
   const [filter, setFilter] = React.useState<CourseFilter>("all");
 
   // وضعیت ظرفیت دوره‌ها — برای قفل‌کردن دوره‌های تکمیل‌شده روی کارت‌ها
@@ -276,11 +279,6 @@ export function Courses({ courses }: { courses: Course[] }) {
       cancelled = true;
     };
   }, []);
-
-  const handleEnroll = (title: string) => {
-    setSelectedCourse(title);
-    scrollToSection("register");
-  };
 
   const counts = React.useMemo(
     () => ({
@@ -363,7 +361,6 @@ export function Courses({ courses }: { courses: Course[] }) {
                 <CourseCard
                   course={course}
                   availability={availability ?? undefined}
-                  onEnroll={handleEnroll}
                 />
               </Reveal>
             ))}

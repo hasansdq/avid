@@ -54,36 +54,23 @@ const THEME_COLORS: Record<string, string> = {
  * چرا؟ متای استاتیک فقط به prefers-color-scheme سیستم گوش می‌دهد و
  * وقتی کاربر از داخل سایت تم را عوض می‌کند، نوار رنگی مرورگر موبایل
  * همان حالت قبلی می‌ماند — همین باعث می‌شود «حالت تیره در موبایل»
- * ناقص/خراب به نظر برسد. این مؤلفه متاهای ایستا را حذف و یک متای
- * پویا می‌نویسد که دقیقاً با resolvedTheme هم‌گام است.
+ * ناقص/خراب به نظر برسد.
+ *
+ * پیاده‌سازی (نسخه‌ی React — بدون دستکاری DOM): متا مستقیماً با JSX
+ * رندر می‌شود و React آن را به <head> می‌برد و مالکیتش با React
+ * می‌ماند. نسخه‌ی قبلی متاهای متعلق به React را با el.remove() از
+ * DOM جدا می‌کرد — گره‌های یتیم می‌ساخت و در ناوبریِ نرم (next/link)
+ * بین صفحات به کرشِ removeChild در react-dom می‌انجامید.
+ * پیش‌فرضِ SSR همان تیره است (defaultTheme="dark")؛ پس از mount،
+ * resolvedTheme resolves می‌شود و React content را در‌جای خود به‌روز
+ * می‌کند (بدون حذف/ایجاد دستی).
  */
 function ThemeColorMeta() {
   const { resolvedTheme } = useTheme();
-
-  React.useEffect(() => {
-    const color =
-      (resolvedTheme && THEME_COLORS[resolvedTheme]) ?? THEME_COLORS.dark;
-
-    let tag = document.head.querySelector<HTMLMetaElement>(
-      'meta[name="theme-color"][data-avid-dynamic]'
-    );
-    if (!tag) {
-      // متاهای ایستا (مبنای prefers-color-scheme) دیگر لازم نیستند —
-      // تم سایت منبعِ درست رنگ نوار مرورگر است.
-      document.head
-        .querySelectorAll(
-          'meta[name="theme-color"]:not([data-avid-dynamic])'
-        )
-        .forEach((el) => el.remove());
-      tag = document.createElement("meta");
-      tag.name = "theme-color";
-      tag.setAttribute("data-avid-dynamic", "1");
-      document.head.appendChild(tag);
-    }
-    tag.content = color;
-  }, [resolvedTheme]);
-
-  return null;
+  const color =
+    (resolvedTheme && THEME_COLORS[resolvedTheme]) ?? THEME_COLORS.dark;
+  // React 19 این متا را خودش به <head> می‌برد
+  return <meta name="theme-color" content={color} />;
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {

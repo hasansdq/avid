@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getBranding, resolveLocalLogo, fileWebStream } from "@/lib/branding";
+import { getBranding, effectiveFaviconUrl, resolveLocalLogo, fileWebStream } from "@/lib/branding";
 import { createReadStream, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import { resolve } from "node:path";
@@ -7,14 +7,15 @@ import { resolve } from "node:path";
 /**
  * favicon پویا — GET /api/favicon?v=<کش‌شکن>
  *
- * لوگوی فعال از «تنظیمات سایت» سرو می‌شود؛ به این ترتیب آپلود لوگوی جدید
- * بلافاصله در favicon مرورگر (و آیکون‌های PWA/مانیفست که همین مسیر را
- * اشاره می‌کنند) اعمال می‌شود — بدون نیاز به جایگزینی فایل‌های ایستا.
+ * favicon اختصاصی «تنظیمات سایت» سرو می‌شود؛ اگر تنظیم نشده باشد همان
+ * لوگوی فعال (به این ترتیب آپلود favicon یا لوگوی جدید بلافاصله در تب
+ * مرورگر و آیکون‌های PWA/مانیفست اعمال می‌شود — بدون نیاز به جایگزینی
+ * فایل‌های ایستا).
  *
- *  • لوگوی محلی (/uploads/…، /api/media/images/…، /images/…):
+ *  • فایل محلی (/uploads/…، /api/media/images/…، /images/…):
  *      سرو مستقیم همان فایل — شفافیت PNG/WebP/SVG عیناً حفظ می‌شود.
- *  • لوگوی خارجی (http/https): ریدایرکت ۳۰۲ به همان آدرس.
- *  • بدون لوگو / فایل مفقود: آیکون ایستای پیش‌فرض (icon-192.png).
+ *  • فایل خارجی (http/https): ریدایرکت ۳۰۲ به همان آدرس.
+ *  • بدون favicon / فایل مفقود: آیکون ایستای پیش‌فرض (icon-192.png).
  *
  * کش: یک روز — پارامتر ?v با هر ذخیره‌ی تنظیمات عوض می‌شود و مرورگر
  * نسخه‌ی تازه را فوراً می‌گیرد.
@@ -54,12 +55,15 @@ export async function GET(_req: NextRequest): Promise<Response> {
   const branding = await getBranding().catch(() => null);
   if (!branding) return streamStaticIcon();
 
-  // لوگوی خارجی → ریدایرکت شفاف
-  if (/^https?:\/\//i.test(branding.logoUrl)) {
-    return Response.redirect(branding.logoUrl, 302);
+  // favicon مؤثر — اختصاصی تنظیمات؛ در نبود آن، لوگوی سایت
+  const favicon = effectiveFaviconUrl(branding);
+
+  // favicon خارجی → ریدایرکت شفاف
+  if (/^https?:\/\//i.test(favicon)) {
+    return Response.redirect(favicon, 302);
   }
 
-  const logo = resolveLocalLogo(branding.logoUrl);
+  const logo = resolveLocalLogo(favicon);
   if (!logo) return streamStaticIcon();
 
   return new Response(fileWebStream(logo.abs), {
@@ -76,7 +80,8 @@ export async function GET(_req: NextRequest): Promise<Response> {
 /** HEAD — برای بررسی سلامت لینک favicon */
 export async function HEAD(): Promise<Response> {
   const branding = await getBranding().catch(() => null);
-  const logo = branding ? resolveLocalLogo(branding.logoUrl) : null;
+  const favicon = branding ? effectiveFaviconUrl(branding) : "";
+  const logo = branding ? resolveLocalLogo(favicon) : null;
   return new Response(null, {
     status: 200,
     headers: {

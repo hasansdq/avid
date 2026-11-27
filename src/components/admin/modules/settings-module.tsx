@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   BarChart3,
+  Globe,
   Loader2,
   Palette,
   PanelBottom,
@@ -30,6 +31,7 @@ import type { SiteSettings } from "@/components/admin/types";
 import { TrustSeal } from "@/components/site/trust-seal";
 import {
   buildZarinpalCode,
+  normalizeZarinpalBadgeUrl,
   zarinpalCodeFromInput,
   zarinpalDisplayValue,
 } from "@/lib/trust-seals";
@@ -43,6 +45,8 @@ interface SettingsDraft {
   heroDescription: string;
   sloganFont: string;
   logoUrl: string;
+  /** favicon اختصاصی (آیکون تب مرورگر) — خالی یعنی همان لوگو */
+  faviconUrl: string;
   studentsCount: string;
   completedCoursesCount: string;
   rating: string;
@@ -71,6 +75,7 @@ function toDraft(s: SiteSettings): SettingsDraft {
     heroDescription: s.heroDescription,
     sloganFont: s.sloganFont ?? "vazirmatn",
     logoUrl: s.logoUrl,
+    faviconUrl: s.faviconUrl ?? "",
     studentsCount: String(s.studentsCount),
     completedCoursesCount: String(s.completedCoursesCount),
     rating: String(s.rating),
@@ -223,6 +228,7 @@ export function SettingsModule() {
           heroDescription: draft.heroDescription,
           sloganFont: draft.sloganFont,
           logoUrl: draft.logoUrl,
+          faviconUrl: draft.faviconUrl,
           studentsCount,
           completedCoursesCount,
           rating,
@@ -292,7 +298,8 @@ export function SettingsModule() {
               src={draft.logoUrl}
               alt="پیش‌نمایش لوگو"
               sizes="56px"
-              className="size-14 shrink-0 rounded-2xl border border-border bg-foreground/[0.03]"
+              className="size-14 shrink-0"
+              imageClassName="object-contain"
               fallback={<LogoMark className="size-14" iconClassName="size-7" />}
             />
           ) : (
@@ -369,6 +376,51 @@ export function SettingsModule() {
               previewAlt="پیش‌نمایش لوگو"
               hint="می‌توانید مسیر داخلی مثل /images/logo.png یا آدرس کامل تصویر را وارد کنید."
             />
+          </div>
+        </div>
+
+        {/* — favicon (آیکون تب مرورگر) — آپلود اختصاصی با پیش‌نمایش تب — */}
+        <div className="space-y-3 rounded-xl border border-border bg-foreground/[0.02] p-4">
+          <ImageUrlField
+            id="set-faviconUrl"
+            label="favicon (آیکون تب مرورگر)"
+            value={draft.faviconUrl}
+            onChange={(v) => set("faviconUrl", v)}
+            section="settings"
+            previewAlt="پیش‌نمایش favicon"
+            previewClassName="h-16 w-16"
+            hint={`تصویر مربعی کوچک (پیشنهاد: PNG ۵۱۲×۵۱۲ یا SVG) که در تب‌های مرورگر نمایش داده می‌شود. اگر خالی بماند، ${
+              draft.logoUrl.trim() ? "همان لوگوی سایت" : "آیکون پیش‌فرض"
+            } استفاده می‌شود.`}
+          />
+          {/* پیش‌نمایش زنده — شبیه‌سازی نوار تب مرورگر */}
+          <div className="rounded-xl border border-border bg-foreground/[0.03] p-3">
+            <p className="mb-2 flex items-center gap-1.5 text-[0.65rem] font-bold text-muted-foreground">
+              <Globe className="size-3.5" />
+              پیش‌نمایش تب مرورگر (بعد از ذخیره و رفرش سایت)
+            </p>
+            <div
+              dir="rtl"
+              className="flex items-center gap-2 rounded-t-lg border border-border bg-foreground/[0.05] px-3 py-2"
+            >
+              {draft.faviconUrl.trim() ? (
+                <OptionalImage
+                  src={draft.faviconUrl}
+                  alt="favicon"
+                  sizes="16px"
+                  fallback={
+                    <span className="size-4 shrink-0 rounded-sm bg-muted-foreground/30" />
+                  }
+                  className="size-4 shrink-0"
+                />
+              ) : (
+                <span className="size-4 shrink-0 rounded-sm bg-muted-foreground/30" />
+              )}
+              <span className="truncate text-xs font-semibold text-foreground/80">
+                {draft.siteName || "نام سایت"} | {draft.tagline || "شعار سایت"}
+              </span>
+              <span className="mr-auto text-muted-foreground/50">×</span>
+            </div>
           </div>
         </div>
       </SettingsSection>
@@ -601,7 +653,9 @@ export function SettingsModule() {
                 </span>
               );
             }
-            const code = /<[a-z!/]/i.test(raw) ? raw : buildZarinpalCode(raw);
+            const code = /<[a-z!/]/i.test(raw)
+              ? normalizeZarinpalBadgeUrl(raw)
+              : buildZarinpalCode(raw);
             return code ? (
               <TrustSeal
                 html={code}

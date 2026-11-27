@@ -9,6 +9,8 @@
 #   • پوشه‌های سندباکس/پلتفرم (skills, .zscripts, examples و…) حذف می‌شوند
 #   • فایل‌های گواهینامه‌ی کاربران (public/uploads/certificates) حذف می‌شوند —
 #     داده‌ی خصوصی کاربران نباید در آرشیو عمومیِ قابل‌دانلود باشد (بند ۸)
+#   • deploy/turn/private/ (کانفیگ خصوصی Coturn و کلید TURN) هرگز وارد
+#     آرشیو نمی‌شود — این پوشه فقط هنگام setup روی VPS ساخته می‌شود
 #
 # سیاست پوشه‌ی تحویل:
 #   • download/ و public/Download/ بعد از هر اجرا «فقط و فقط» شامل
@@ -63,6 +65,7 @@ rsync -a --delete \
   --exclude '/public/Download' \
   --exclude '/download' \
   --exclude '/public/uploads/certificates' \
+  --exclude '/deploy/turn/private' \
   --exclude '/screenshots' \
   --exclude '/skills' \
   --exclude '/examples' \
@@ -71,7 +74,8 @@ rsync -a --delete \
   "$ROOT/" "$STAGE/avid/"
 
 # محافظ: فایل‌های حیاتی باید در آرشیو باشند (regression: مسیر آپلود یک‌بار
-# با exclude 'upload' سراسری حذف شده بود)
+# با exclude 'upload' سراسری حذف شده بود)؛ پوشه‌ی استقرار TURN
+# (deploy/turn — بدون private/) هم جزو فایل‌های حیاتی است
 for CRITICAL in \
   "src/app/manifest.ts" \
   "src/app/api/admin/distribution/route.ts" \
@@ -212,6 +216,8 @@ for CRITICAL in \
   "prisma/migrations/20261204000000_teacher_exam_creator/migration.sql" \
   "prisma/migrations/20261205000000_chat_avatar_mode/migration.sql" \
   "prisma/migrations/20261206000000_security_hardening/migration.sql" \
+  "prisma/migrations/20261207000000_site_text_responsive/migration.sql" \
+  "prisma/migrations/20261208000000_chat_welcome_autohide/migration.sql" \
   "prisma/migrations/migration_lock.toml" \
   "prisma/baseline.sql" \
   "mini-services/chat-service/index.ts" \
@@ -235,10 +241,20 @@ for CRITICAL in \
   "deploy/directadmin-quickstart.md" \
   "deploy/apache/vhost-include.conf" \
   "deploy/nginx/vhost-proxy.conf" \
+  "deploy/turn/setup.sh" \
+  "deploy/turn/compose.yaml" \
+  "deploy/turn/configure-csf.py" \
+  "deploy/turn/repair-config.py" \
+  "deploy/turn/README.md" \
+  "deploy/turn/VALIDATION.md" \
+  "deploy/turn/AUDIO-UPDATE.md" \
   "DEPLOY.md" \
   "TEST-RESULTS.md" \
   "tests/admin-login.test.ts" \
   "tests/dependency-compat.test.ts" \
+  "tests/site-texts.test.ts" \
+  "tests/stream-access.test.ts" \
+  "tests/stream-ice.test.ts" \
   ".env.example" \
   ".dockerignore"
 do
@@ -247,6 +263,13 @@ do
     exit 1
   fi
 done
+
+# محافظ امنیتی: کانفیگ خصوصی TURN و کلید TURN هرگز نباید وارد آرشیو شود —
+# حتی اگر روی دیسک وجود داشته باشد (rsync باید آن را حذف کرده باشد).
+if [ -e "$STAGE/avid/deploy/turn/private" ]; then
+  echo "✗ نشت امنیتی: deploy/turn/private در آرشیو استقرار پیدا شد" >&2
+  exit 1
+fi
 
 # ساخت ZIP (مرتب و تکرارپذیر) — سیاست «فقط آخرین نسخه»:
 # ۱) همه‌ی فایل‌های قدیمی هر دو پوشه‌ی تحویل پاک می‌شوند

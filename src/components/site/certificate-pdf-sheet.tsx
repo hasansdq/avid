@@ -357,7 +357,7 @@ export function CertificatePdfSheet({
             دوره‌ی آموزشی «{cert.courseTitle}» را در آکادمی {settings.siteName}
             {cert.grade !== null &&
             cert.grade !== undefined &&
-            cert.grade >= 10
+            cert.grade >= 50
               ? " با موفقیت "
               : " "}
             به پایان رسانده و این گواهی‌نامه مطابق ضوابط آکادمی صادر گردیده است.
@@ -432,7 +432,7 @@ export function CertificatePdfSheet({
                 }}
               >
                 {cert.grade !== null && cert.grade !== undefined
-                  ? `${faGrade(cert.grade)} از ${faDigits(20)}`
+                  ? `${faGrade(cert.grade)} از ${faDigits(100)}`
                   : "—"}
               </div>
             </div>

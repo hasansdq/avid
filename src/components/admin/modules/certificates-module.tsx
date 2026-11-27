@@ -253,9 +253,9 @@ export function CertificatesModule() {
                           <span
                             className={cn(
                               "text-sm font-black tabular-nums",
-                              c.grade >= 17
+                              c.grade >= 85
                                 ? "text-emerald-600 dark:text-emerald-300"
-                                : c.grade >= 10
+                                : c.grade >= 50
                                   ? "text-teal-600 dark:text-teal-300"
                                   : "text-amber-600 dark:text-amber-300"
                             )}
@@ -698,7 +698,7 @@ function CertificateFileField({
  *  ۱. انتخاب کاربر (جست‌وجویی)
  *  ۲. انتخاب دوره از بین دوره‌هایی که کاربر در آن‌ها ثبت‌نام کرده
  *  ۳. آپلود فایل گواهینامه (PDF یا تصویر) — الزامی
- *  ۴. معدل (۰ تا ۲۰، اختیاری؛ با معدل ثبت‌شده‌ی دوره پیش‌پر می‌شود) و توضیح
+ *  ۴. معدل (۰ تا ۱۰۰، اختیاری؛ با معدل ثبت‌شده‌ی دوره (مقیاس ۲۰) × ۵ پیش‌پر می‌شود) و توضیح
  */
 function IssueDialog({
   open,
@@ -801,13 +801,17 @@ function IssueDialog({
     [courses, courseId]
   );
 
-  /** با انتخاب دوره، فیلد معدل با نمره‌ی ثبت‌شده‌ی کاربر در همان دوره پیش‌پر می‌شود */
+  /**
+   * با انتخاب دوره، فیلد معدل با نمره‌ی ثبت‌شده‌ی کاربر در همان دوره
+   * پیش‌پر می‌شود — نمره‌ی دوره روی مقیاس ۲۰ است و به مقیاس ۱۰۰ گواهینامه
+   * × ۵ تبدیل می‌شود (مثلاً ۱۷٫۵ از ۲۰ ← ۸۷٫۵ از ۱۰۰).
+   */
   function pickCourse(value: string) {
     setCourseId(value);
     const option = courses?.find((c) => c.courseId === value);
     setGrade(
       option && option.grade !== null && option.grade !== undefined
-        ? String(option.grade)
+        ? String(Math.round(option.grade * 5 * 100) / 100)
         : ""
     );
   }
@@ -918,7 +922,7 @@ function IssueDialog({
               <p className="text-[0.65rem] leading-5 text-muted-foreground">
                 {selectedCourse.grade !== null &&
                 selectedCourse.grade !== undefined
-                  ? `معدل ثبت‌شده‌ی کاربر در این دوره: ${faDigits(selectedCourse.grade)} از ${faDigits(20)}`
+                  ? `معدل ثبت‌شده‌ی کاربر در این دوره: ${faDigits(selectedCourse.grade)} از ${faDigits(20)} — معادل ${faDigits(Math.round(selectedCourse.grade * 5 * 100) / 100)} از ${faDigits(100)} که در فیلد معدل پیش‌پر شده است.`
                   : "برای این کاربر در این دوره هنوز معدلی ثبت نشده است."}
               </p>
             ) : null}
@@ -930,14 +934,14 @@ function IssueDialog({
           {/* — ۴. معدل و توضیح — */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="cert-grade">معدل (اختیاری، از ۲۰)</Label>
+              <Label htmlFor="cert-grade">معدل (اختیاری، از ۱۰۰)</Label>
               <Input
                 id="cert-grade"
                 type="number"
                 inputMode="decimal"
                 dir="ltr"
                 min={0}
-                max={20}
+                max={100}
                 step={0.25}
                 value={grade}
                 onChange={(e) => setGrade(e.target.value)}
@@ -1113,14 +1117,14 @@ function EditDialog({
               {/* — معدل و توضیح — */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-cert-grade">معدل (از ۲۰)</Label>
+                  <Label htmlFor="edit-cert-grade">معدل (از ۱۰۰)</Label>
                   <Input
                     id="edit-cert-grade"
                     type="number"
                     inputMode="decimal"
                     dir="ltr"
                     min={0}
-                    max={20}
+                    max={100}
                     step={0.25}
                     value={grade}
                     onChange={(e) => setGrade(e.target.value)}

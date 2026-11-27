@@ -169,6 +169,7 @@ export type ModuleKey =
   | "testimonials"
   | "enrollments"
   | "payment"
+  | "payments"
   | "users"
   | "classes"
   | "streams"

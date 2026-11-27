@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
-import { getChatSettings, parseChatAvatarMode } from "@/lib/chat";
+import { getChatSettings, parseChatAvatarMode, parseChatWelcomeAutoHideSeconds, CHAT_WELCOME_AUTOHIDE_MIN, CHAT_WELCOME_AUTOHIDE_MAX } from "@/lib/chat";
 
 /** GET /api/chat/admin/settings — تنظیمات چت‌بات */
 export async function GET(req: NextRequest) {
@@ -55,7 +55,30 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "آدرس تصویر خیلی طولانی است." }, { status: 400 });
 
     // مطمئ شویم رکورد وجود دارد
-    await getChatSettings();
+    const current = await getChatSettings();
+
+    // ثانیه‌های مخفی‌شدن خودکار حباب خوش‌آمدگویی —
+    // ارسال‌نشده = حفظ مقدار فعلی؛ ۰ = بدون مخفی‌شدن خودکار
+    let welcomeAutoHideSeconds: number;
+    if ("welcomeAutoHideSeconds" in (body ?? {})) {
+      const parsed = parseChatWelcomeAutoHideSeconds(
+        body?.welcomeAutoHideSeconds
+      );
+      if (parsed === null) {
+        return NextResponse.json(
+          {
+            error:
+              `ثانیه‌های مخفی‌شدن خودکار حباب خوش‌آمدگویی باید بین ` +
+              `${CHAT_WELCOME_AUTOHIDE_MIN} تا ${CHAT_WELCOME_AUTOHIDE_MAX} ` +
+              `باشد (۰ = بدون مخفی‌شدن خودکار).`,
+          },
+          { status: 400 }
+        );
+      }
+      welcomeAutoHideSeconds = parsed;
+    } else {
+      welcomeAutoHideSeconds = current.welcomeAutoHideSeconds;
+    }
 
     const settings = await db.chatSettings.update({
       where: { id: "main" },
@@ -68,6 +91,7 @@ export async function PUT(req: NextRequest) {
         botAvatarMode: parseChatAvatarMode(body?.botAvatarMode),
         welcomeMessage,
         autoOpen: body?.autoOpen === true,
+        welcomeAutoHideSeconds,
         isActive: body?.isActive === true,
       },
     });

@@ -673,6 +673,8 @@ interface ChatSettingsDraft {
   botAvatarMode: ChatAvatarMode;
   welcomeMessage: string;
   autoOpen: boolean;
+  /** ثانیه‌های مخفی‌شدن خودکار حباب خوش‌آمدگویی (رشته تا ورودی خالی هم قابل تایپ باشد) */
+  welcomeAutoHideSeconds: string;
   isActive: boolean;
 }
 
@@ -684,6 +686,7 @@ function toDraft(s: ChatSettings): ChatSettingsDraft {
     botAvatarMode: parseChatAvatarMode(s.botAvatarMode),
     welcomeMessage: s.welcomeMessage,
     autoOpen: s.autoOpen,
+    welcomeAutoHideSeconds: String(s.welcomeAutoHideSeconds ?? 7),
     isActive: s.isActive,
   };
 }
@@ -727,6 +730,10 @@ function BotSettingsTab() {
           botAvatarMode: draft.botAvatarMode,
           welcomeMessage: draft.welcomeMessage.trim(),
           autoOpen: draft.autoOpen,
+          welcomeAutoHideSeconds:
+            draft.welcomeAutoHideSeconds.trim() === ""
+              ? 0
+              : Number(draft.welcomeAutoHideSeconds.trim()),
           isActive: draft.isActive,
         }),
       });
@@ -818,6 +825,30 @@ function BotSettingsTab() {
               onCheckedChange={(v) => set({ autoOpen: v })}
               aria-label="نمایش خودکار خوش‌آمدگویی"
             />
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-foreground/[0.02] px-4 py-3">
+            <div className="min-w-0 leading-tight">
+              <p className="text-sm font-bold text-foreground">مخفی‌شدن خودکار خوش‌آمدگویی</p>
+              <p className="mt-0.5 text-[0.68rem] leading-5 text-muted-foreground">
+                حباب پیام خوش‌آمدگویی پس از این تعداد ثانیه با انیمیشن محو می‌شود —
+                ۰ = بدون مخفی‌شدن خودکار (حباب می‌ماند تا کاربر ببندد)
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <Input
+                type="number"
+                min={0}
+                max={300}
+                value={draft.welcomeAutoHideSeconds}
+                onChange={(e) =>
+                  set({ welcomeAutoHideSeconds: e.target.value })
+                }
+                disabled={!draft.autoOpen}
+                aria-label="ثانیه‌های نمایش حباب خوش‌آمدگویی"
+                className="h-9 w-20 text-center tabular-nums"
+              />
+              <span className="text-xs text-muted-foreground">ثانیه</span>
+            </div>
           </div>
           <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-foreground/[0.02] px-4 py-3">
             <div className="min-w-0 leading-tight">

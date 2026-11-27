@@ -1178,7 +1178,10 @@ function VideoStage({
         "relative min-w-0 overflow-hidden bg-black",
         fullscreen
           ? "flex size-full items-center justify-center [&:fullscreen]:size-full"
-          : "aspect-video w-full rounded-2xl"
+          : // دسکتاپ: نسبت تصویر ثابت لغو می‌شود تا صحنه دقیقاً ارتفاعِ
+            // باقی‌مانده‌ی صفحه را بگیرد (کنترل‌ها پایین، بدون اسکرول)؛
+            // موبایل: همان نسبت ۱۶:۹ ثابت است.
+            "aspect-video w-full rounded-2xl lg:aspect-auto lg:min-h-0 lg:flex-1"
       )}
     >
       <div
@@ -1312,9 +1315,9 @@ export function StreamRoom({ session }: { session: StreamSession }) {
   const showLandscape = isMobile && landscapeOn;
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen flex-col bg-background lg:h-dvh lg:min-h-0 lg:overflow-hidden">
       {/* — سربرگ — */}
-      <header className="flex items-center gap-2 border-b border-border bg-card/70 px-3 py-2.5 backdrop-blur-md sm:gap-3 sm:px-6 sm:py-3">
+      <header className="flex shrink-0 items-center gap-2 border-b border-border bg-card/70 px-3 py-2.5 backdrop-blur-md sm:gap-3 sm:px-6 sm:py-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-400 to-emerald-600 shadow-md shadow-teal-500/20 sm:size-10">
           <Radio className="size-4 text-teal-950 sm:size-5" strokeWidth={2.2} />
         </span>
@@ -1362,7 +1365,7 @@ export function StreamRoom({ session }: { session: StreamSession }) {
       {/* — نوار ابزار: گفتگو / حاضران (پنل‌ها پیش‌فرض بسته‌اند) + وضعیت اتصال — */}
       <nav
         aria-label="ابزارهای کلاس"
-        className="flex items-center gap-1.5 border-b border-border bg-card/50 px-3 py-1.5 backdrop-blur-md sm:px-6"
+        className="flex shrink-0 items-center gap-1.5 border-b border-border bg-card/50 px-3 py-1.5 backdrop-blur-md sm:px-6"
       >
         <button
           type="button"
@@ -1414,10 +1417,12 @@ export function StreamRoom({ session }: { session: StreamSession }) {
         ) : null}
       </nav>
 
-      {/* — بدنه — */}
-      <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 p-3 sm:p-4 lg:flex-row lg:items-start">
+      {/* — بدنه — در دسکتاپ دقیقاً در ارتفاع باقی‌مانده‌ی صفحه فیکس است
+          (بدون اسکرول صفحه) — صحنه‌ی ویدئو فضای باقی‌مانده را می‌گیرد و
+          کنترل‌ها همیشه پایین و داخل دید می‌مانند — */}
+      <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-4 p-3 sm:p-4 lg:flex-row lg:items-stretch">
         {/* — صحنه + کنترل‌ها — */}
-        <main className="flex min-w-0 flex-1 flex-col gap-3">
+        <main className="flex min-w-0 flex-1 flex-col gap-3 lg:min-h-0">
           {/* موبایل + نمایش افقی: صحنه‌ی عادی حذف می‌شود تا صدای
               ویدئو دوبار پخش نشود (صحنه‌ی افقی کامل روبه‌رو است) */}
           {showLandscape ? null : (
@@ -1433,7 +1438,7 @@ export function StreamRoom({ session }: { session: StreamSession }) {
 
           {/* — کنترل‌های استاد — */}
           {isHost ? (
-            <div className="flex flex-nowrap items-center justify-between gap-1.5 rounded-2xl border border-border bg-card/70 p-2 backdrop-blur-md sm:flex-wrap sm:justify-start sm:gap-2 sm:p-3">
+            <div className="flex shrink-0 flex-nowrap items-center justify-between gap-1.5 rounded-2xl border border-border bg-card/70 p-2 backdrop-blur-md sm:flex-wrap sm:justify-start sm:gap-2 sm:p-3">
               {room.roomStatus === "ended" ? (
                 <span className="flex items-center gap-2 px-2 text-xs font-black text-muted-foreground">
                   <PhoneOff className="size-4" />
@@ -1589,7 +1594,7 @@ export function StreamRoom({ session }: { session: StreamSession }) {
             </div>
           ) : (
             /* — کنترل‌های دانشجو — */
-            <div className="flex flex-nowrap items-center gap-2 overflow-x-auto rounded-2xl border border-border bg-card/70 p-2 backdrop-blur-md sm:flex-wrap sm:p-3">
+            <div className="flex shrink-0 flex-nowrap items-center gap-2 overflow-x-auto rounded-2xl border border-border bg-card/70 p-2 backdrop-blur-md sm:flex-wrap sm:p-3">
               <QualityPicker room={room} />
               {room.roomStatus !== "ended" ? (
                 !room.granted && !room.publishing ? (
@@ -1643,7 +1648,7 @@ export function StreamRoom({ session }: { session: StreamSession }) {
 
         {/* — پنل کنار: چت / کاربران (پیش‌فرض بسته — با کلید زیر هدر باز می‌شود) — */}
         {sidePanel !== null && !showLandscape ? (
-          <aside className="fixed inset-x-2 bottom-2 z-50 flex max-h-[70dvh] flex-col rounded-2xl border border-border bg-card shadow-2xl backdrop-blur-md lg:static lg:inset-auto lg:z-auto lg:h-auto lg:min-h-[36rem] lg:w-80 lg:max-h-none lg:shadow-none">
+          <aside className="fixed inset-x-2 bottom-2 z-50 flex max-h-[70dvh] flex-col rounded-2xl border border-border bg-card shadow-2xl backdrop-blur-md lg:static lg:inset-auto lg:z-auto lg:max-h-full lg:min-h-0 lg:w-80 lg:shadow-none">
             <PanelBody
               room={room}
               myName={myName}

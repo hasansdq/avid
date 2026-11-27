@@ -27,6 +27,8 @@ export interface PublicChatSettings {
   botAvatarMode: ChatAvatarMode;
   welcomeMessage: string;
   autoOpen: boolean;
+  /** ثانیه‌های نمایش حباب خوش‌آمدگویی تا مخفی‌شدن خودکار (۰ = بدون) */
+  welcomeAutoHideSeconds: number;
   isActive: boolean;
 }
 
@@ -49,8 +51,41 @@ export function toPublicChatSettings(s: ChatSettings): PublicChatSettings {
     botAvatarMode: parseChatAvatarMode(s.botAvatarMode),
     welcomeMessage: s.welcomeMessage,
     autoOpen: s.autoOpen,
+    welcomeAutoHideSeconds: s.welcomeAutoHideSeconds ?? CHAT_WELCOME_AUTOHIDE_DEFAULT,
     isActive: s.isActive,
   };
+}
+
+/** سقف و کف مخفی‌شدن خودکار حباب خوش‌آمدگویی (ثانیه) — ۰ = بدون مخفی‌شدن */
+export const CHAT_WELCOME_AUTOHIDE_MIN = 0;
+export const CHAT_WELCOME_AUTOHIDE_MAX = 300;
+/** مقدار پیش‌فرض پیشنهادی (ثانیه) */
+export const CHAT_WELCOME_AUTOHIDE_DEFAULT = 7;
+
+/**
+ * اعتبارسنجی ثانیه‌های مخفی‌شدن خودکار حباب خوش‌آمدگویی —
+ * نامعتبر/خالی = null (فراخواننده به پیش‌فرض/مقدار قبلی برمی‌گردد)
+ */
+export function parseChatWelcomeAutoHideSeconds(
+  v: unknown
+): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) {
+    const r = Math.round(v);
+    return r >= CHAT_WELCOME_AUTOHIDE_MIN &&
+      r <= CHAT_WELCOME_AUTOHIDE_MAX
+      ? r
+      : null;
+  }
+  if (typeof v === "string" && v.trim()) {
+    const n = Number(v.trim());
+    if (!Number.isFinite(n)) return null;
+    const r = Math.round(n);
+    return r >= CHAT_WELCOME_AUTOHIDE_MIN &&
+      r <= CHAT_WELCOME_AUTOHIDE_MAX
+      ? r
+      : null;
+  }
+  return null;
 }
 
 /** اعتبارسنجی محتوای پیام چت */

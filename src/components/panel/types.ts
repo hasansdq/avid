@@ -103,7 +103,7 @@ export interface PanelCertificate {
   code: string;
   /** عنوان دوره (تصویر لحظه‌ای) */
   courseTitle: string;
-  /** معدل ثبت‌شده هنگام صدور (۰ تا ۲۰) */
+  /** معدل ثبت‌شده هنگام صدور (۰ تا ۱۰۰) */
   grade: number | null;
   /** توضیح/عنوان اختیاری روی گواهینامه */
   note: string;

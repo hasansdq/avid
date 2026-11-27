@@ -3,8 +3,12 @@ import { NextRequest } from "next/server";
 let admin = false, user = false, invited = false, kicked = false, owner = false;
 let ended = false;
 const stream = () => ({id:"room",hostId:owner?"user":null,inviteSlug:null,title:"test",status:ended?"ended":"live"});
-mock.module("@/lib/auth",()=>({getSessionAdmin:async()=>admin?{username:"admin"}:null}));
-mock.module("@/lib/user-auth",()=>({getSessionUser:async()=>user?{id:"user",firstName:"test",lastName:"user"}:null}));
+// Partial mocks: spread the currently-registered modules so every other
+// export stays available to later test files in this same bun test process.
+const authModule = await import("@/lib/auth");
+const userAuthModule = await import("@/lib/user-auth");
+mock.module("@/lib/auth",()=>({...authModule,getSessionAdmin:async()=>admin?{username:"admin"}:null}));
+mock.module("@/lib/user-auth",()=>({...userAuthModule,getSessionUser:async()=>user?{id:"user",firstName:"test",lastName:"user"}:null}));
 mock.module("@/lib/db",()=>({db:{user:{findUnique:async()=>({role:"teacher",firstName:"test",lastName:"host"})}}}));
 mock.module("@/lib/streams",()=>({
  findStreamByRef:async()=>stream(),joinByLinkAllowed:()=>false,

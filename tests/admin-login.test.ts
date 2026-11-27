@@ -27,7 +27,12 @@ mock.module("@/lib/rate-limit", () => ({
   rateStorageError: () => Response.json({ error: "temporary storage failure" }, { status: 503 }),
   RATE_LIMITS: { adminLoginUser: {}, adminLoginIp: {}, otpRequestPhone: {}, otpRequestIp: {}, otpVerifyPhone: {}, otpVerifyIp: {} },
 }));
+// Partial mock: keep every original export (e.g. getSessionUser) so other
+// test files importing modules that re-import "@/lib/user-auth" in this same
+// bun test process do not hit missing-export SyntaxErrors.
+const userAuthModule = await import("@/lib/user-auth");
 mock.module("@/lib/user-auth", () => ({
+  ...userAuthModule,
   findActiveOtp: async () => null,
   issueOtp: async () => ({ code: "123456" }),
   deleteActiveOtp: async () => {}, OTP_RESEND_MS: 60_000,
